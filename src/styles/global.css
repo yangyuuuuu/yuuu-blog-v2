@@ -1,0 +1,523 @@
+@import 'tailwindcss';
+@import './theme.css';
+
+/* 深色变体跟随 data-theme，而不是系统偏好 */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/* --------------------------------------------------------------------------
+   设计令牌 → Tailwind 工具类
+   用 inline 让工具类直接引用 var()，这样运行时换主题能立刻生效
+   -------------------------------------------------------------------------- */
+@theme inline {
+  --color-base: var(--bg);
+  --color-soft: var(--bg-soft);
+  --color-surface: var(--panel);
+  --color-surface-2: var(--panel-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-gold: var(--gold);
+
+  --radius-card: 18px;
+  --radius-soft: 12px;
+
+  --font-title: 'Songti SC', 'STSong', Georgia, 'Times New Roman', serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, 'SFMono-Regular', Menlo, monospace;
+}
+
+/* --------------------------------------------------------------------------
+   基础
+   -------------------------------------------------------------------------- */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.75;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 0.46s ease, color 0.46s ease;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-title);
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { color: var(--gold); }
+  code, pre, kbd { font-family: var(--font-mono); }
+  img { max-width: 100%; display: block; }
+  ::selection { background: var(--hover-strong); color: var(--ink); }
+
+  /* 焦点提示：用圆角光晕代替浏览器默认方框 */
+  :focus { outline: none; }
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+    border-radius: inherit;
+  }
+  input:focus-visible, textarea:focus-visible, select:focus-visible { box-shadow: none; }
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(var(--accent-3), var(--accent-2));
+  border-radius: 99px;
+  border: 2px solid var(--bg);
+}
+
+/* --------------------------------------------------------------------------
+   页面切换：原生 View Transitions，零 JavaScript（PRD 5.5 只留「水波淡入」）
+   -------------------------------------------------------------------------- */
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root) {
+  animation: yuuu-ripple-out 0.26s ease both;
+}
+::view-transition-new(root) {
+  animation: yuuu-ripple-in 0.34s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+@keyframes yuuu-ripple-out {
+  to { opacity: 0; transform: scale(0.994); }
+}
+@keyframes yuuu-ripple-in {
+  from { opacity: 0; transform: scale(1.006); }
+}
+
+/* --------------------------------------------------------------------------
+   首页背景：气泡 + 海浪（纯 CSS 动画，不用 JS 驱动）
+   -------------------------------------------------------------------------- */
+.bubbles {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.bubbles span {
+  position: absolute;
+  bottom: -80px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%,
+    rgb(255 255 255 / 0.9), var(--hover-strong) 52%, transparent 74%);
+  border: 1px solid var(--line);
+  animation: bubble-rise linear infinite;
+  will-change: transform, opacity;
+}
+@keyframes bubble-rise {
+  0%   { transform: translate3d(0, 0, 0) scale(0.7); opacity: 0; }
+  12%  { opacity: 0.7; }
+  60%  { opacity: 0.45; }
+  100% { transform: translate3d(40px, -112vh, 0) scale(1.1); opacity: 0; }
+}
+
+.waves {
+  position: absolute;
+  inset-inline: 0;
+  bottom: -2px;
+  height: 120px;
+  pointer-events: none;
+  overflow: hidden;
+}
+.waves svg {
+  position: absolute;
+  bottom: 0;
+  left: -6%;
+  width: 112%;
+  height: 100%;
+  will-change: transform;
+}
+.waves svg:nth-child(1) { animation: wave-shift 11s ease-in-out infinite; }
+.waves svg:nth-child(2) { animation: wave-shift 15s ease-in-out infinite reverse; }
+@keyframes wave-shift {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50%      { transform: translate3d(-40px, 0, 0); }
+}
+
+.aurora {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.aurora i {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.45;
+  will-change: transform;
+}
+.aurora i:nth-child(1) {
+  width: 46vw; height: 46vw; top: -12vw; left: -8vw;
+  background: radial-gradient(circle, var(--accent-2), transparent 68%);
+  animation: drift 26s ease-in-out infinite;
+}
+.aurora i:nth-child(2) {
+  width: 38vw; height: 38vw; top: 24vh; right: -10vw;
+  background: radial-gradient(circle, var(--gold), transparent 68%);
+  animation: drift 32s ease-in-out infinite reverse;
+}
+.aurora i:nth-child(3) {
+  width: 52vw; height: 52vw; bottom: -18vw; left: 22vw;
+  background: radial-gradient(circle, var(--accent-3), transparent 70%);
+  animation: drift 38s ease-in-out infinite;
+}
+@keyframes drift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(4vw, -4vh, 0) scale(1.12); }
+}
+html[data-theme='light'] .aurora i { opacity: 0.28; }
+
+.crest { animation: float 7s ease-in-out infinite; will-change: transform; }
+@keyframes float {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50%      { transform: translate3d(0, -12px, 0); }
+}
+
+/* 滚动淡入（IntersectionObserver 只加类名，动画交给 CSS） */
+.reveal {
+  opacity: 0;
+  transform: translate3d(0, 22px, 0);
+  transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+.reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* --------------------------------------------------------------------------
+   9 种封面样式（PRD 5.3）—— 纯 CSS 渐变，零图片请求
+   -------------------------------------------------------------------------- */
+.cover {
+  --ch: 202;
+  position: relative;
+  background-color: hsl(var(--ch) 58% 18%);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+}
+.cover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.1), transparent 42%, rgb(0 0 0 / 0.3));
+}
+
+.cover-wave {
+  background-image:
+    radial-gradient(130% 95% at 50% 122%, hsl(var(--ch) 88% 66% / 0.55), transparent 62%),
+    repeating-linear-gradient(0deg, hsl(var(--ch) 85% 68% / 0.16) 0 1px, transparent 1px 15px),
+    linear-gradient(150deg, hsl(var(--ch) 62% 13%), hsl(var(--ch) 74% 33%) 56%, hsl(var(--ch) 90% 58%));
+}
+.cover-nebula {
+  background-image:
+    radial-gradient(38% 34% at 30% 38%, hsl(var(--ch) 100% 86% / 0.55), transparent 70%),
+    radial-gradient(30% 26% at 70% 62%, hsl(var(--ch) 95% 78% / 0.44), transparent 72%),
+    radial-gradient(46% 42% at 50% 4%, hsl(var(--ch) 92% 74% / 0.36), transparent 70%),
+    linear-gradient(160deg, hsl(var(--ch) 56% 11%), hsl(var(--ch) 72% 30%) 60%, hsl(var(--ch) 88% 52%));
+}
+.cover-crown {
+  background-image:
+    repeating-linear-gradient(115deg, hsl(45 85% 72% / 0.1) 0 2px, transparent 2px 17px),
+    radial-gradient(70% 60% at 50% 112%, hsl(45 90% 62% / 0.42), transparent 64%),
+    linear-gradient(150deg, hsl(var(--ch) 48% 11%), hsl(45 58% 25%) 62%, hsl(45 84% 52%));
+}
+.cover-opera {
+  background-image:
+    repeating-radial-gradient(circle at 50% 132%, transparent 0 24px, hsl(var(--ch) 85% 72% / 0.11) 24px 28px),
+    radial-gradient(60% 50% at 50% 0%, hsl(var(--ch) 90% 70% / 0.3), transparent 68%),
+    linear-gradient(180deg, hsl(var(--ch) 52% 9%), hsl(var(--ch) 68% 25%) 70%, hsl(var(--ch) 84% 44%));
+}
+.cover-aurora {
+  background-image:
+    radial-gradient(62% 52% at 18% 18%, hsl(var(--ch) 92% 66% / 0.5), transparent 66%),
+    radial-gradient(52% 46% at 82% 28%, hsl(calc(var(--ch) + 62) 92% 66% / 0.42), transparent 68%),
+    radial-gradient(72% 62% at 50% 112%, hsl(calc(var(--ch) + 124) 88% 60% / 0.38), transparent 70%),
+    linear-gradient(160deg, hsl(var(--ch) 62% 9%), hsl(var(--ch) 72% 21%));
+}
+.cover-starry {
+  background-image:
+    radial-gradient(circle at 18% 26%, rgb(255 255 255 / 0.95) 0 1.5px, transparent 1.7px),
+    radial-gradient(circle at 63% 17%, rgb(255 255 255 / 0.9) 0 1.3px, transparent 1.5px),
+    radial-gradient(circle at 83% 57%, rgb(255 255 255 / 0.95) 0 1.7px, transparent 1.9px),
+    radial-gradient(circle at 35% 71%, rgb(255 255 255 / 0.85) 0 1.2px, transparent 1.4px),
+    radial-gradient(circle at 72% 84%, rgb(255 255 255 / 0.9) 0 1.5px, transparent 1.7px),
+    radial-gradient(circle at 11% 62%, rgb(255 255 255 / 0.85) 0 1.2px, transparent 1.4px),
+    radial-gradient(circle at 48% 44%, rgb(255 255 255 / 0.8) 0 1.1px, transparent 1.3px),
+    radial-gradient(130% 95% at 50% 122%, hsl(var(--ch) 92% 62% / 0.45), transparent 60%),
+    linear-gradient(160deg, hsl(var(--ch) 68% 7%), hsl(var(--ch) 62% 18%) 62%, hsl(var(--ch) 58% 30%));
+}
+.cover-bubble {
+  background-image:
+    radial-gradient(circle at 22% 30%, hsl(var(--ch) 100% 90% / 0.5) 0 10px, transparent 11px),
+    radial-gradient(circle at 47% 68%, hsl(var(--ch) 100% 90% / 0.36) 0 16px, transparent 17px),
+    radial-gradient(circle at 73% 25%, hsl(var(--ch) 100% 92% / 0.45) 0 7px, transparent 8px),
+    radial-gradient(circle at 87% 73%, hsl(var(--ch) 100% 92% / 0.32) 0 12px, transparent 13px),
+    radial-gradient(circle at 12% 78%, hsl(var(--ch) 100% 92% / 0.3) 0 6px, transparent 7px),
+    linear-gradient(160deg, hsl(var(--ch) 64% 13%), hsl(var(--ch) 76% 33%) 60%, hsl(var(--ch) 90% 58%));
+}
+.cover-grid {
+  background-image:
+    linear-gradient(hsl(var(--ch) 92% 78% / 0.18) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--ch) 92% 78% / 0.18) 1px, transparent 1px),
+    radial-gradient(80% 70% at 18% 0%, hsl(var(--ch) 96% 72% / 0.35), transparent 66%),
+    linear-gradient(160deg, hsl(var(--ch) 56% 9%), hsl(var(--ch) 70% 25%) 70%, hsl(var(--ch) 84% 44%));
+  background-size: 22px 22px, 22px 22px, 100% 100%, 100% 100%;
+}
+.cover-image { background-image: none; background-color: #0a1926; }
+
+.cover-letter {
+  position: absolute;
+  right: 10px;
+  bottom: -18px;
+  font-family: var(--font-title);
+  font-size: 96px;
+  line-height: 1;
+  color: rgb(255 255 255 / 0.2);
+  text-shadow: 0 4px 24px rgb(0 0 0 / 0.28);
+  user-select: none;
+  pointer-events: none;
+}
+
+/* --------------------------------------------------------------------------
+   文章正文排版
+   -------------------------------------------------------------------------- */
+.prose-yuuu {
+  font-size: 16.2px;
+  line-height: 1.95;
+  color: var(--ink-2);
+}
+.prose-yuuu > *:first-child { margin-top: 0; }
+.prose-yuuu h2 {
+  margin: 2.2em 0 0.9em;
+  font-size: 24px;
+  color: var(--ink);
+  padding-left: 15px;
+  border-left: 4px solid var(--accent);
+  scroll-margin-top: 90px;
+}
+.prose-yuuu h3 {
+  margin: 1.9em 0 0.7em;
+  font-size: 19.5px;
+  color: var(--ink);
+  scroll-margin-top: 90px;
+}
+.prose-yuuu h3::before { content: '◈ '; color: var(--gold); font-size: 0.9em; }
+.prose-yuuu h4 { margin: 1.6em 0 0.6em; font-size: 17px; color: var(--ink); }
+.prose-yuuu p { margin: 0 0 1.2em; }
+.prose-yuuu strong { color: var(--ink); font-weight: 700; }
+.prose-yuuu em { color: var(--gold); font-style: italic; }
+.prose-yuuu a { color: var(--accent); border-bottom: 1px dashed var(--line-strong); }
+.prose-yuuu a:hover { color: var(--gold); }
+.prose-yuuu ul, .prose-yuuu ol { margin: 0 0 1.3em; padding-left: 1.5em; }
+.prose-yuuu ul { list-style: disc; }
+.prose-yuuu ol { list-style: decimal; }
+.prose-yuuu li { margin-bottom: 0.45em; }
+.prose-yuuu li::marker { color: var(--accent); }
+.prose-yuuu hr {
+  margin: 2.4em 0;
+  border: none;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--line-strong), transparent);
+}
+.prose-yuuu img { margin: 1.6em auto; border-radius: 12px; border: 1px solid var(--line); }
+.prose-yuuu blockquote {
+  margin: 1.7em 0;
+  padding: 18px 24px;
+  border-radius: 0 12px 12px 0;
+  border-left: 3px solid var(--gold);
+  background: linear-gradient(100deg, var(--hover), transparent 70%);
+  color: var(--ink);
+  font-family: var(--font-title);
+  font-style: italic;
+}
+.prose-yuuu blockquote p { margin: 0; }
+.prose-yuuu code {
+  font-size: 0.88em;
+  padding: 2.5px 7px;
+  border-radius: 6px;
+  background: var(--hover);
+  border: 1px solid var(--line);
+  color: var(--accent);
+}
+.prose-yuuu pre {
+  margin: 1.5em 0;
+  padding: 20px 22px;
+  border-radius: 12px;
+  overflow-x: auto;
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  line-height: 1.7;
+}
+.prose-yuuu pre code {
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 13.6px;
+}
+.prose-yuuu table {
+  width: 100%;
+  margin: 1.5em 0;
+  border-collapse: collapse;
+  font-size: 14.5px;
+  display: block;
+  overflow-x: auto;
+}
+.prose-yuuu th, .prose-yuuu td {
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  text-align: left;
+}
+.prose-yuuu th { background: var(--hover); color: var(--ink); font-weight: 600; }
+.prose-yuuu tr:hover td { background: var(--hover); }
+
+/* 任务列表 */
+.prose-yuuu input[type='checkbox'] {
+  margin-right: 8px;
+  accent-color: var(--accent);
+}
+
+/* Shiki 双主题 */
+html[data-theme='dark'] .astro-code,
+html[data-theme='dark'] .astro-code span {
+  color: var(--shiki-dark) !important;
+  background-color: var(--shiki-dark-bg) !important;
+}
+html[data-theme='dark'] .astro-code { background-color: var(--code-bg) !important; }
+
+/* --------------------------------------------------------------------------
+   Pagefind 结果高亮 —— 跟随主题
+   -------------------------------------------------------------------------- */
+mark, .pagefind-ui mark {
+  background: var(--hl-bg);
+  color: var(--ink);
+  border-radius: 4px;
+  padding: 0 4px;
+  box-shadow: 0 0 0 1px var(--hl-ring);
+}
+
+/* Pagefind UI 变量覆盖，让它长得像本站 */
+.yuuu-search {
+  --pagefind-ui-scale: 0.9;
+  --pagefind-ui-primary: var(--accent);
+  --pagefind-ui-text: var(--ink);
+  --pagefind-ui-background: var(--panel-2);
+  --pagefind-ui-border: var(--line);
+  --pagefind-ui-tag: var(--hover-strong);
+  --pagefind-ui-border-width: 1px;
+  --pagefind-ui-border-radius: 12px;
+  --pagefind-ui-font: var(--font-body);
+}
+.yuuu-search .pagefind-ui__search-input {
+  background: var(--bg-soft);
+  color: var(--ink);
+  border-radius: 99px;
+  height: 44px;
+}
+.yuuu-search .pagefind-ui__search-clear { color: var(--muted); }
+.yuuu-search .pagefind-ui__result {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+.yuuu-search .pagefind-ui__result-title a { color: var(--ink); }
+.yuuu-search .pagefind-ui__result-excerpt { color: var(--ink-2); font-size: 14px; }
+
+/* --------------------------------------------------------------------------
+   站内搜索面板（自定义渲染 Pagefind 结果）
+   -------------------------------------------------------------------------- */
+.search-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  z-index: 80;
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(64vh, 520px);
+  overflow-y: auto;
+  padding: 10px;
+  border-radius: 18px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel-2);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  box-shadow: var(--shadow);
+}
+.search-hit {
+  display: block;
+  padding: 11px 13px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  transition: background-color 0.18s ease, border-color 0.18s ease;
+}
+.search-hit:hover { background: var(--hover); border-color: var(--line); color: inherit; }
+.search-hit-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.search-hit-top b { font-size: 14px; color: var(--ink); font-weight: 600; }
+.search-hit-top i { font-style: normal; font-size: 11px; color: var(--muted); flex-shrink: 0; }
+.search-hit-excerpt { display: block; margin-top: 4px; font-size: 12.5px; line-height: 1.7; color: var(--ink-2); }
+.search-empty { margin: 0; padding: 16px 12px; font-size: 13px; color: var(--muted); text-align: center; }
+.search-empty code { padding: 1px 6px; border-radius: 5px; background: var(--hover); color: var(--accent); }
+
+/* 目录当前项 */
+#tocNav a.is-on {
+  border-left-color: var(--accent);
+  background: var(--hover);
+  color: var(--accent);
+}
+@media (max-width: 1023px) {
+  #toc { position: static; }
+  #tocNav { max-height: 240px; overflow-y: auto; }
+}
+
+/* --------------------------------------------------------------------------
+   阅读进度条：只动 transform（PRD 3.2）
+   -------------------------------------------------------------------------- */
+.progress-bar {
+  position: fixed;
+  inset-inline: 0;
+  top: 0;
+  height: 3px;
+  z-index: 90;
+  transform-origin: 0 50%;
+  transform: scaleX(0);
+  background: linear-gradient(90deg, var(--accent), var(--gold));
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* --------------------------------------------------------------------------
+   动效偏好
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .reveal { opacity: 1; transform: none; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+}

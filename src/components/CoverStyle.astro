@@ -1,0 +1,30 @@
+---
+interface Props {
+  style?: string;
+  hue?: number;
+  letter?: string;
+  image?: string;
+  alt?: string;
+  class?: string;
+}
+const {
+  style = 'wave',
+  hue = 202,
+  letter = '水',
+  image,
+  alt = '',
+  class: className = '',
+} = Astro.props;
+
+const base = image ? 'cover cover-image' : `cover cover-${style}`;
+---
+
+<div class={`${base} overflow-hidden ${className}`} style={`--ch:${hue}`}>
+  {
+    image ? (
+      <img src={image} alt={alt} loading="lazy" decoding="async" class="h-full w-full object-cover" />
+    ) : (
+      <span class="cover-letter">{letter}</span>
+    )
+  }
+</div>

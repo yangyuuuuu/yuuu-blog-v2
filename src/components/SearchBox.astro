@@ -1,0 +1,168 @@
+---
+/** 站内搜索：Pagefind 静态索引，索引与模块都等用户聚焦输入框后才加载，不阻塞首屏 */
+---
+
+<div class="relative w-full" id="searchRoot">
+  <label class="sr-only" for="yuuuSearch">搜索文章</label>
+  <div
+    class="flex h-11 items-center gap-2 rounded-full border border-line bg-soft px-3.5
+           transition-colors focus-within:border-accent"
+  >
+    <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" class="text-muted"></circle>
+      <path d="M20 20l-3.6-3.6" class="text-muted"></path>
+    </svg>
+    <input
+      id="yuuuSearch"
+      type="search"
+      placeholder="搜索文章…  Ctrl K"
+      autocomplete="off"
+      class="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-muted"
+    />
+    <button
+      id="yuuuSearchClear"
+      type="button"
+      aria-label="清空搜索"
+      hidden
+      class="shrink-0 text-lg leading-none text-muted transition-colors hover:text-gold"
+    >×</button>
+  </div>
+
+  <div class="search-panel fixed-layer" id="yuuuSearchPanel" hidden>
+    <div id="yuuuSearchResults"></div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    // Pagefind 的运行时是构建后才生成的，交给浏览器在运行时动态加载
+    var PF_URL = '/pagefind/pagefind.js';
+    var root = document.getElementById('searchRoot');
+    var input = document.getElementById('yuuuSearch');
+    var panel = document.getElementById('yuuuSearchPanel');
+    var out = document.getElementById('yuuuSearchResults');
+    var clearBtn = document.getElementById('yuuuSearchClear');
+    if (!root || !input || !panel || !out) return;
+
+    var mod = null, loading = false, timer = null, seq = 0, lastError = '';
+
+    function esc(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function load() {
+      if (mod) return Promise.resolve(mod);
+      if (loading) return Promise.resolve(null);
+      loading = true;
+      return import(/* @vite-ignore */ PF_URL)
+        .then(function (m) {
+          mod = m;
+          return m.options({ excerptLength: 26 })
+            .then(function () { return m.init(); })
+            .then(function () { return m; });
+        })
+        .catch(function (err) {
+          mod = null;
+          lastError = err && err.message ? err.message : String(err);
+          return null;
+        })
+        .then(function (m) { loading = false; return m; });
+    }
+
+    /**
+     * 索引加载失败时先探一下 /pagefind/ 到底在不在，再给准确的建议。
+     * 最常见的坑：跑 npm run dev 时 Astro 只服务源码，不提供 dist/，
+     * 这时候「先 build」是没用的，必须改用 npm run preview。
+     */
+    function explain() {
+      show('<p class="search-empty">搜索索引没能加载，正在诊断…</p>');
+      fetch('/pagefind/pagefind-entry.json', { cache: 'no-store' })
+        .then(function (res) {
+          if (res.ok) {
+            show('<p class="search-empty">索引文件是存在的，但运行时报错了。<br>错误：' +
+              esc(lastError || '未知') + '</p>');
+          } else {
+            show('<p class="search-empty">服务器上没有 <code>/pagefind/</code> 目录（HTTP ' + res.status + '）。<br>' +
+              '如果正在跑 <code>npm run dev</code>：Astro 开发服务器只服务源码，不提供构建产物。<br>' +
+              '正确顺序是先 <code>npm run build</code>，再用 <code>npm run preview</code> 打开。</p>');
+          }
+        })
+        .catch(function () {
+          show('<p class="search-empty">访问不到 <code>/pagefind/</code>。<br>' +
+            '请先 <code>npm run build</code>，再用 <code>npm run preview</code> 打开。</p>');
+        });
+    }
+
+    function show(html) {
+      out.innerHTML = html;
+      panel.hidden = false;
+      panel.classList.add('is-interactive');
+    }
+    function hide() {
+      panel.hidden = true;
+      panel.classList.remove('is-interactive');
+    }
+
+    function render(list, q) {
+      if (!list.length) {
+        show('<p class="search-empty">没有找到「' + esc(q) + '」相关的文章</p>');
+        return;
+      }
+      show(list.map(function (r) {
+        var title = (r.meta && r.meta.title) || r.url;
+        var date = (r.meta && r.meta.date) || '';
+        return '<a class="search-hit" href="' + esc(r.url) + '">' +
+          '<span class="search-hit-top"><b>' + esc(title) + '</b>' +
+          (date ? '<i>' + esc(date) + '</i>' : '') + '</span>' +
+          '<span class="search-hit-excerpt">' + (r.excerpt || '') + '</span>' +
+          '</a>';
+      }).join(''));
+    }
+
+    function run(q) {
+      q = (q || '').trim();
+      if (!q) { hide(); return; }
+      var mine = ++seq;
+      show('<p class="search-empty">搜索中…</p>');
+      load().then(function (pf) {
+        if (mine !== seq) return;
+        if (!pf) {
+          explain();
+          return;
+        }
+        return pf.search(q).then(function (res) {
+          return Promise.all(res.results.slice(0, 8).map(function (r) { return r.data(); }));
+        }).then(function (list) {
+          if (mine !== seq) return;
+          render(list, q);
+        });
+      }).catch(function () {
+        if (mine === seq) show('<p class="search-empty">搜索出错了，稍后重试</p>');
+      });
+    }
+
+    input.addEventListener('focus', function () { load(); });
+    input.addEventListener('input', function () {
+      clearBtn.hidden = !input.value;
+      clearTimeout(timer);
+      timer = setTimeout(function () { run(input.value); }, 140);
+    });
+    clearBtn.addEventListener('click', function () {
+      input.value = ''; clearBtn.hidden = true; hide(); input.focus();
+    });
+    document.addEventListener('click', function (e) {
+      if (!root.contains(e.target)) hide();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') hide();
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        input.focus();
+        input.select();
+      }
+    });
+  })();
+</script>

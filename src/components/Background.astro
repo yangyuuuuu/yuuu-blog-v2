@@ -1,0 +1,63 @@
+---
+interface Props {
+  /** 是否渲染海浪（只在首页开） */
+  waves?: boolean;
+  /** 气泡数量：全部写进 DOM，用 CSS 按屏宽裁掉多余的，零 JS */
+  bubbles?: number;
+  crest?: boolean;
+}
+const { waves = false, bubbles = 18, crest = false } = Astro.props;
+
+/** 固定的气泡参数，避免每次刷新跳动；用索引做伪随机 */
+const seeds = Array.from({ length: bubbles }, (_, i) => {
+  const r = (n: number) => ((Math.sin(i * 12.9898 + n * 78.233) * 43758.5453) % 1 + 1) % 1;
+  return {
+    left: +(r(1) * 100).toFixed(2),
+    size: +(6 + r(2) * 26).toFixed(1),
+    dur: +(15 + r(3) * 22).toFixed(1),
+    delay: +(-r(4) * 30).toFixed(1),
+  };
+});
+---
+
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+
+<div class="bubbles" id="bubbles" aria-hidden="true">
+  {
+    seeds.map((s) => (
+      <span
+        style={`left:${s.left}%;width:${s.size}px;height:${s.size}px;animation-duration:${s.dur}s;animation-delay:${s.delay}s`}
+      />
+    ))
+  }
+</div>
+
+{
+  crest && (
+    <div class="pointer-events-none fixed inset-x-0 top-24 z-0 flex justify-center opacity-[0.05]">
+      <svg viewBox="0 0 48 48" class="crest h-[42vw] max-h-[420px] w-[42vw] max-w-[420px]" aria-hidden="true">
+        <path d="M9 34 6.6 17.5l8.9 5.9L24 10.6l8.5 12.8 8.9-5.9L39 34z" fill="currentColor" class="text-accent" />
+        <rect x="9" y="34" width="30" height="6" rx="3" fill="currentColor" class="text-accent" />
+      </svg>
+    </div>
+  )
+}
+
+{
+  waves && (
+    <div class="waves" aria-hidden="true">
+      <svg viewBox="0 0 1440 120" preserveAspectRatio="none">
+        <path
+          d="M0,64 C240,110 420,10 720,56 C1020,102 1200,20 1440,58 L1440,120 L0,120 Z"
+          fill="rgb(126 200 227 / 0.10)"
+        />
+      </svg>
+      <svg viewBox="0 0 1440 120" preserveAspectRatio="none">
+        <path
+          d="M0,80 C220,40 460,116 720,72 C980,28 1220,100 1440,66 L1440,120 L0,120 Z"
+          fill="rgb(126 200 227 / 0.17)"
+        />
+      </svg>
+    </div>
+  )
+}

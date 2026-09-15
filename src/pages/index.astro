@@ -1,0 +1,214 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PostCard from '../components/PostCard.astro';
+import TagCloud from '../components/TagCloud.astro';
+import { getPosts, collectTags, collectCategories, PAGE_SIZE } from '../lib/posts';
+
+const posts = await getPosts();
+const tags = collectTags(posts);
+const categories = collectCategories(posts);
+const firstPage = posts.slice(0, PAGE_SIZE);
+const hasMore = posts.length > PAGE_SIZE;
+---
+
+<BaseLayout waves crest>
+  <section class="relative overflow-hidden px-5 pt-20 pb-24">
+    <div class="relative z-10 mx-auto max-w-[1140px] text-center">
+      <div class="mx-auto mb-6 h-[92px] w-[92px]">
+        <svg viewBox="0 0 48 48" class="crest h-full w-full" aria-hidden="true">
+          <path d="M9 34 6.6 17.5l8.9 5.9L24 10.6l8.5 12.8 8.9-5.9L39 34z" class="fill-accent"></path>
+          <circle cx="24" cy="27.5" r="2.4" class="fill-gold"></circle>
+          <rect x="9" y="34" width="30" height="6" rx="3" class="fill-gold"></rect>
+        </svg>
+      </div>
+
+      <p class="mb-3.5 text-[11.5px] tracking-[0.5em] text-accent uppercase">FONTAINE · 水色手记</p>
+      <h1
+        class="mb-4 font-title text-[clamp(28px,5.6vw,58px)] leading-tight tracking-wide
+               bg-gradient-to-r from-[var(--ink)] via-[var(--accent)] to-[var(--gold)]
+               bg-clip-text text-transparent"
+      >
+        在枫丹的午后<br />写下一页页温柔
+      </h1>
+      <p class="mx-auto mb-8 max-w-[620px] text-[16.5px] text-ink-2">
+        日记 · 随笔 · 技术分享 —— 一个属于 <b class="text-gold">yuuu</b> 的小小水之国度。
+      </p>
+
+      <div class="flex flex-wrap justify-center gap-3.5">
+        <a href="#latest" class="rounded-full bg-gradient-to-r from-[var(--accent-2)] to-[var(--accent)] px-7 py-3 text-[14.5px] font-bold text-[var(--accent-ink)] shadow-[0_12px_30px_-14px_var(--accent)] transition-transform hover:-translate-y-0.5">开始阅读</a>
+        <a href="/archive/" class="rounded-full border border-line-strong bg-surface px-7 py-3 text-[14.5px] text-ink backdrop-blur transition-colors hover:border-gold/60 hover:text-gold">全部归档</a>
+      </div>
+
+      <dl class="mt-12 flex flex-wrap justify-center gap-x-10 gap-y-4">
+        <div class="min-w-[72px] text-center">
+          <dt class="sr-only">文章数</dt>
+          <dd class="font-title text-[27px] leading-tight text-gold">{posts.length}</dd>
+          <dd class="text-xs tracking-[0.18em] text-muted">篇文章</dd>
+        </div>
+        <div class="min-w-[72px] text-center">
+          <dt class="sr-only">标签数</dt>
+          <dd class="font-title text-[27px] leading-tight text-gold">{tags.length}</dd>
+          <dd class="text-xs tracking-[0.18em] text-muted">个标签</dd>
+        </div>
+        <div class="min-w-[72px] text-center">
+          <dt class="sr-only">分类数</dt>
+          <dd class="font-title text-[27px] leading-tight text-gold">{categories.length}</dd>
+          <dd class="text-xs tracking-[0.18em] text-muted">个分类</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="mx-auto w-full max-w-[1140px] px-5 pb-24" id="latest">
+    <header class="mb-6 flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <p class="text-[11px] tracking-[0.42em] text-accent uppercase">LATEST</p>
+        <h2 class="mt-1.5 font-title text-[27px] tracking-wide">
+          最新手记 <span class="ml-2 text-[12.5px] font-normal text-muted" id="resultCount">共 {posts.length} 篇</span>
+        </h2>
+      </div>
+      <a href="/archive/" class="text-[13.5px] tracking-wide text-muted transition-colors hover:text-gold">全部归档 →</a>
+    </header>
+
+    <div
+      class="relative z-30 flex flex-wrap items-center gap-2.5 rounded-card border border-line bg-surface p-4 backdrop-blur-md t-surface t-backdrop"
+    >
+      <span class="text-xs tracking-[0.2em] text-muted">分类</span>
+      <button
+        type="button"
+        data-cat=""
+        class="cat-chip rounded-full border border-accent bg-[var(--hover-strong)] px-4 py-2 text-[13.5px] font-semibold text-ink"
+      >全部</button>
+      {
+        categories.map(({ category, count }) => (
+          <button
+            type="button"
+            data-cat={category}
+            class="cat-chip rounded-full border border-line px-4 py-2 text-[13.5px] text-muted transition-colors hover:border-line-strong hover:bg-[var(--hover)] hover:text-ink"
+          >{category} <i class="not-italic opacity-55">{count}</i></button>
+        ))
+      }
+    </div>
+
+    <div class="mt-4 mb-6">
+      <TagCloud tags={tags} />
+    </div>
+
+    <div class="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3" id="postGrid">
+      {firstPage.map((post) => <PostCard post={post} />)}
+    </div>
+
+    <p class="hidden py-16 text-center text-[15px] text-muted" id="emptyState">没有符合条件的文章。</p>
+
+    <div class="mt-10 text-center">
+      <button
+        id="loadMore"
+        type="button"
+        data-next={hasMore ? 2 : 0}
+        hidden={!hasMore}
+        class="rounded-full border border-line-strong bg-surface px-7 py-3 text-[14.5px] text-ink backdrop-blur transition-colors hover:border-gold/60 hover:text-gold"
+      >加载更多</button>
+      <p class="mt-3 text-xs text-muted" id="loadHint">
+        {hasMore ? `已显示最近 ${firstPage.length} 篇` : '已经到底啦'}
+      </p>
+    </div>
+  </section>
+
+  <script>
+    (function () {
+      var grid = document.getElementById('postGrid');
+      var btn = document.getElementById('loadMore');
+      var hint = document.getElementById('loadHint');
+      var empty = document.getElementById('emptyState');
+      var countEl = document.getElementById('resultCount');
+      var chips = [].slice.call(document.querySelectorAll('.cat-chip'));
+      if (!grid) return;
+
+      var next = btn ? Number(btn.dataset.next || 0) : 0;
+      var busy = false;
+      var filter = '';
+      var loadedAll = !next;
+
+      function revealNew(nodes) {
+        requestAnimationFrame(function () {
+          nodes.forEach(function (el) { el.classList.add('is-in'); });
+        });
+      }
+
+      function applyFilter() {
+        var cards = [].slice.call(grid.children);
+        var shown = 0;
+        cards.forEach(function (el) {
+          var ok = !filter || el.dataset.category === filter;
+          el.hidden = !ok;
+          if (ok) shown++;
+        });
+        if (empty) empty.hidden = shown !== 0;
+        if (countEl) {
+          countEl.textContent = filter ? `${shown} 篇 · ${filter}` : `共 ${cards.length} 篇`;
+        }
+        if (hint) {
+          hint.textContent = loadedAll ? (filter ? '筛选完成' : '已经到底啦') : '还有更多，点右侧按钮继续加载';
+        }
+      }
+
+      async function loadAll() {
+        while (next) {
+          var res = await fetch('/api/posts/' + next + '.json').then(function (r) { return r.json(); });
+          var box = document.createElement('div');
+          box.innerHTML = res.html;
+          var nodes = [].slice.call(box.children);
+          nodes.forEach(function (el) { grid.appendChild(el); });
+          revealNew(nodes);
+          next = res.next || 0;
+        }
+        loadedAll = true;
+        if (btn) btn.hidden = true;
+      }
+
+      chips.forEach(function (chip) {
+        chip.addEventListener('click', function () {
+          filter = chip.dataset.cat || '';
+          chips.forEach(function (c) {
+            var on = c === chip;
+            c.classList.toggle('bg-[var(--hover-strong)]', on);
+            c.classList.toggle('border-accent', on);
+            c.classList.toggle('font-semibold', on);
+            c.classList.toggle('text-ink', on);
+            c.classList.toggle('text-muted', !on);
+          });
+          if (filter && !loadedAll) { loadAll().then(applyFilter); } else { applyFilter(); }
+        });
+      });
+
+      if (btn) {
+        btn.addEventListener('click', function () {
+          if (busy || !next) return;
+          busy = true;
+          var label = btn.textContent;
+          btn.textContent = '加载中…';
+          fetch('/api/posts/' + next + '.json')
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+              var box = document.createElement('div');
+              box.innerHTML = res.html;
+              var nodes = [].slice.call(box.children);
+              nodes.forEach(function (el) { grid.appendChild(el); });
+              revealNew(nodes);
+              next = res.next || 0;
+              btn.dataset.next = next;
+              if (!next) { btn.hidden = true; loadedAll = true; }
+              if (hint) hint.textContent = loadedAll ? '已经到底啦' : '已显示最近 ' + grid.children.length + ' 篇';
+              btn.textContent = label;
+              busy = false;
+              applyFilter();
+            })
+            .catch(function () {
+              btn.textContent = '加载失败，点击重试';
+              busy = false;
+            });
+        });
+      }
+    })();
+  </script>
+</BaseLayout>

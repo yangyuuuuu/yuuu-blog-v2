@@ -1,0 +1,32 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getPosts, collectTags } from '../../lib/posts';
+
+const posts = await getPosts();
+const tags = collectTags(posts);
+const max = Math.max(1, ...tags.map((t) => t.count));
+---
+
+<BaseLayout title="标签" description="按标签浏览全部文章">
+  <section class="mx-auto w-full max-w-[1140px] px-5 pt-14 pb-8">
+    <p class="text-[11px] tracking-[0.42em] text-accent uppercase">TAGS</p>
+    <h1 class="mt-2.5 mb-3 font-title text-[clamp(26px,4.2vw,42px)] tracking-wide text-ink">标签云</h1>
+    <p class="text-ink-2">共 <b class="text-gold">{tags.length}</b> 个标签，字号越大表示文章越多。</p>
+  </section>
+
+  <section class="mx-auto w-full max-w-[1140px] px-5 pb-24">
+    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-3">
+      {
+        tags.map(({ tag, count }) => (
+          <a
+            href={`/tags/${encodeURIComponent(tag)}/`}
+            class="rounded-full border border-dashed border-line px-4 py-1.5 text-muted transition-colors hover:border-accent hover:bg-[var(--hover)] hover:text-accent"
+            style={`font-size: ${(0.85 + (count / max) * 0.85).toFixed(2)}rem`}
+          >
+            #{tag} <i class="not-italic opacity-55">{count}</i>
+          </a>
+        ))
+      }
+    </div>
+  </section>
+</BaseLayout>

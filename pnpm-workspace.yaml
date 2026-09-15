@@ -1,0 +1,9 @@
+# pnpm 10+ 出于安全默认不执行依赖的构建脚本。
+# esbuild 与 sharp 需要它来准备平台二进制，这里显式放行，
+# 否则 pnpm install 会以 ERR_PNPM_IGNORED_BUILDS 退出（exit 1），
+# 在 Cloudflare Pages 上会直接导致安装步骤失败。
+#
+# 如果你不用 pnpm，这个文件不影响 npm / yarn。
+allowBuilds:
+  esbuild: true
+  sharp: true

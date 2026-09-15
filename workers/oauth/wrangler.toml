@@ -1,0 +1,16 @@
+name = "yuuu-oauth"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# ▼ 改成你为 OAuth 准备的子域名（在 Cloudflare 里为该 Worker 配置 Custom Domain）
+# routes = [
+#   { pattern = "oauth.your-domain.com", custom_domain = true }
+# ]
+
+[vars]
+# ▼ 改成你的博客正式域名，避免被别的站点拿去用
+ALLOWED_ORIGIN = "https://yuuu.pages.dev"
+
+# 密钥不要写在这里，用命令写入：
+#   wrangler secret put GITHUB_CLIENT_ID
+#   wrangler secret put GITHUB_CLIENT_SECRET

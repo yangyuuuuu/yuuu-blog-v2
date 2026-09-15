@@ -1,0 +1,36 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PostCard from '../../components/PostCard.astro';
+import TagCloud from '../../components/TagCloud.astro';
+import { getPosts, collectTags } from '../../lib/posts';
+
+export async function getStaticPaths() {
+  const posts = await getPosts();
+  const tags = collectTags(posts);
+  return tags.map(({ tag }) => ({
+    params: { tag },
+    props: { tag, posts: posts.filter((p) => p.data.tags.includes(tag)) },
+  }));
+}
+
+const { tag, posts } = Astro.props;
+const allTags = collectTags(await getPosts());
+---
+
+<BaseLayout title={`#${tag}`} description={`标签 ${tag} 下的全部文章`}>
+  <section class="mx-auto w-full max-w-[1140px] px-5 pt-14 pb-8">
+    <p class="text-[11px] tracking-[0.42em] text-accent uppercase">TAG</p>
+    <h1 class="mt-2.5 mb-3 font-title text-[clamp(26px,4.2vw,42px)] tracking-wide text-ink">#{tag}</h1>
+    <p class="text-ink-2">共 <b class="text-gold">{posts.length}</b> 篇。</p>
+  </section>
+
+  <section class="mx-auto w-full max-w-[1140px] px-5 pb-10">
+    <div class="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+      {posts.map((post) => <PostCard post={post} />)}
+    </div>
+  </section>
+
+  <section class="mx-auto w-full max-w-[1140px] px-5 pb-24">
+    <TagCloud tags={allTags} active={tag} class="border-t border-dashed border-line pt-6" />
+  </section>
+</BaseLayout>

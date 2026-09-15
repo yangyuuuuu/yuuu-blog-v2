@@ -1,0 +1,142 @@
+---
+import '../styles/global.css';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import Background from '../components/Background.astro';
+import { SITE_TITLE, SITE_DESC, CF_BEACON_TOKEN } from '../lib/site';
+
+interface Props {
+  title?: string;
+  description?: string;
+  image?: string;
+  type?: 'website' | 'article';
+  publishedTime?: Date;
+  modifiedTime?: Date;
+  noindex?: boolean;
+  waves?: boolean;
+  crest?: boolean;
+}
+
+const {
+  title,
+  description = SITE_DESC,
+  image = '/og-default.png',
+  type = 'website',
+  publishedTime,
+  modifiedTime,
+  noindex = false,
+  waves = false,
+  crest = false,
+} = Astro.props;
+
+const pageTitle = title ? `${title} · ${SITE_TITLE}` : `${SITE_TITLE} · 在枫丹的午后写点什么`;
+const site = import.meta.env.SITE ?? 'https://yuuu.pages.dev';
+const canonical = new URL(Astro.url.pathname, site).href;
+const ogImage = new URL(image, site).href;
+---
+
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate" type="application/rss+xml" title={SITE_TITLE} href="/rss.xml" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="theme-color" content="#0d1b2a" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f5faff" media="(prefers-color-scheme: light)" />
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+
+    <meta property="og:type" content={type} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:site_name" content={SITE_TITLE} />
+    <meta name="twitter:card" content="summary_large_image" />
+    {publishedTime && <meta property="article:published_time" content={publishedTime.toISOString()} />}
+    {modifiedTime && <meta property="article:modified_time" content={modifiedTime.toISOString()} />}
+
+    {/* 主题必须在首屏绘制前应用，否则会闪一下浅色 */}
+    <script is:inline>
+      (function () {
+        try {
+          var t = localStorage.getItem('yuuu-theme');
+          if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+
+  <body class="min-h-screen">
+    <a
+      href="#main"
+      class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-100 focus:rounded-lg focus:bg-surface-2 focus:px-4 focus:py-2 focus:text-ink"
+    >跳到正文</a>
+
+    <Background waves={waves} crest={crest} />
+
+    <div class="relative z-10 flex min-h-screen flex-col">
+      <Header />
+      <main id="main" class="flex-1">
+        <slot />
+      </main>
+      <Footer />
+    </div>
+
+    <script is:inline>
+      /* 主题切换：只改 data-theme，颜色过渡交给 CSS */
+      (function () {
+        var btn = document.getElementById('themeToggle');
+        var icon = document.getElementById('themeIcon');
+        function sync() {
+          var light = document.documentElement.getAttribute('data-theme') === 'light';
+          if (icon) icon.textContent = light ? '☀' : '☾';
+          if (btn) btn.title = light ? '切换到深色主题' : '切换到浅色主题';
+        }
+        sync();
+        if (btn) {
+          btn.addEventListener('click', function () {
+            var root = document.documentElement;
+            var next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+            root.classList.add('theme-switching');
+            root.setAttribute('data-theme', next);
+            try { localStorage.setItem('yuuu-theme', next); } catch (e) {}
+            sync();
+            setTimeout(function () { root.classList.remove('theme-switching'); }, 520);
+          });
+        }
+      })();
+
+      /* 滚动淡入：IntersectionObserver 只加类名，动画交给 CSS */
+      (function () {
+        var items = document.querySelectorAll('.reveal');
+        if (!items.length) return;
+        if (!('IntersectionObserver' in window)) {
+          items.forEach(function (el) { el.classList.add('is-in'); });
+          return;
+        }
+        var io = new IntersectionObserver(function (entries) {
+          entries.forEach(function (en) {
+            if (en.isIntersecting) { en.target.classList.add('is-in'); io.unobserve(en.target); }
+          });
+        }, { rootMargin: '0px 0px -6% 0px', threshold: 0.05 });
+        items.forEach(function (el) { io.observe(el); });
+      })();
+    </script>
+
+    {
+      CF_BEACON_TOKEN && (
+        <script
+          is:inline
+          defer
+          src="https://static.cloudflareinsights.com/beacon.min.js"
+          data-cf-beacon={JSON.stringify({ token: CF_BEACON_TOKEN })}
+        />
+      )
+    }
+  </body>
+</html>

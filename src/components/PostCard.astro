@@ -1,0 +1,62 @@
+---
+import CoverStyle from './CoverStyle.astro';
+import { formatDate, formatShort } from '../lib/format';
+import {
+  coverStyleOf, coverHueOf, coverLetterOf, summaryOf, readingOf, urlOf, type Post,
+} from '../lib/posts';
+
+interface Props {
+  post: Post;
+}
+const { post } = Astro.props;
+const d = post.data;
+const href = urlOf(post);
+const isNew = Date.now() - d.date.getTime() < 1000 * 60 * 60 * 24 * 14;
+---
+
+<article
+  class="reveal group relative flex flex-col overflow-hidden rounded-card border border-line
+         bg-surface t-surface t-backdrop backdrop-blur-md shadow-[var(--shadow-soft)]
+         transition-[transform,border-color,box-shadow] duration-300
+         hover:-translate-y-1.5 hover:border-line-strong"
+>
+  <a href={href} aria-label={d.title} class="block">
+    <CoverStyle
+      style={coverStyleOf(post)}
+      hue={coverHueOf(post)}
+      letter={coverLetterOf(post)}
+      image={d.cover}
+      alt={d.title}
+      class="h-[158px] transition-transform duration-500 group-hover:scale-[1.03]"
+    />
+  </a>
+
+  <div class="flex flex-1 flex-col p-5">
+    <div class="mb-2.5 flex flex-wrap items-center gap-2 text-xs text-muted">
+      {d.pinned && <span class="rounded-full border border-gold/50 bg-gold/10 px-2.5 py-0.5 text-gold">置顶</span>}
+      <span class="rounded-full border border-line-strong bg-[var(--hover)] px-2.5 py-0.5 text-accent">{d.category}</span>
+      {isNew && <span class="rounded-full border border-accent/40 px-2.5 py-0.5 text-accent">新</span>}
+      <time datetime={formatShort(d.date)}>{formatDate(d.date)}</time>
+    </div>
+
+    <h3 class="mb-2.5 font-title text-[19.5px] leading-snug">
+      <a href={href} class="text-ink transition-colors hover:text-accent">{d.title}</a>
+    </h3>
+
+    <p class="mb-4 line-clamp-3 text-sm leading-relaxed text-ink-2">{summaryOf(post)}</p>
+
+    <div class="mt-auto flex items-center justify-between gap-3 border-t border-dashed border-line pt-3.5 text-xs text-muted">
+      <span class="flex flex-wrap gap-2">
+        {d.tags.slice(0, 3).map((t) => <a href={`/tags/${encodeURIComponent(t)}/`} class="text-accent/85 hover:text-gold">#{t}</a>)}
+        {d.tags.length === 0 && <span>—</span>}
+      </span>
+      <span class="shrink-0 text-gold">{readingOf(post)} 分钟 →</span>
+    </div>
+
+    {
+      d.updated && (
+        <p class="mt-2 text-[11px] text-muted/80">最后修改：{formatDate(d.updated)}</p>
+      )
+    }
+  </div>
+</article>

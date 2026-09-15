@@ -1,0 +1,21 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="页面不见了" description="404" noindex>
+  <section class="mx-auto flex min-h-[56vh] w-full max-w-[640px] flex-col items-center justify-center px-5 text-center">
+    <div class="mb-6 h-20 w-20 opacity-70">
+      <svg viewBox="0 0 48 48" class="crest h-full w-full" aria-hidden="true">
+        <path d="M9 34 6.6 17.5l8.9 5.9L24 10.6l8.5 12.8 8.9-5.9L39 34z" class="fill-accent"></path>
+        <rect x="9" y="34" width="30" height="6" rx="3" class="fill-gold"></rect>
+      </svg>
+    </div>
+    <p class="mb-2 font-title text-[64px] leading-none text-gold">404</p>
+    <h1 class="mb-3 font-title text-2xl text-ink">这一页被潮水带走了</h1>
+    <p class="mb-8 text-ink-2">你访问的地址不存在，或者文章已经被移动。</p>
+    <div class="flex flex-wrap justify-center gap-3">
+      <a href="/" class="rounded-full bg-gradient-to-r from-[var(--accent-2)] to-[var(--accent)] px-6 py-2.5 text-sm font-bold text-[var(--accent-ink)]">回到首页</a>
+      <a href="/archive/" class="rounded-full border border-line-strong px-6 py-2.5 text-sm text-ink transition-colors hover:border-gold/60 hover:text-gold">看看归档</a>
+    </div>
+  </section>
+</BaseLayout>

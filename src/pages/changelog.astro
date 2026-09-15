@@ -1,0 +1,23 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+// 直接导入根目录的 CHANGELOG.md，构建时由 Astro 的 Markdown 管线渲染
+import Changelog from '../../CHANGELOG.md';
+---
+
+<BaseLayout title="更新历史" description="这个小站的每一次改动">
+  <section class="mx-auto w-full max-w-[1140px] px-5 pt-14 pb-8">
+    <p class="text-[11px] tracking-[0.42em] text-accent uppercase">CHANGELOG</p>
+    <h1 class="mt-2.5 mb-3 font-title text-[clamp(26px,4.2vw,42px)] tracking-wide text-ink">更新历史</h1>
+    <p class="max-w-[640px] text-ink-2">
+      内容来自仓库根目录的 <code class="rounded bg-[var(--hover)] px-1.5 py-0.5 text-accent">CHANGELOG.md</code>，构建时渲染。
+    </p>
+  </section>
+
+  <section class="mx-auto w-full max-w-[900px] px-5 pb-24">
+    <article class="t-surface t-backdrop rounded-card border border-line bg-surface p-7 backdrop-blur-md shadow-[var(--shadow)] sm:p-11">
+      <div class="prose-yuuu changelog-body">
+        <Changelog />
+      </div>
+    </article>
+  </section>
+</BaseLayout>

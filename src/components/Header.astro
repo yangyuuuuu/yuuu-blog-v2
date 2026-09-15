@@ -1,0 +1,105 @@
+---
+import SearchBox from './SearchBox.astro';
+import ThemeToggle from './ThemeToggle.astro';
+
+const NAV = [
+  { href: '/', label: '首页' },
+  { href: '/archive/', label: '归档' },
+  { href: '/tags/', label: '标签' },
+  { href: '/about/', label: '关于' },
+  { href: '/changelog/', label: '更新' },
+];
+
+const path = Astro.url.pathname;
+const isActive = (href: string) => (href === '/' ? path === '/' : path.startsWith(href));
+---
+
+<header
+  class="sticky top-0 z-60 border-b border-line backdrop-blur-xl backdrop-saturate-150 t-backdrop"
+  style="background: var(--header-bg)"
+>
+  <div class="mx-auto flex h-[68px] w-full max-w-[1140px] items-center gap-4 px-5">
+    <a href="/" class="flex shrink-0 items-center gap-3 text-ink">
+      <span
+        class="grid h-10 w-10 place-items-center rounded-xl border border-line-strong"
+        style="background: var(--hover)"
+      >
+        <svg viewBox="0 0 48 48" class="h-[26px] w-[26px]" aria-hidden="true">
+          <path d="M9 34 6.6 17.5l8.9 5.9L24 10.6l8.5 12.8 8.9-5.9L39 34z" class="fill-accent"></path>
+          <rect x="9" y="34" width="30" height="6" rx="3" class="fill-gold"></rect>
+        </svg>
+      </span>
+      <span class="flex flex-col leading-none">
+        <b class="font-title text-lg tracking-[0.14em]">yuuu</b>
+        <i class="mt-0.5 text-[10px] not-italic tracking-[0.3em] text-muted">FONTAINE</i>
+      </span>
+    </a>
+
+    <nav class="ml-auto hidden items-center gap-1 lg:flex" id="mainNav" aria-label="主导航">
+      {
+        NAV.map((item) => (
+          <a
+            href={item.href}
+            aria-current={isActive(item.href) ? 'page' : undefined}
+            class:list={[
+              'rounded-full px-4 py-2 text-[14.5px] tracking-wide transition-colors',
+              isActive(item.href)
+                ? 'border border-line-strong bg-[var(--hover-strong)] font-semibold text-ink'
+                : 'border border-transparent text-muted hover:bg-[var(--hover)] hover:text-ink',
+            ]}
+          >
+            {item.label}
+          </a>
+        ))
+      }
+    </nav>
+
+    <div class="relative ml-auto w-full max-w-[240px] lg:ml-2">
+      <SearchBox />
+    </div>
+
+    <ThemeToggle />
+
+    <button
+      id="navToggle"
+      type="button"
+      aria-label="打开菜单"
+      aria-expanded="false"
+      class="grid h-10 w-10 shrink-0 place-items-center rounded-[11px] border border-line bg-surface
+             text-muted transition-colors hover:border-gold/60 hover:text-gold lg:hidden"
+    >☰</button>
+  </div>
+
+  <nav id="mobileNav" hidden class="border-t border-line px-5 py-3 lg:hidden" aria-label="移动导航"
+       style="background: var(--panel-2)">
+    <div class="flex flex-col gap-1">
+      {
+        NAV.map((item) => (
+          <a
+            href={item.href}
+            class:list={[
+              'flex min-h-[44px] items-center rounded-xl px-4 text-[15px] transition-colors',
+              isActive(item.href)
+                ? 'bg-[var(--hover-strong)] font-semibold text-ink'
+                : 'text-muted hover:bg-[var(--hover)] hover:text-ink',
+            ]}
+          >
+            {item.label}
+          </a>
+        ))
+      }
+    </div>
+  </nav>
+</header>
+
+<script is:inline>
+  (function () {
+    var btn = document.getElementById('navToggle');
+    var nav = document.getElementById('mobileNav');
+    if (!btn || !nav) return;
+    btn.addEventListener('click', function () {
+      nav.hidden = !nav.hidden;
+      btn.setAttribute('aria-expanded', nav.hidden ? 'false' : 'true');
+    });
+  })();
+</script>

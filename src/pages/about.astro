@@ -1,0 +1,68 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getPosts } from '../lib/posts';
+
+const posts = await getPosts();
+---
+
+<BaseLayout title="关于" description="关于 yuuu 与这个小站">
+  <section class="mx-auto w-full max-w-[1140px] px-5 pt-14 pb-8">
+    <p class="text-[11px] tracking-[0.42em] text-accent uppercase">ABOUT</p>
+    <h1 class="mt-2.5 mb-3 font-title text-[clamp(26px,4.2vw,42px)] tracking-wide text-ink">关于</h1>
+    <p class="max-w-[640px] text-ink-2">一座由马克笔与潮汐搭成的小屋。</p>
+  </section>
+
+  <section class="mx-auto w-full max-w-[900px] px-5 pb-24">
+    <article class="t-surface t-backdrop rounded-card border border-line bg-surface p-7 backdrop-blur-md shadow-[var(--shadow)] sm:p-11">
+      <div class="prose-yuuu">
+        <h2>这里是什么</h2>
+        <p>
+          <b>yuuu</b> 的个人博客，主题取自《原神》枫丹的水神芙宁娜 —— 潮水、歌剧院、永不落幕的下午茶。
+          写两件事：<b>记下生活</b>，和 <b>分享技术</b>。
+        </p>
+
+        <h2>技术栈</h2>
+        <table>
+          <thead>
+            <tr><th>层</th><th>选型</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>框架</td><td>Astro（静态输出，默认零 JS）</td></tr>
+            <tr><td>内容</td><td>Astro Content Collections（frontmatter 强校验）</td></tr>
+            <tr><td>样式</td><td>Tailwind CSS 4（主题变量走 CSS custom properties）</td></tr>
+            <tr><td>动画</td><td>View Transitions API + 原生 CSS</td></tr>
+            <tr><td>搜索</td><td>Pagefind（构建时生成静态索引，按需加载）</td></tr>
+            <tr><td>部署</td><td>Cloudflare Pages</td></tr>
+            <tr><td>写作</td><td>Sveltia CMS（<code>/admin</code>）+ GitHub OAuth</td></tr>
+          </tbody>
+        </table>
+
+        <h2>性能约定</h2>
+        <ul>
+          <li>首屏 JS 目标 &lt; 10KB（Astro 默认零 JS，交互脚本全部内联且极小）</li>
+          <li>只动 <code>transform</code> 和 <code>opacity</code>，不碰 <code>filter</code> / <code>box-shadow</code> / <code>width</code></li>
+          <li>搜索索引与第三方统计脚本都异步加载，不阻塞首屏</li>
+          <li>封面全部是 CSS 渐变，零图片请求</li>
+        </ul>
+
+        <h2>现在有多少内容</h2>
+        <p>目前站内共有 <b>{posts.length}</b> 篇文章。</p>
+
+        <h2>联系</h2>
+        <ul>
+          <li>GitHub：<a href="https://github.com/" rel="me noopener" target="_blank">@yuuu</a></li>
+          <li>RSS：<a href="/rss.xml">/rss.xml</a></li>
+          <li>更新历史：<a href="/changelog/">/changelog</a></li>
+        </ul>
+
+        <blockquote>
+          <p>「审判已经结束。现在，请为我献上掌声。」</p>
+        </blockquote>
+
+        <p class="text-[13.5px] text-muted">
+          本站为个人学习与非商业用途，与游戏官方无关。
+        </p>
+      </div>
+    </article>
+  </section>
+</BaseLayout>

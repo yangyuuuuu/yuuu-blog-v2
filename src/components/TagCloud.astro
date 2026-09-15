@@ -1,0 +1,28 @@
+---
+interface Props {
+  tags: { tag: string; count: number }[];
+  active?: string;
+  class?: string;
+}
+const { tags, active, class: className = '' } = Astro.props;
+---
+
+<div class={`flex flex-wrap items-center gap-2 ${className}`}>
+  <span class="text-xs tracking-[0.2em] text-muted">标签</span>
+  {
+    tags.map(({ tag, count }) => (
+      <a
+        href={`/tags/${encodeURIComponent(tag)}/`}
+        class:list={[
+          'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors',
+          active === tag
+            ? 'border-accent bg-accent font-semibold text-[var(--accent-ink)]'
+            : 'border-dashed border-line text-muted hover:border-line-strong hover:bg-[var(--hover)] hover:text-ink',
+        ]}
+      >
+        #{tag}
+        <i class="not-italic opacity-55">{count}</i>
+      </a>
+    ))
+  }
+</div>

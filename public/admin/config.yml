@@ -1,0 +1,80 @@
+# ==========================================================================
+#  Sveltia CMS 配置（格式与 Decap / Netlify CMS 兼容）
+#  部署前必须改的三处，见 README「写作与同步」章节。
+# ==========================================================================
+
+backend:
+  name: github
+  # ▼ 改成你的仓库
+  repo: your-name/yuuu-blog-v2
+  branch: main
+  # ▼ 改成你部署好的 OAuth Worker 地址（见 workers/oauth）
+  base_url: https://oauth.your-domain.com
+  commit_messages:
+    create: "post: 新建《{{slug}}》"
+    update: "post: 更新《{{slug}}》"
+    delete: "post: 删除《{{slug}}》"
+    uploadMedia: "media: 上传 {{path}}"
+    deleteMedia: "media: 删除 {{path}}"
+
+# ▼ 改成你的正式域名
+site_url: https://yuuu.pages.dev
+display_url: https://yuuu.pages.dev
+logo_url: https://yuuu.pages.dev/favicon.svg
+
+locale: zh_Hans
+publish_mode: simple
+
+media_folder: public/uploads
+public_folder: /uploads
+
+collections:
+  - name: posts
+    label: 文章
+    label_singular: 一篇文章
+    description: 保存后会提交到 GitHub，Cloudflare Pages 自动重建
+    folder: src/content/posts
+    create: true
+    delete: true
+    slug: "{{year}}-{{month}}-{{day}}-{{slug}}"
+    extension: md
+    format: frontmatter
+    sortable_fields: [date, title, updated]
+    view_filters:
+      - label: 草稿
+        field: draft
+        pattern: true
+      - label: 置顶
+        field: pinned
+        pattern: true
+    fields:
+      - { name: title, label: 标题, widget: string }
+      - { name: date, label: 创建时间, widget: datetime, date_format: "YYYY-MM-DD", time_format: false, picker_utc: true }
+      - { name: updated, label: 最后修改, widget: datetime, date_format: "YYYY-MM-DD", time_format: false, required: false }
+      - name: category
+        label: 分类
+        widget: select
+        options: [日记, 技术, 随笔]
+        default: 随笔
+      - { name: tags, label: 标签, widget: list, default: [], hint: "回车添加一个标签" }
+      - { name: summary, label: 摘要, widget: text, required: false, hint: "留空则自动截取正文开头" }
+      - { name: cover, label: 封面图, widget: image, required: false, choose_url: true, hint: "留空则使用 CSS 渐变封面" }
+      - name: coverStyle
+        label: 封面样式
+        widget: select
+        required: false
+        hint: "留空则按分类自动挑选"
+        options:
+          - { label: "潮汐 wave", value: wave }
+          - { label: "星云 nebula", value: nebula }
+          - { label: "王冠 crown", value: crown }
+          - { label: "歌剧院 opera", value: opera }
+          - { label: "极光 aurora", value: aurora }
+          - { label: "星海 starry", value: starry }
+          - { label: "气泡 bubble", value: bubble }
+          - { label: "方格 grid", value: grid }
+          - { label: "自定义图片 image", value: image }
+      - { name: coverHue, label: 封面色相 (0-359), widget: number, required: false, min: 0, max: 359, value_type: int, hint: "202 水蓝 / 38 暖金 / 266 紫罗兰 / 150 薄荷绿" }
+      - { name: pinned, label: 置顶, widget: boolean, default: false }
+      - { name: draft, label: 草稿, widget: boolean, default: false, hint: "打开后构建时不输出这一篇" }
+      - { name: body, label: 正文, widget: markdown }
