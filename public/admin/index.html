@@ -16,62 +16,64 @@
     <!--
       Sveltia CMS（Decap/Netlify CMS 的现代替代品，配置格式兼容）。配置在同目录 config.yml。
 
-      ⚠️ 从 CDN 加载，不要改回自托管：
-        自托管 = 浏览器要从本站下一个 1.9 MB 的文件，在「挂代理 / 跨境」的网络上
-        经常被中途掐断（实测 curl 报 schannel: server closed abruptly），拿到半截 JS
-        就解析失败 → 整页白屏且没有任何提示。CDN 对大文件分发专门优化过。
-      版本锁死 0.213.2：CDN 上永远拿同一个文件，不会被新版悄悄改坏配置。
-      判断「起来了没」的标记：<html> 上会出现 data-auto-theming 属性。
+      ⚠️ 加载策略（改动前先读完，这些都是踩出来的）：
+        1. 不从本站自托管 —— 那是个 1.9 MB 的文件，在「挂代理 / 跨境」的网络上
+           经常被中途掐断（实测 curl: schannel: server closed abruptly），拿到半截 JS
+           就解析失败 → 整页白屏且没有提示。
+        2. 必须**重试**：这类网络到 CDN 的连接是时好时坏的 ——
+           同一个 URL，一次成功、一次失败，实测复现过。单次尝试必然经常挂。
+        3. 两个 CDN 轮换（jsDelivr / unpkg），最多试 5 次，每次间隔递增。
+        4. 版本锁死 0.213.2：CDN 上永远拿同一个文件，不会被新版悄悄改坏配置。
+      判断「起来了没」：<html> 上会出现 data-auto-theming 属性。
     -->
     <noscript>这个后台需要 JavaScript。</noscript>
 
     <div id="cmsStatus" style="max-width:640px;margin:80px auto;padding:0 20px;font:14px/1.8 -apple-system,'PingFang SC','Microsoft YaHei',sans-serif;color:#556">
       <b style="color:#223">后台正在加载…</b>
-      <p>状态：正在连接脚本源（jsDelivr / unpkg）</p>
+      <p id="cmsNote">状态：准备请求脚本</p>
     </div>
 
     <script>
-      /*
-       * 两个 CDN 同时竞速（谁先下来谁生效；Sveltia 重复执行会自行退出）。
-       * 不用「A 失败再换 B」：A 慢的话用户要干等十几秒。
-       * 这里把过程写在页面上 —— 出问题时一眼就能看出卡在哪，而不是一片沉默。
-       */
       (function () {
-        var status = document.getElementById('cmsStatus');
-        var box = status.querySelector('p');
-        var sources = [
-          'https://cdn.jsdelivr.net/npm/@sveltia/cms@0.213.2/dist/sveltia-cms.mjs',
-          'https://unpkg.com/@sveltia/cms@0.213.2/dist/sveltia-cms.mjs',
+        var VER = '0.213.2';
+        var SOURCES = [
+          'https://cdn.jsdelivr.net/npm/@sveltia/cms@' + VER + '/dist/sveltia-cms.mjs',
+          'https://unpkg.com/@sveltia/cms@' + VER + '/dist/sveltia-cms.mjs',
         ];
-        var failed = 0;
-        var note = function (t) { if (box) box.textContent = '状态：' + t; };
+        var MAX = 5;
+        var note = document.getElementById('cmsNote');
+        var status = document.getElementById('cmsStatus');
         var booted = function () { return document.documentElement.hasAttribute('data-auto-theming'); };
+        var say = function (t) { if (note) note.textContent = '状态：' + t; };
 
-        note('已发出 ' + sources.length + ' 个请求，等待响应…');
-        sources.forEach(function (src, i) {
+        /* CMS 启动后撤掉提示；顺带刷新一下状态文字 */
+        var watch = setInterval(function () {
+          if (booted()) { clearInterval(watch); if (status && status.parentNode) status.remove(); }
+        }, 300);
+
+        var attempt = 0;
+        function tryLoad() {
+          if (booted()) return;
+          if (attempt >= MAX) {
+            say('两个 CDN 试了 ' + MAX + ' 次都没成功。多半是网络/代理不稳 —— 刷新一次通常就好。');
+            return;
+          }
+          var src = SOURCES[attempt % SOURCES.length];
           var name = src.indexOf('jsdelivr') >= 0 ? 'jsDelivr' : 'unpkg';
+          attempt++;
+          say('第 ' + attempt + '/' + MAX + ' 次：正在请求 ' + name + '…');
+
           var s = document.createElement('script');
           s.type = 'module';
           s.src = src;
-          s.onload = function () { note(name + ' 已下载，正在启动…'); };
+          s.onload = function () { say(name + ' 已下载，正在启动…'); };
           s.onerror = function () {
-            failed++;
-            note(name + ' 下载失败（' + failed + '/' + sources.length + '）');
-            if (failed >= sources.length) {
-              setTimeout(function () {
-                if (booted()) return;
-                note('两个源都失败。多半是网络/代理把 CDN 拦了 —— 换个网络或检查代理后刷新。');
-              }, 4000);
-            }
+            say('第 ' + attempt + ' 次失败（' + name + '），' + (attempt < MAX ? '1.5 秒后重试…' : '已无重试'));
+            setTimeout(tryLoad, 1500);
           };
           document.body.appendChild(s);
-        });
-
-        /* CMS 启动后就撤掉这段提示 */
-        var t = setInterval(function () {
-          if (booted()) { clearInterval(t); if (status) status.remove(); }
-        }, 300);
-        setTimeout(function () { clearInterval(t); }, 60000);
+        }
+        tryLoad();
       })();
     </script>
   </body>

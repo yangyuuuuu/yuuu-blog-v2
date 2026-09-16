@@ -204,10 +204,17 @@ const adminHtml = existsSync(abs('admin/index.html')) ? read('admin/index.html')
 if (!adminHtml) {
   bad('缺少 admin/index.html —— 后台打不开');
 } else if (/unpkg\.com|cdn\.jsdelivr\.net/.test(adminHtml)) {
+  /* 版本号可能写成字面量（@0.213.2），也可能写成变量（'@' + VER + '/'）—— 两种都要认 */
   const pinned = [...adminHtml.matchAll(/@sveltia\/cms@(\d+\.\d+\.\d+)/g)].map((m) => m[1]);
-  const loose = /@sveltia\/cms(?!@\d)/.test(adminHtml) || /@sveltia\/cms\/dist/.test(adminHtml);
-  if (loose) bad('/admin 的 CMS 地址没有锁版本（缺 @x.y.z）—— CDN 发新版可能改坏配置');
-  else ok('/admin 从 CDN 加载 Sveltia CMS，版本已锁定：' + [...new Set(pinned)].join(' / '));
+  const versionConst = /VER\s*=\s*'(\d+\.\d+\.\d+)'/.exec(adminHtml);
+  const version = pinned.length ? [...new Set(pinned)] : versionConst ? [versionConst[1]] : [];
+  if (!version.length) {
+    bad('/admin 的 CMS 地址没有锁版本（找不到 x.y.z）—— CDN 发新版可能改坏配置');
+  } else {
+    ok('/admin 从 CDN 加载 Sveltia CMS，版本已锁定：' + version.join(' / '));
+  }
+  if (/MAX\s*=\s*\d/.test(adminHtml)) ok('/admin 的加载器带重试（这条链路单次请求经常失败）');
+  else wrn('/admin 的加载器没有重试，网络一抖就白屏');
   if (/cmsFallback/.test(adminHtml)) ok('/admin 有加载失败提示（不会一片白屏让人看不懂）');
   else wrn('/admin 没有加载失败提示，CDN 不通时会白屏无提示');
 } else {
