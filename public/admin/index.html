@@ -37,11 +37,6 @@
 
     <script>
       (function () {
-        /*
-         * 版本别乱升：0.213.2 是 2026-09-16 11:04 发布的，升级后后台直接白屏
-         * （脚本下载成功、开始执行，然后界面不挂载）。0.212.2 是升级前一直在用的版本。
-         * 要升级就自己在浏览器里验一次：能进后台、能发文，再改这里。
-         */
         var VER = '0.212.2';
         var SOURCES = [
           'https://cdn.jsdelivr.net/npm/@sveltia/cms@' + VER + '/dist/sveltia-cms.mjs',
@@ -56,10 +51,9 @@
         var showErr = function (t) {
           if (!errBox) return;
           errBox.style.display = 'block';
-          errBox.textContent = t;
+          errBox.textContent = String(t).slice(0, 4000);
         };
 
-        /* 把异常也显示出来 —— 否则用户只能看到白屏 */
         window.addEventListener('error', function (e) {
           if (!booted()) showErr('页面错误：' + (e.message || e.error || ''));
         });
@@ -74,10 +68,7 @@
         var attempt = 0;
         function tryLoad() {
           if (booted()) return;
-          if (attempt >= MAX) {
-            say('试了 ' + MAX + ' 次都没成功，多半是网络/代理不稳 —— 刷新一次通常就好。');
-            return;
-          }
+          if (attempt >= MAX) { say('试了 ' + MAX + ' 次都没成功，多半是网络/代理不稳。'); return; }
           var src = SOURCES[attempt % SOURCES.length];
           var name = src.indexOf('jsdelivr') >= 0 ? 'jsDelivr' : 'unpkg';
           attempt++;
@@ -90,24 +81,36 @@
             })
             .then(function (code) {
               say(name + ' 已下载（' + Math.round(code.length / 1024) + ' KB），正在启动…');
-              var url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
-              /* 模块「求值阶段」抛的错，window.onerror 抓不到 —— 这里同步执行才抓得住 */
-              return import(url).catch(function (e) {
-                showErr('CMS 启动失败：\n' + ((e && (e.stack || e.message)) || e));
-                throw e;
-              });
+              return evalBundle(code);
             })
             .then(function () {
-              /* 导入成功；界面由 Sveltia 自己接管 */
               setTimeout(function () {
-                if (!booted()) showErr('脚本已加载但界面没有挂载 —— 把这段发给我。UA: ' + navigator.userAgent);
+                if (!booted()) say('脚本已加载但界面没有挂载 —— Sveltia 在执行时报错了');
               }, 3000);
             })
             .catch(function (e) {
-              say('第 ' + attempt + ' 次失败（' + name + '）：' + (e && e.message ? e.message : e));
-              showErr('加载 ' + name + ' 失败：\n' + ((e && (e.stack || e.message)) || e));
+              say('第 ' + attempt + ' 次失败（' + name + '）');
+              showErr('加载/执行 ' + name + ' 失败：\n' + ((e && (e.stack || e.message)) || e));
               setTimeout(tryLoad, 1500);
             });
+        }
+
+        /*
+         * 直接从 blob 同步执行 —— 关键在这。
+         * import() 是异步的，模块「求值阶段」抛出的同步异常不会被它的 .catch 接住
+         * （实测：错误框一直是空的）。blob 脚本是普通脚本，同步异常一定抛回这里。
+         * CMS 是打包好的 ESM 产出，但这里只要求它跑起来，不需要 import 绑定。
+         */
+        function evalBundle(code) {
+          var url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+          var s = document.createElement('script');
+          s.type = 'module';
+          s.src = url;
+          return new Promise(function (resolve, reject) {
+            s.onload = function () { URL.revokeObjectURL(url); resolve(); };
+            s.onerror = function (e) { URL.revokeObjectURL(url); reject(new Error('blob 脚本执行失败（网络或语法/运行时错误）')); };
+            document.body.appendChild(s);
+          });
         }
         tryLoad();
       })();
