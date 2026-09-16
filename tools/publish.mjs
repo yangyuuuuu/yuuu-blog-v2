@@ -5,6 +5,9 @@
  *   npm run publish               构建自检 → 提交 → 推送（Cloudflare 自动重建）
  *   npm run publish -- "提交说明"  自定义提交说明
  *   npm run publish -- --dry-run   只看会发生什么，什么都不做
+ *   npm run publish -- --no-build  跳过本地构建（已经 build 过、或构建环境有问题时用）
+ *
+ * 构建失败时会把 npm 的完整输出原样抄给你：脚本自己猜不出你的构建为什么挂。
  *
  * 为什么不是一个 git push 就完事：
  *   1. 构建会失败是常事（frontmatter 写错、组件编译不过）。本地先构建，
@@ -13,7 +16,7 @@
  *      所以这里把说明写进临时文件再用 `git commit -F`。
  *   3. 顺手提醒草稿（draft: true）—— 它们不会被构建出来，别以为是发布失败。
  */
-import { execFileSync, execSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { readdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +26,8 @@ const POSTS = join(ROOT, 'src/content/posts');
 
 const argv = process.argv.slice(2);
 const dryRun = argv.includes('--dry-run');
-const message = argv.filter((a) => a !== '--dry-run').join(' ').trim();
+const noBuild = argv.includes('--no-build');
+const message = argv.filter((a) => !a.startsWith('--')).join(' ').trim();
 
 function run(cmd, args, opts = {}) {
   return execFileSync(cmd, args, { cwd: ROOT, encoding: 'utf8', stdio: opts.capture ? 'pipe' : 'inherit' });
@@ -68,24 +72,8 @@ try {
   process.exit(1);
 }
 
-/* ---------------------------------------------------------------- 3. 构建 */
-head('3. 构建（npm run build）—— 构建失败就不推送');
-if (dryRun) {
-  ok('--dry-run 跳过实际构建');
-} else {
-  try {
-    run('npm', ['run', 'build'], { capture: false });
-    ok('构建通过，dist/ 是新鲜的');
-  } catch {
-    console.log('');
-    console.log('  ✗ 构建失败，什么都没提交。');
-    console.log('    常见原因：frontmatter 字段写错（比如 tags 忘了方括号）、正文里有没闭合的代码块。');
-    process.exit(1);
-  }
-}
-
-/* ---------------------------------------------------------------- 4. 改动盘点 */
-head('4. 这次要发布什么');
+/* ---------------------------------------------------------------- 3. 这次要发布什么 */
+head('3. 这次要发布什么');
 const status = gitOut('status', '--short');
 if (!status) {
   ok('工作区是干净的，没有新改动');
@@ -100,6 +88,54 @@ if (!status) {
   }
 } else {
   console.log(status.split('\n').map((l) => '    ' + l).join('\n'));
+}
+
+/* ---------------------------------------------------------------- 4. 构建 */
+head('4. 构建（npm run build）—— 构建失败就不推送（--no-build 可跳过）');
+if (dryRun) {
+  ok('--dry-run 跳过实际构建');
+} else if (noBuild) {
+  warn('--no-build：跳过本地构建。镜像会交给 Cloudflare 去构建');
+  console.log('      它要是失败了，得去 Cloudflare 的 Deployments 里看日志。');
+} else {
+  /* 用 spawnSync 收完整输出而不是 stdio: inherit —— 构建挂掉时最要紧的就是那段报错，
+     一定要原样抄出来。之前用 inherit + 只有一句「构建失败」，等于把线索藏起来了。 */
+  const log = join(ROOT, '.build-error.log');
+  /* shell 包一层：Windows 上 npm 实际是 npm.cmd，直接 spawn 'npm' 在某些环境会 ENOENT */
+  const res = spawnSync('npm run build', [], {
+    cwd: ROOT, encoding: 'utf8', shell: true, maxBuffer: 40 * 1024 * 1024,
+  });
+  const out = (res.stdout || '') + (res.stderr || '');
+  process.stdout.write(out);
+
+  if (res.error) {
+    console.log('');
+    console.log('  ✗ 没能启动构建：' + res.error.message);
+    console.log('    自己跑一次 npm run build 看看，或者：');
+    console.log('      npm run publish -- --no-build   跳过本地构建，交给 Cloudflare');
+    process.exit(1);
+  }
+
+  if (res.status !== 0) {
+    writeFileSync(log, out, 'utf8');
+    console.log('');
+    console.log('  ────────────────────────────────────────────');
+    console.log('  ✗ 构建失败（npm 退出码 ' + res.status + '），什么都没提交。');
+    console.log('');
+    console.log('  上面那段就是 npm 的完整输出，里面的报错才是真正的原因。');
+    console.log('  如果输出里根本没有 error 字样，试试：');
+    console.log('    npm run build                   单独再跑一次，看真实退出码');
+    console.log('    npm run publish -- --no-build   跳过本地构建，交给 Cloudflare');
+    console.log('');
+    console.log('  完整日志也存了一份：.build-error.log（下次 publish 成功会自动删掉）');
+    console.log('  排查手册：DEPLOY.md 第 7 节「构建失败排查」');
+    console.log('  ────────────────────────────────────────────');
+    console.log('');
+    process.exit(1);
+  }
+
+  try { unlinkSync(log); } catch { /* 上一轮的残留，删不掉也无所谓 */ }
+  ok('构建通过，dist/ 是新鲜的');
 }
 
 /* ---------------------------------------------------------------- 5. 提交 + 推送 */
