@@ -1,5 +1,9 @@
 ---
-/** 设置：配色皮肤 + 显示开关 + 本地设置导入导出。深色/浅色由旁边的月亮/太阳按钮负责。 */
+/**
+ * 设置面板。
+ * 面板内部逻辑放在 src/scripts/settings-panel.ts，首次点开才动态加载，
+ * 这样首屏不用为「可能不会被打开的面板」付出 JS 体积。
+ */
 const SKINS = [
   { id: 'fontaine', name: '枫丹', swatch: '#7ec8e3' },
   { id: 'opera', name: '歌剧院', swatch: '#e8a0b4' },
@@ -54,125 +58,24 @@ const SKINS = [
 </div>
 
 <script>
+  /*
+   * 引导：只负责开合面板，并在首次点击时把真正的逻辑拉下来。
+   * 面板逻辑见 src/scripts/settings-panel.ts —— Vite 会把它切成独立 chunk，
+   * 首屏不下载，所以这段引导只有几百字节。
+   */
   (function () {
-    var root = document.getElementById('settingsRoot');
     var btn = document.getElementById('settingsToggle');
     var menu = document.getElementById('settingsMenu');
-    if (!root || !btn || !menu) return;
+    if (!btn || !menu) return;
 
-    var html = document.documentElement;
-    var FX = ['reveal', 'sink', 'glass', 'scrollBlur'];
-    var SKINS = ['fontaine', 'opera', 'abyss'];
-
-    function read(key, fb) { try { return localStorage.getItem(key) || fb; } catch (e) { return fb; } }
-    function readFx() { try { return JSON.parse(localStorage.getItem('yuuu-fx') || '{}'); } catch (e) { return {}; } }
-    function writeFx(o) { try { localStorage.setItem('yuuu-fx', JSON.stringify(o)); } catch (e) {} }
-    function applyFx(o) { FX.forEach(function (k) { html.classList.toggle('fx-' + k, o[k] !== false); }); }
-
-    function paint() {
-      var cols = Number(read('yuuu-cols', '3')) || 3;
-      [].slice.call(menu.querySelectorAll('[data-cols]')).forEach(function (b) {
-        b.classList.toggle('is-on', Number(b.dataset.cols) === cols);
-      });
-      var s = read('yuuu-skin', 'fontaine');
-      [].slice.call(menu.querySelectorAll('[data-skin]')).forEach(function (b) {
-        b.classList.toggle('is-on', b.dataset.skin === s);
-      });
-      var fx = readFx();
-      [].slice.call(menu.querySelectorAll('[data-fx]')).forEach(function (cb) {
-        cb.checked = fx[cb.dataset.fx] !== false;
-      });
-    }
-
-    function close() { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
-
+    var loaded = false;
     btn.addEventListener('click', function () {
       menu.hidden = !menu.hidden;
       btn.setAttribute('aria-expanded', menu.hidden ? 'false' : 'true');
-    });
-
-    menu.addEventListener('click', function (e) {
-      var b = e.target && e.target.closest ? e.target.closest('button') : null;
-      if (!b) return;
-      if (b.dataset.cols) {
-        var n = String(Math.min(6, Math.max(2, Number(b.dataset.cols) || 3)));
-        html.style.setProperty('--home-cols', n);
-        try { localStorage.setItem('yuuu-cols', n); } catch (e2) {}
-        paint();
-        return;
+      if (!loaded) {
+        loaded = true;
+        import('../scripts/settings-panel').then(function (m) { m.init(); });
       }
-      if (!b.dataset.skin || SKINS.indexOf(b.dataset.skin) < 0) return;
-      html.classList.add('theme-switching');
-      html.setAttribute('data-skin', b.dataset.skin);
-      try { localStorage.setItem('yuuu-skin', b.dataset.skin); } catch (e) {}
-      window.setTimeout(function () { html.classList.remove('theme-switching'); }, 560);
-      paint();
     });
-
-    [].slice.call(menu.querySelectorAll('[data-fx]')).forEach(function (cb) {
-      cb.addEventListener('change', function () {
-        var fx = readFx();
-        fx[cb.dataset.fx] = cb.checked;
-        writeFx(fx);
-        applyFx(fx);
-      });
-    });
-
-    document.addEventListener('click', function (e) { if (!root.contains(e.target)) close(); });
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
-
-    /* 导出：主题 + 皮肤 + 显示设置，存到自己电脑 */
-    var exportBtn = document.getElementById('fxExport');
-    if (exportBtn) {
-      exportBtn.addEventListener('click', function () {
-        var data = {
-          _about: 'yuuu 本地设置，可导入恢复',
-          _exportedAt: new Date().toISOString(),
-          theme: read('yuuu-theme', 'dark'),
-          skin: read('yuuu-skin', 'fontaine'),
-          fx: readFx(),
-        };
-        var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        var a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'yuuu-settings.json';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-      });
-    }
-
-    var file = document.getElementById('fxFile');
-    var importBtn = document.getElementById('fxImport');
-    if (importBtn && file) {
-      importBtn.addEventListener('click', function () { file.click(); });
-      file.addEventListener('change', function () {
-        var f = file.files && file.files[0];
-        if (!f) return;
-        var reader = new FileReader();
-        reader.onload = function () {
-          try {
-            var d = JSON.parse(String(reader.result));
-            html.classList.add('theme-switching');
-            if (d.theme === 'light' || d.theme === 'dark') {
-              html.setAttribute('data-theme', d.theme);
-              localStorage.setItem('yuuu-theme', d.theme);
-            }
-            if (d.skin && SKINS.indexOf(d.skin) >= 0) {
-              html.setAttribute('data-skin', d.skin);
-              localStorage.setItem('yuuu-skin', d.skin);
-            }
-            if (d.fx && typeof d.fx === 'object') { writeFx(d.fx); applyFx(d.fx); }
-            window.setTimeout(function () { html.classList.remove('theme-switching'); }, 560);
-            paint();
-          } catch (e) {}
-          file.value = '';
-        };
-        reader.readAsText(f);
-      });
-    }
-
-    paint();
   })();
 </script>
