@@ -46,7 +46,6 @@
         var note = document.getElementById('cmsNote');
         var status = document.getElementById('cmsStatus');
         var errBox = document.getElementById('cmsError');
-        var booted = function () { return document.documentElement.hasAttribute('data-auto-theming'); };
         var say = function (t) { if (note) note.textContent = '状态：' + t; };
         var showErr = function (t) {
           if (!errBox) return;
@@ -54,20 +53,34 @@
           errBox.textContent = String(t).slice(0, 4000);
         };
 
+        /*
+         * ⚠️ 别用 data-auto-theming 判断「启动成功」—— Sveltia 在很早的阶段就写这个属性，
+         * 那时界面还没挂出来。之前这里判早了，导致状态提示被删掉、用户只看到一片白。
+         * 这里改成看「界面上真的长出东西了没」。
+         */
+        var uiReady = function () {
+          return document.querySelector('[class*="svelte-"], [class*="sveltiacms"]') !== null;
+        };
+
         window.addEventListener('error', function (e) {
-          if (!booted()) showErr('页面错误：' + (e.message || e.error || ''));
+          if (!uiReady()) showErr('页面错误：' + (e.message || e.error || ''));
         });
         window.addEventListener('unhandledrejection', function (e) {
-          if (!booted()) showErr('未处理的 Promise 异常：' + ((e.reason && (e.reason.stack || e.reason.message)) || e.reason));
+          if (!uiReady()) showErr('未处理的 Promise 异常：' + ((e.reason && (e.reason.stack || e.reason.message)) || e.reason));
         });
 
         var watch = setInterval(function () {
-          if (booted()) { clearInterval(watch); if (status && status.parentNode) status.remove(); }
+          if (uiReady()) { clearInterval(watch); if (status && status.parentNode) status.remove(); }
         }, 300);
+        /* 30 秒还没界面就明说，别一直挂着「正在加载」 */
+        setTimeout(function () {
+          clearInterval(watch);
+          if (!uiReady()) say('脚本已加载，但界面 30 秒都没挂出来 —— 这基本是 Sveltia 本身在这个浏览器里初始化失败了，把这段告诉 yuuu。');
+        }, 30000);
 
         var attempt = 0;
         function tryLoad() {
-          if (booted()) return;
+          if (uiReady()) return;
           if (attempt >= MAX) { say('试了 ' + MAX + ' 次都没成功，多半是网络/代理不稳。'); return; }
           var src = SOURCES[attempt % SOURCES.length];
           var name = src.indexOf('jsdelivr') >= 0 ? 'jsDelivr' : 'unpkg';
@@ -75,42 +88,29 @@
           say('第 ' + attempt + '/' + MAX + ' 次：正在下载 ' + name + '…');
 
           fetch(src)
-            .then(function (r) {
-              if (!r.ok) throw new Error('HTTP ' + r.status);
-              return r.text();
-            })
+            .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
             .then(function (code) {
               say(name + ' 已下载（' + Math.round(code.length / 1024) + ' KB），正在启动…');
-              return evalBundle(code);
+              var url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+              return new Promise(function (resolve, reject) {
+                var s = document.createElement('script');
+                s.type = 'module';
+                s.src = url;
+                s.onload = function () { URL.revokeObjectURL(url); resolve(); };
+                s.onerror = function () { URL.revokeObjectURL(url); reject(new Error('blob 脚本执行失败')); };
+                document.body.appendChild(s);
+              });
             })
             .then(function () {
               setTimeout(function () {
-                if (!booted()) say('脚本已加载但界面没有挂载 —— Sveltia 在执行时报错了');
-              }, 3000);
+                if (!uiReady()) say('脚本已加载并执行完，但界面没挂出来（Sveltia 初始化失败）');
+              }, 8000);
             })
             .catch(function (e) {
               say('第 ' + attempt + ' 次失败（' + name + '）');
               showErr('加载/执行 ' + name + ' 失败：\n' + ((e && (e.stack || e.message)) || e));
               setTimeout(tryLoad, 1500);
             });
-        }
-
-        /*
-         * 直接从 blob 同步执行 —— 关键在这。
-         * import() 是异步的，模块「求值阶段」抛出的同步异常不会被它的 .catch 接住
-         * （实测：错误框一直是空的）。blob 脚本是普通脚本，同步异常一定抛回这里。
-         * CMS 是打包好的 ESM 产出，但这里只要求它跑起来，不需要 import 绑定。
-         */
-        function evalBundle(code) {
-          var url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
-          var s = document.createElement('script');
-          s.type = 'module';
-          s.src = url;
-          return new Promise(function (resolve, reject) {
-            s.onload = function () { URL.revokeObjectURL(url); resolve(); };
-            s.onerror = function (e) { URL.revokeObjectURL(url); reject(new Error('blob 脚本执行失败（网络或语法/运行时错误）')); };
-            document.body.appendChild(s);
-          });
         }
         tryLoad();
       })();
