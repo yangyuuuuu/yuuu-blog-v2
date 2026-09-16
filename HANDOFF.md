@@ -39,7 +39,7 @@ npm run og        重新生成 OG 图
 ## 当前状态
 
 - 工作区分两步看：用户可能会自己改文章，所以**别假设它是干净的**
-- `npm run verify` → 全部通过（3 条提示）
+- `npm run verify` → 全部通过（4 条提示，其中 1 条是用户的草稿标题不是中文开头）
 - `npm run smoke` → 全部通过
 - `npm run audit` → **产物验收全部通过**（0 条提示）
 - ✅ **首屏 JS 达标**：行内 7.88 KB + 外链 gzip 2.11 KB = **9.99 KB**（< 10 KB 红线）
@@ -185,6 +185,13 @@ npm 的扁平化会掩盖，**pnpm 的隔离模式会正确报错**。发现一�
 	extbf{`search-engine.ts` 与 `SearchBox.astro` 是 0 error}，改完这两个文件可以拿
 `npx astro check 2>&1 | Select-String 'search-engine|SearchBox'` 单独看。
 **它不参与 `npm run build`**，所以不影响部署。
+
+### 9.5 「正文太短」只卡要发布的文章
+
+`verify.mjs` 的 20 字下限**不卡草稿**。踩过的坑：用户 `npm run new` 建了草稿、
+正文还是占位的那一句，一跑 `npm run publish` 就被第 2 步拦下，
+而旧版 publish 在第 2 步失败时只打一句「自检没过」，**真正的错误行被上一步的输出淹了**，
+用户以为是自己构建失败。现在第 2 步也原样打印 verify 的输出。
 
 ### 10. 本环境能做的真实验证（比想象的强）
 
