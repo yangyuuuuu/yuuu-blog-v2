@@ -39,8 +39,22 @@ const description = d.summary ?? d.title;
         </span>
         <h1 class="mb-4 font-title text-[clamp(24px,3.4vw,37px)] leading-tight text-ink">{d.title}</h1>
 
+        <!--
+          给 Pagefind 索引塞的元数据。放在 sr-only 里：
+          视觉上不显示，但构建时 Pagefind 解析 HTML 能读到，
+          搜索结果就能按分类 / 标签 / 字数 / 阅读时长 / 日期做筛选与区间比较。
+        -->
+        <div class="sr-only" aria-hidden="true">
+          <span data-pagefind-filter="category" data-pagefind-meta="category">{d.category}</span>
+          {d.tags.map((t) => <span data-pagefind-filter="tag">{t}</span>)}
+          <span data-pagefind-meta="tags">{d.tags.join(' ')}</span>
+          <span data-pagefind-meta="words">{wordsOf(post)}</span>
+          <span data-pagefind-meta="minutes">{readingOf(post)}</span>
+          <span data-pagefind-meta="date">{formatISO(d.date)}</span>
+        </div>
+
         <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] text-muted">
-          <span>📅 创建 <time data-pagefind-meta="date" datetime={formatISO(d.date)}>{formatDate(d.date)}</time></span>
+          <span>📅 创建 <time data-pagefind-meta="dateText" datetime={formatISO(d.date)}>{formatDate(d.date)}</time></span>
           {
             d.updated && (
               <>

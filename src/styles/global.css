@@ -508,6 +508,35 @@ mark.find-hit::after {
 .search-hit.is-active .search-hit-top b { color: var(--accent); }
 
 /* 无结果时的小插画 */
+/* 当前生效的查询条件 */
+.search-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 4px 9px;
+  padding-bottom: 9px;
+  border-bottom: 1px dashed var(--line);
+}
+.search-chips span {
+  padding: 2px 8px;
+  border-radius: 99px;
+  border: 1px solid var(--line);
+  background: var(--hover);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--accent);
+}
+
+/* 无结果时给一行语法提示 */
+.search-tip { margin: 10px 0 0; font-size: 11.5px; line-height: 2; }
+.search-tip code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--hover);
+  color: var(--accent);
+  font-size: 10.5px;
+}
+
 .search-empty-art { padding: 6px 12px 16px; }
 .search-empty-art img {
   display: block;
@@ -537,11 +566,56 @@ mark.find-hit::after {
   font-size: 10.5px;
 }
 
+/* --------------------------------------------------------------------------
+   搜索聚光：聚焦时整页模糊变暗，只留搜索框发亮
+   -------------------------------------------------------------------------- */
+.search-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none; /* ⚠️ 绝不能删：删了整站点不动 */
+  opacity: 0;
+  transition: opacity 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  background: color-mix(in srgb, var(--bg) 58%, transparent);
+  backdrop-filter: blur(7px) saturate(85%);
+  -webkit-backdrop-filter: blur(7px) saturate(85%);
+}
+.search-veil.is-on { opacity: 1; }
+
+/* 搜索框本身发亮 */
+.search-box {
+  transition:
+    border-color 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+#searchRoot:focus-within .search-box {
+  border-color: var(--accent);
+  background: var(--panel-2);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent),
+    0 20px 44px -22px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+/* 导航淡下去，注意力留给搜索框 */
+#mainNav, #navToggle {
+  transition: opacity 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+html.is-searching #mainNav,
+html.is-searching #navToggle {
+  opacity: 0.25;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-veil, .search-box, #mainNav, #navToggle { transition: none; }
+}
+
 /* 输入框聚焦后藏掉 placeholder —— 否则文字会紧贴光标，看起来像光标被遮住 */
 .search-input:focus::placeholder { color: transparent; }
 
-/* 空着的时候让光标停在中间；一开始打字就回到左对齐，免得边打边跳 */
-.search-input:placeholder-shown { text-align: center; }
+/* 光标与输入内容都居中 */
+.search-input { text-align: center; }
 
 /* 快捷键提示做成输入框右侧的小徽标，聚焦后淡出（这时已经不需要提示了） */
 .search-kbd {
@@ -629,6 +703,14 @@ mark.find-hit::after {
 /* --------------------------------------------------------------------------
    首页首屏：只留徽记、站名、一句话和统计，文章列表整体下沉到第二屏
    -------------------------------------------------------------------------- */
+/* 装饰性区域禁止选中：避免拖动时选中图片和标题，正文不受影响 */
+.no-select {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.no-select img { -webkit-user-drag: none; pointer-events: none; }
+
 /* 首屏占满一屏（减掉 68px 的吸顶导航），所以默认看不到文章列表 */
 .hero {
   display: grid;

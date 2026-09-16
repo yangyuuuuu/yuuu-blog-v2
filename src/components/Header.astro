@@ -2,10 +2,9 @@
 import SearchBox from './SearchBox.astro';
 import ThemeToggle from './ThemeToggle.astro';
 
+/* 顶部只留最常用的三项；归档 / 标签 / RSS 放在页脚，减少 hover 噪音 */
 const NAV = [
   { href: '/', label: '首页' },
-  { href: '/archive/', label: '归档' },
-  { href: '/tags/', label: '标签' },
   { href: '/about/', label: '关于' },
   { href: '/changelog/', label: '更新' },
 ];

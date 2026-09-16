@@ -4,10 +4,7 @@
 
 <div class="relative w-full" id="searchRoot">
   <label class="sr-only" for="yuuuSearch">搜索文章</label>
-  <div
-    class="flex h-11 items-center gap-2 rounded-full border border-line bg-soft px-3.5
-           transition-colors focus-within:border-accent"
-  >
+  <div class="search-box flex h-11 items-center gap-2 rounded-full border border-line bg-soft px-3.5">
     <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor"
          stroke-width="2" stroke-linecap="round" aria-hidden="true">
       <circle cx="11" cy="11" r="7" class="text-muted"></circle>
@@ -106,12 +103,18 @@
       panel.hidden = false;
       panel.classList.add('is-interactive');
     }
-    function hide() {
+    /**
+     * 关闭面板。
+     * 默认连结果一起清掉 —— 否则点别处关掉、再点回输入框时旧结果会又冒出来。
+     * 想保留结果就传 false（目前没用上，留着备用）。
+     */
+    function hide(clear) {
       panel.hidden = true;
       panel.classList.remove('is-interactive');
       hits = [];
       active = -1;
       pendingOpen = false;
+      if (clear !== false) out.innerHTML = '';
     }
 
     /* 键盘选择：上下键在结果间移动，并把选中项滚进可视区 */
@@ -136,19 +139,125 @@
       return true;
     }
 
-    function render(list, q) {
+    /* ---------------------------------------------------------------
+       查询语法
+         in:title,tag        只在指定字段里找（title / tag / category）
+         tag:前端            限定标签（走 Pagefind 原生筛选器）
+         category:技术       限定分类
+         date:2024-01..2024-12
+         words:500..2000     字数区间
+         min:1..5            阅读分钟区间
+         "精确短语"           引号包起来当一个整体
+         其余的词            走全文检索
+       --------------------------------------------------------------- */
+    function parseRange(v) {
+      var m = /^(-?\d[\d-]*)(?:\.\.(-?\d[\d-]*))?$/.exec(v);
+      if (!m) return null;
+      return { lo: m[1], hi: m[2] === undefined ? m[1] : m[2] };
+    }
+
+    function parseQuery(raw) {
+      var q = { text: [], in: [], tag: '', cat: '', ranges: {} };
+      var re = /"([^"]*)"|(\S+)/g;
+      var m;
+      while ((m = re.exec(raw))) {
+        if (m[1] !== undefined) {
+          if (m[1].trim()) q.text.push(m[1].trim());
+          continue;
+        }
+        var tok = m[2];
+        var i = tok.indexOf(':');
+        if (i <= 0) { q.text.push(tok); continue; }
+        var key = tok.slice(0, i).toLowerCase();
+        var val = tok.slice(i + 1);
+        if (!val) { q.text.push(tok); continue; }
+
+        if (key === 'in') {
+          val.split(',').forEach(function (f) {
+            f = f.trim().toLowerCase();
+            if (f) q.in.push(f);
+          });
+        } else if (key === 'tag' || key === 'tags') q.tag = val;
+        else if (key === 'category' || key === 'cat') q.cat = val;
+        else if (key === 'date') q.ranges.date = parseRange(val);
+        else if (key === 'words' || key === 'word') q.ranges.words = parseRange(val);
+        else if (key === 'min' || key === 'minutes') q.ranges.min = parseRange(val);
+        else q.text.push(tok);   // 不认识的 key 当普通词处理
+      }
+      return q;
+    }
+
+    var IN_FIELDS = {
+      title: function (m) { return m.title || ''; },
+      tag: function (m) { return m.tags || ''; },
+      tags: function (m) { return m.tags || ''; },
+      category: function (m) { return m.category || ''; },
+    };
+
+    /** 客户端侧筛选：Pagefind 只能做全文和筛选器，区间比较得自己来 */
+    function matchMeta(q, meta) {
+      meta = meta || {};
+      if (q.in.length && q.text.length) {
+        var hay = q.in.map(function (f) {
+          return IN_FIELDS[f] ? IN_FIELDS[f](meta) : '';
+        }).join(' ').toLowerCase();
+        if (!q.text.some(function (w) { return hay.indexOf(w.toLowerCase()) >= 0; })) return false;
+      }
+      if (q.tag && String(meta.tags || '').toLowerCase().indexOf(q.tag.toLowerCase()) < 0) return false;
+      if (q.cat && String(meta.category || '') !== q.cat) return false;
+      var r = q.ranges;
+      if (r.date) {
+        var d = String(meta.date || '');
+        if (!d || d < r.date.lo || d > r.date.hi) return false;
+      }
+      if (r.words) {
+        var w = Number(meta.words || 0);
+        if (w < Number(r.words.lo) || w > Number(r.words.hi)) return false;
+      }
+      if (r.min) {
+        var mn = Number(meta.minutes || 0);
+        if (mn < Number(r.min.lo) || mn > Number(r.min.hi)) return false;
+      }
+      return true;
+    }
+
+    /** 把当前生效的条件写成人话，显示在结果上方 */
+    function describeQuery(q) {
+      var bits = [];
+      if (q.in.length) bits.push('in:' + q.in.join(','));
+      if (q.tag) bits.push('tag:' + q.tag);
+      if (q.cat) bits.push('category:' + q.cat);
+      ['date', 'words', 'min'].forEach(function (k) {
+        var r = q.ranges[k];
+        if (r) bits.push(k + ':' + r.lo + '..' + r.hi);
+      });
+      return bits;
+    }
+
+    function render(list, raw, q) {
+      var chips = describeQuery(q);
+      var head = chips.length
+        ? '<p class="search-chips">' + chips.map(function (b) { return '<span>' + esc(b) + '</span>'; }).join('') + '</p>'
+        : '';
+
       if (!list.length) {
         hits = []; active = -1; pendingOpen = false;
-        show('<div class="search-empty search-empty-art">' +
+        show(head + '<div class="search-empty search-empty-art">' +
           '<img src="/mascot/pillow.webp" alt="" width="469" height="400" loading="lazy" decoding="async">' +
-          '<p>没有找到「' + esc(q) + '」相关的文章</p></div>');
+          '<p>没有找到「' + esc(raw) + '」相关的文章</p>' +
+          '<p class="search-tip">' +
+          '<code>in:title 关键词</code> · <code>tag:前端</code> · <code>category:技术</code><br>' +
+          '<code>date:2024-01..2024-12</code> · <code>words:500..2000</code> · <code>min:1..5</code>' +
+          '</p></div>');
         return;
       }
-      show(list.map(function (r) {
-        var title = (r.meta && r.meta.title) || r.url;
-        var date = (r.meta && r.meta.date) || '';
-        // 带上 ?q=，文章页会把第一处匹配滚到屏幕中央并高亮
-        var href = r.url + '?q=' + encodeURIComponent(q);
+
+      show(head + list.map(function (r) {
+        var meta = r.meta || {};
+        var title = meta.title || r.url;
+        var date = meta.dateText || meta.date || '';
+        // ?q= 只带自由文本，文章页拿它去正文里找第一处匹配
+        var href = r.url + '?q=' + encodeURIComponent(q.text.join(' ') || raw);
         return '<a class="search-hit" href="' + esc(href) + '">' +
           '<span class="search-hit-top"><b>' + esc(title) + '</b>' +
           (date ? '<i>' + esc(date) + '</i>' : '') + '</span>' +
@@ -165,31 +274,60 @@
       if (pendingOpen) { pendingOpen = false; openCurrent(); }
     }
 
-    function run(q) {
-      q = (q || '').trim();
-      if (!q) { hide(); return; }
+    function run(raw) {
+      raw = (raw || '').trim();
+      if (!raw) { hide(); return; }
+
+      var q = parseQuery(raw);
+      var term = q.text.join(' ').trim();
+      var filters = {};
+      if (q.tag) filters.tag = q.tag;
+      if (q.cat) filters.category = q.cat;
+      var hasFilter = Object.keys(filters).length > 0;
+
+      // 光有筛选条件没关键词也行；两样都没有就没什么可搜的
+      if (!term && !hasFilter) { hide(); return; }
+
       var mine = ++seq;
       hits = [];
       active = -1;
       show('<p class="search-empty">搜索中…</p>');
+
       load().then(function (pf) {
         if (mine !== seq) return;
-        if (!pf) {
-          explain();
-          return;
-        }
-        return pf.search(q).then(function (res) {
-          return Promise.all(res.results.slice(0, 8).map(function (r) { return r.data(); }));
-        }).then(function (list) {
-          if (mine !== seq) return;
-          render(list, q);
-        });
+        if (!pf) { explain(); return; }
+        // term 为空时传 null，让 Pagefind 只按筛选器枚举
+        return pf.search(term || null, hasFilter ? { filters: filters } : {})
+          .then(function (res) {
+            // 多取一些再做区间筛选，否则筛完可能凑不满一屏
+            return Promise.all(res.results.slice(0, 24).map(function (r) { return r.data(); }));
+          })
+          .then(function (list) {
+            if (mine !== seq) return;
+            render(list.filter(function (d) { return matchMeta(q, d.meta); }), raw, q);
+          });
       }).catch(function () {
         if (mine === seq) show('<p class="search-empty">搜索出错了，稍后重试</p>');
       });
     }
 
-    input.addEventListener('focus', function () { load(); });
+    /* 聚光效果：聚焦开、失焦关。和面板显隐是两件事，分开控制 */
+    function setSpotlight(on) {
+      var veil = document.getElementById('searchVeil');
+      if (veil) veil.classList.toggle('is-on', on);
+      document.documentElement.classList.toggle('is-searching', on);
+    }
+
+    /* 点面板里的结果时不要先失焦，否则聚光会闪一下 */
+    panel.addEventListener('mousedown', function (e) { e.preventDefault(); });
+
+    /* 聚焦只做预加载 + 聚光，不主动弹出结果 —— 必须有输入才展示 */
+    input.addEventListener('focus', function () {
+      load();
+      setSpotlight(true);
+      if (!input.value.trim()) hide();
+    });
+    input.addEventListener('blur', function () { setSpotlight(false); });
     input.addEventListener('input', function () {
       clearBtn.hidden = !input.value;
       clearTimeout(timer);
