@@ -1,6 +1,7 @@
 ---
 import SearchBox from './SearchBox.astro';
 import ThemeToggle from './ThemeToggle.astro';
+import SettingsPanel from './SettingsPanel.astro';
 
 /* 顶部只留最常用的三项；归档 / 标签 / RSS 放在页脚，减少 hover 噪音 */
 const NAV = [
@@ -17,7 +18,10 @@ const isActive = (href: string) => (href === '/' ? path === '/' : path.startsWit
   class="sticky top-0 z-60 border-b border-line backdrop-blur-xl backdrop-saturate-150 t-backdrop"
   style="background: var(--header-bg)"
 >
-  <div class="mx-auto flex h-[68px] w-full max-w-[1140px] items-center gap-4 px-5">
+  <div
+    class="mx-auto flex w-full max-w-[1140px] flex-wrap items-center gap-x-3 gap-y-2.5 px-4 py-3
+            lg:h-[68px] lg:flex-nowrap lg:gap-4 lg:px-5 lg:py-0 2xl:max-w-[1320px]"
+  >
     <a href="/" class="flex shrink-0 items-center gap-3 text-ink">
       <span
         class="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-line-strong"
@@ -38,7 +42,7 @@ const isActive = (href: string) => (href === '/' ? path === '/' : path.startsWit
       </span>
     </a>
 
-    <nav class="ml-auto hidden items-center gap-1 lg:flex" id="mainNav" aria-label="主导航">
+    <nav class="ml-auto hidden items-center gap-1 lg:flex 2xl:ml-6" id="mainNav" aria-label="主导航">
       {
         NAV.map((item) => (
           <a
@@ -57,20 +61,24 @@ const isActive = (href: string) => (href === '/' ? path === '/' : path.startsWit
       }
     </nav>
 
-    <div class="relative ml-auto w-full max-w-[240px] lg:ml-2">
+    <!-- 手机上搜索独占第二行，桌面上收回导航栏右侧 -->
+    <div class="relative order-last w-full lg:order-none lg:ml-2 lg:w-[240px] lg:shrink-0">
       <SearchBox />
     </div>
 
-    <ThemeToggle />
+    <div class="ml-auto flex shrink-0 items-center gap-2 lg:ml-0">
+      <ThemeToggle />
+      <SettingsPanel />
 
-    <button
-      id="navToggle"
+      <button
+        id="navToggle"
       type="button"
       aria-label="打开菜单"
       aria-expanded="false"
-      class="grid h-10 w-10 shrink-0 place-items-center rounded-[11px] border border-line bg-surface
-             text-muted transition-colors hover:border-gold/60 hover:text-gold lg:hidden"
-    >☰</button>
+        class="grid h-10 w-10 shrink-0 place-items-center rounded-[11px] border border-line bg-surface
+               text-muted transition-colors hover:border-gold/60 hover:text-gold lg:hidden"
+      >☰</button>
+    </div>
   </div>
 
   <nav id="mobileNav" hidden class="border-t border-line px-5 py-3 lg:hidden" aria-label="移动导航"

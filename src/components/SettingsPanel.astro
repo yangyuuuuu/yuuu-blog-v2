@@ -1,0 +1,161 @@
+---
+/** 设置：配色皮肤 + 显示开关 + 本地设置导入导出。深色/浅色由旁边的月亮/太阳按钮负责。 */
+const SKINS = [
+  { id: 'fontaine', name: '枫丹', swatch: '#7ec8e3' },
+  { id: 'opera', name: '歌剧院', swatch: '#e8a0b4' },
+  { id: 'abyss', name: '深海', swatch: '#9b8ce8' },
+];
+---
+
+<div class="relative" id="settingsRoot">
+  <button
+    id="settingsToggle"
+    type="button"
+    aria-label="设置"
+    aria-expanded="false"
+    title="设置"
+    class="grid h-10 w-10 shrink-0 place-items-center rounded-[11px] border border-line bg-surface
+           text-[15px] text-muted transition-colors hover:border-gold/60 hover:text-gold"
+  >⚙</button>
+
+  <div class="theme-menu" id="settingsMenu" hidden>
+    <p class="theme-menu-label">配色</p>
+    <div class="theme-skins">
+      {
+        SKINS.map((s) => (
+          <button type="button" data-skin={s.id}>
+            <i style={`background:${s.swatch}`}></i>
+            <span>{s.name}</span>
+          </button>
+        ))
+      }
+    </div>
+
+    <p class="theme-menu-label">显示</p>
+    <div class="theme-fx">
+      <label><input type="checkbox" data-fx="reveal" /><span>文章进出动画</span></label>
+      <label><input type="checkbox" data-fx="sink" /><span>首屏下沉动画</span></label>
+      <label><input type="checkbox" data-fx="glass" /><span>卡片毛玻璃</span></label>
+      <label><input type="checkbox" data-fx="scrollBlur" /><span>快速滑动模糊</span></label>
+    </div>
+
+    <p class="theme-menu-label">本地设置</p>
+    <div class="theme-io">
+      <button type="button" id="fxExport">导出</button>
+      <button type="button" id="fxImport">导入</button>
+      <input type="file" id="fxFile" accept="application/json" hidden />
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var root = document.getElementById('settingsRoot');
+    var btn = document.getElementById('settingsToggle');
+    var menu = document.getElementById('settingsMenu');
+    if (!root || !btn || !menu) return;
+
+    var html = document.documentElement;
+    var FX = ['reveal', 'sink', 'glass', 'scrollBlur'];
+    var SKINS = ['fontaine', 'opera', 'abyss'];
+
+    function read(key, fb) { try { return localStorage.getItem(key) || fb; } catch (e) { return fb; } }
+    function readFx() { try { return JSON.parse(localStorage.getItem('yuuu-fx') || '{}'); } catch (e) { return {}; } }
+    function writeFx(o) { try { localStorage.setItem('yuuu-fx', JSON.stringify(o)); } catch (e) {} }
+    function applyFx(o) { FX.forEach(function (k) { html.classList.toggle('fx-' + k, o[k] !== false); }); }
+
+    function paint() {
+      var s = read('yuuu-skin', 'fontaine');
+      [].slice.call(menu.querySelectorAll('[data-skin]')).forEach(function (b) {
+        b.classList.toggle('is-on', b.dataset.skin === s);
+      });
+      var fx = readFx();
+      [].slice.call(menu.querySelectorAll('[data-fx]')).forEach(function (cb) {
+        cb.checked = fx[cb.dataset.fx] !== false;
+      });
+    }
+
+    function close() { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+
+    btn.addEventListener('click', function () {
+      menu.hidden = !menu.hidden;
+      btn.setAttribute('aria-expanded', menu.hidden ? 'false' : 'true');
+    });
+
+    menu.addEventListener('click', function (e) {
+      var b = e.target && e.target.closest ? e.target.closest('button') : null;
+      if (!b || !b.dataset.skin || SKINS.indexOf(b.dataset.skin) < 0) return;
+      html.classList.add('theme-switching');
+      html.setAttribute('data-skin', b.dataset.skin);
+      try { localStorage.setItem('yuuu-skin', b.dataset.skin); } catch (e) {}
+      window.setTimeout(function () { html.classList.remove('theme-switching'); }, 560);
+      paint();
+    });
+
+    [].slice.call(menu.querySelectorAll('[data-fx]')).forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        var fx = readFx();
+        fx[cb.dataset.fx] = cb.checked;
+        writeFx(fx);
+        applyFx(fx);
+      });
+    });
+
+    document.addEventListener('click', function (e) { if (!root.contains(e.target)) close(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+
+    /* 导出：主题 + 皮肤 + 显示设置，存到自己电脑 */
+    var exportBtn = document.getElementById('fxExport');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', function () {
+        var data = {
+          _about: 'yuuu 本地设置，可导入恢复',
+          _exportedAt: new Date().toISOString(),
+          theme: read('yuuu-theme', 'dark'),
+          skin: read('yuuu-skin', 'fontaine'),
+          fx: readFx(),
+        };
+        var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'yuuu-settings.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+      });
+    }
+
+    var file = document.getElementById('fxFile');
+    var importBtn = document.getElementById('fxImport');
+    if (importBtn && file) {
+      importBtn.addEventListener('click', function () { file.click(); });
+      file.addEventListener('change', function () {
+        var f = file.files && file.files[0];
+        if (!f) return;
+        var reader = new FileReader();
+        reader.onload = function () {
+          try {
+            var d = JSON.parse(String(reader.result));
+            html.classList.add('theme-switching');
+            if (d.theme === 'light' || d.theme === 'dark') {
+              html.setAttribute('data-theme', d.theme);
+              localStorage.setItem('yuuu-theme', d.theme);
+            }
+            if (d.skin && SKINS.indexOf(d.skin) >= 0) {
+              html.setAttribute('data-skin', d.skin);
+              localStorage.setItem('yuuu-skin', d.skin);
+            }
+            if (d.fx && typeof d.fx === 'object') { writeFx(d.fx); applyFx(d.fx); }
+            window.setTimeout(function () { html.classList.remove('theme-switching'); }, 560);
+            paint();
+          } catch (e) {}
+          file.value = '';
+        };
+        reader.readAsText(f);
+      });
+    }
+
+    paint();
+  })();
+</script>

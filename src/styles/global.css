@@ -601,7 +601,8 @@ mark.find-hit::after {
 }
 #searchRoot:focus-within .search-box {
   border-color: var(--accent);
-  background: var(--panel-2);
+  /* 深色底提亮、浅色底压暗 —— 都是「与背景拉开距离」，而不是一律变白 */
+  background: var(--search-focus-bg);
   transform: scale(1.035);
   /* 双层光环 + 外发光，聚焦时一眼就能看到 */
   box-shadow:
@@ -718,6 +719,13 @@ html.is-searching #navToggle {
 /* --------------------------------------------------------------------------
    首页首屏：只留徽记、站名、一句话和统计，文章列表整体下沉到第二屏
    -------------------------------------------------------------------------- */
+/* 横向溢出兜底：用 clip 而不是 hidden —— hidden 会造出滚动容器，把吸顶导航搞坏 */
+html,
+body {
+  overflow-x: clip;
+  max-width: 100%;
+}
+
 /* 装饰性区域禁止选中：避免拖动时选中图片和标题，正文不受影响 */
 .no-select {
   -webkit-user-select: none;
@@ -855,6 +863,31 @@ html.fx-scrollblur.is-fast #main { filter: blur(1.8px); }
 @media (prefers-reduced-motion: reduce) {
   html.fx-scrollblur.is-fast #main { filter: none; }
   #main { transition: none; }
+}
+
+/* 太阳 / 月亮：切换时旋转着换位，而不是硬切 */
+.theme-glyph {
+  position: relative;
+  display: block;
+  width: 1.15em;
+  height: 1.15em;
+}
+.theme-glyph i {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-style: normal;
+  transition:
+    opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.g-moon { opacity: 1; transform: rotate(0deg) scale(1); }
+.g-sun { opacity: 0; transform: rotate(-90deg) scale(0.4); }
+html[data-theme='light'] .g-moon { opacity: 0; transform: rotate(90deg) scale(0.4); }
+html[data-theme='light'] .g-sun { opacity: 1; transform: rotate(0deg) scale(1); }
+@media (prefers-reduced-motion: reduce) {
+  .theme-glyph i { transition: none; }
 }
 
 /* --------------------------------------------------------------------------

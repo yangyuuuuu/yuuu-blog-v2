@@ -41,7 +41,7 @@ const hasMore = posts.length > PAGE_SIZE;
 
   <!-- 以下内容初始下沉 + 模糊，滚进视口后浮上来 -->
   <div class="sink" id="sink">
-  <section class="mx-auto w-full max-w-[1140px] px-5 pb-24" id="latest">
+  <section class="mx-auto w-full max-w-[1140px] px-5 pb-24 2xl:max-w-[1320px]" id="latest">
     <header class="mb-6 flex flex-wrap items-end justify-between gap-3">
       <div>
         <p class="text-[11px] tracking-[0.42em] text-accent uppercase">LATEST</p>
@@ -76,7 +76,7 @@ const hasMore = posts.length > PAGE_SIZE;
       <TagCloud tags={tags} />
     </div>
 
-    <div class="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3" id="postGrid">
+    <div class="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" id="postGrid">
       {firstPage.map((post) => <PostCard post={post} />)}
     </div>
 
