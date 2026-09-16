@@ -1,14 +1,14 @@
 # ==========================================================================
 #  Sveltia CMS 配置（格式与 Decap / Netlify CMS 兼容）
-#  部署前必须改的三处，见 README「写作与同步」章节。
+#  repo / base_url / site_url 三处都已按真实站点填好，改域名时记得一起改。
 # ==========================================================================
 
 backend:
   name: github
   repo: yangyuuuuu/yuuu-blog-v2
   branch: main
-  # ▼ 改成你部署好的 OAuth Worker 地址（见 workers/oauth）
-  base_url: https://oauth.your-domain.com
+  # OAuth Worker（见 workers/oauth），已部署在 oauth.yuuu.love
+  base_url: https://oauth.yuuu.love
   commit_messages:
     create: "post: 新建《{{slug}}》"
     update: "post: 更新《{{slug}}》"
