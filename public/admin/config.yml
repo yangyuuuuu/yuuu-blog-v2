@@ -76,4 +76,9 @@ collections:
       - { name: coverHue, label: 封面色相 (0-359), widget: number, required: false, min: 0, max: 359, value_type: int, hint: "202 水蓝 / 38 暖金 / 266 紫罗兰 / 150 薄荷绿" }
       - { name: pinned, label: 置顶, widget: boolean, default: false }
       - { name: draft, label: 草稿, widget: boolean, default: false, hint: "打开后构建时不输出这一篇" }
+      - name: private
+        label: 隐藏
+        widget: boolean
+        default: false
+        hint: "打开后：首页 / 归档 / 标签 / 搜索 / RSS / sitemap 里都不出现，但直接开链接仍能看。分类选「日记」会自动隐藏，不用在这里手动开。"
       - { name: body, label: 正文, widget: markdown }

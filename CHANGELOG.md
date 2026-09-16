@@ -2,6 +2,44 @@
 
 > 版本号语义化：主.次.修订。每次改动在这里加一节。
 
+## 2.6.0 · 2026-09-16
+
+### 新增
+
+- **隐藏文章**（日记不想被看见）。判定两条，满足其一即可：
+  `category: 日记`（自动，日常用这个）或 `private: true`（手动，给非日记的文章）。
+  生效范围：首页 / 归档 / 标签云 / 标签页 / 分类筛选 / Pagefind 搜索 / RSS /
+  sitemap / 上一篇下一篇导航 / 搜索引擎收录 —— **全都不出现**；
+  但**直接开链接仍然能看**（纯静态站没有登录，这是能做到的极限，写秘密请另想办法）。
+  - 规则只有一处实现：`src/lib/hidden.ts`。渲染期和构建配置期共用它 ——
+    后者不能 import `src/lib/posts.ts`（那会拖进 `astro:content` 这个渲染期才有的
+    虚拟模块，构建配置阶段直接报 "Cannot find module 'astro:content'"）。
+  - 分享卡片（og:description）对隐藏文章换成中性摘要，免得链接被贴出去时摘要外泄。
+  - 后台加了「隐藏」开关，并说明「选日记分类会自动隐藏」。
+  - `npm run audit` 新增第 8 节：逐项验收上述每个出口，泄漏即失败。
+
+### 修复（这一节里有两个「本地能跑、线上必炸」的坑）
+
+- **幽灵依赖又咬了一次**：`astro.config.mjs` 里 `import 'yaml'` 借用了 astro 的传递依赖 ——
+  npm 会把它提升到顶层所以本地构建正常，Cloudflare 用 pnpm 的隔离模式时
+  直接报 `Cannot find module 'yaml'`、整个站点发不出去。
+  现在构建配置里只用极小的正则取需要的两个键；
+  `tools/verify.mjs` 里的同类借用改成把 `yaml` 显式写进 devDependencies。
+- 同样是这一类：`astro.config.mjs` 一开始想直接 `import { getPosts } from 'src/lib/posts'`，
+  而那个模块依赖 `astro:content`（渲染期的虚拟模块），构建配置阶段加载会失败 ——
+  所以判定规则抽到了独立的 `src/lib/hidden.ts`，两边共用。
+- 可选日期允许空值。网页后台清空「最后修改」时会写 `updated: ''`，
+  `z.coerce.date()` 把它转成 Invalid Date 对象，Astro 报
+  `InvalidContentEntryDataError`、整个站点构建失败。
+
+- `tools/verify.mjs` 两处对齐：schema 同样处理空值；
+  frontmatter 改用真正的 YAML 解析器（原来手写的那版只认 `tags: [a, b]`，
+  遇到后台保存出来的多行列表就误报 schema 错）。
+- `audit-dist.mjs` 的「加载更多」检查改为按公开文章总数判断 ——
+  公开文章不足一页时本来就没有下一页，缺 `api/posts/*.json` 是正确的。
+
+---
+
 ## 2.5.1 · 2026-09-16
 
 ### 新增

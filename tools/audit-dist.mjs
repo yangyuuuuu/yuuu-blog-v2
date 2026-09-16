@@ -11,6 +11,21 @@ import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
+import { isHiddenData } from '../src/lib/hidden.ts';
+
+/*
+ * 只用正则取判定需要的两个键 —— 不 import 'yaml'。
+ * 那是 astro 的传递依赖：npm 会提升到顶层所以本地能用，
+ * pnpm 的隔离模式下却不可见（构建/审核都会报 Cannot find module 'yaml'）。
+ */
+function readHiddenKeys(raw) {
+  const yaml = (/^---\r?\n([\s\S]*?)\r?\n---/.exec(raw) || [])[1] || '';
+  const pick = (key) => {
+    const m = new RegExp('^' + key + ':\\s*(.+?)\\s*$', 'm').exec(yaml);
+    return m ? m[1].replace(/^["']|["']$/g, '') : undefined;
+  };
+  return { private: pick('private') === 'true', category: pick('category') };
+}
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const DIST = join(ROOT, 'dist');
@@ -209,12 +224,25 @@ else if (cards < 10) ok('首屏 ' + cards + ' 张卡片（文章不足 10 篇）
 else bad('首屏渲染了 ' + cards + ' 张卡片，超过 10');
 
 const apiFiles = walk('api', (p) => p.endsWith('.json'));
+/* 公开文章不足一页时，本来就没有「下一页」，没有 JSON 是正确的 —— 所以按源码算出总数 */
+const publicPostCount = readdirSync(join(ROOT, 'src/content/posts'))
+  .filter((n) => n.endsWith('.md'))
+  .filter((n) => {
+    const raw = readFileSync(join(ROOT, 'src/content/posts', n), 'utf8');
+    return !/^draft:\s*true\s*$/m.test(raw) && !isHiddenData(readHiddenKeys(raw));
+  }).length;
 if (apiFiles.length) {
   ok('加载更多用的静态 JSON ' + apiFiles.length + ' 个：' + apiFiles.join(', '));
   const j = JSON.parse(read(apiFiles[0]));
   if (j.html && j.html.includes('<article')) ok('JSON 里带着预渲染好的卡片 HTML（' + kb(Buffer.byteLength(j.html)) + '）');
   else bad('JSON 结构不对');
-} else bad('没有 api/posts/*.json，加载更多会失效');
+} else if (publicPostCount <= 10) {
+  ok('公开文章 ' + publicPostCount + ' 篇，不到一页，本来就没有下一页（没有 api/posts/*.json 是正确的）');
+  if (/id=["']?loadMore/.test(indexHtml)) wrn('没有下一页，但首页还有「加载更多」按钮的痕迹，确认一下它是不是隐藏的');
+  else ok('没有下一页时，首页也不渲染「加载更多」按钮');
+} else {
+  bad('公开文章有 ' + publicPostCount + ' 篇（不止一页），却没有 api/posts/*.json，加载更多会失效');
+}
 
 /* ---------------------------------------------------------------- 5. 搜索 */
 head('5. Pagefind 搜索索引');
@@ -287,7 +315,54 @@ if (cssFiles.length) {
   console.log('    CSS: ' + cssFiles.map((f) => f + ' ' + kb(size(f))).join(', '));
 }
 
-/* ---------------------------------------------------------------- 8. 站点 URL */
+/* ---------------------------------------------------------------- 8. 隐藏文章 */
+head('8. 隐藏文章（category: 日记 或 private: true）');
+{
+  const srcDir = join(ROOT, 'src/content/posts');
+  const hidden = [];
+  const visible = [];
+  for (const f of readdirSync(srcDir).filter((n) => n.endsWith('.md'))) {
+    const raw = readFileSync(join(srcDir, f), 'utf8');
+    if (/^draft:\s*true\s*$/m.test(raw)) continue;
+    const slug = f.replace(/\.md$/, '');
+    (isHiddenData(readHiddenKeys(raw)) ? hidden : visible).push(slug);
+  }
+
+  if (!hidden.length) {
+    ok('没有隐藏文章（分类「日记」或 private: true 会自动隐藏）');
+  } else {
+    const leaks = [];
+    for (const slug of hidden) {
+      const file = 'posts/' + slug + '/index.html';
+      if (!existsSync(abs(file))) { bad('隐藏文章的页面没生成 —— 直接开链接也看不到了: ' + slug); continue; }
+      const html = read(file);
+      const art = (/<article[^>]*>/.exec(html) || [''])[0];
+      if (art.includes('data-pagefind-body')) leaks.push(slug + ' 仍参与搜索索引');
+      if (!html.includes('noindex')) leaks.push(slug + ' 缺少 noindex');
+    }
+    /* 所有「浏览入口」的产物里都不该出现隐藏文章的 slug */
+    const surfaces = [
+      ['首页', 'index.html'], ['归档', 'archive/index.html'], ['标签总览', 'tags/index.html'],
+      ['RSS', 'rss.xml'], ['sitemap', 'sitemap-0.xml'],
+      ...walk('api', (p) => p.endsWith('.json')).map((p) => ['分页 JSON', p]),
+    ];
+    for (const [label, file] of surfaces) {
+      if (!existsSync(abs(file))) continue;
+      const body = read(file);
+      const hit = hidden.filter((s) => body.includes(s));
+      if (hit.length) leaks.push(label + ' 里泄漏了: ' + hit.join(', '));
+    }
+    if (leaks.length) leaks.forEach((l) => bad('隐藏文章泄漏 —— ' + l));
+    else {
+      ok(hidden.length + ' 篇隐藏文章：页面在、noindex 在，搜索/列表/标签/RSS/sitemap 里都没有它们');
+      console.log('      ' + hidden.join('、'));
+      console.log('      （直接开 /posts/<slug>/ 仍能看 —— 纯静态站没有登录，这是设计如此）');
+    }
+  }
+  ok('公开文章 ' + visible.length + ' 篇，搜索索引只应包含它们');
+}
+
+/* ---------------------------------------------------------------- 9. 站点 URL */
 head('8. 站点 URL 自检');
 {
   const cfgSrc = readFileSync(join(ROOT, 'astro.config.mjs'), 'utf8');

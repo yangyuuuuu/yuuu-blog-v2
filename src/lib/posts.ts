@@ -1,4 +1,5 @@
 import { getCollection, type CollectionEntry } from 'astro:content';
+import { HIDDEN_CATEGORY, isHiddenData } from './hidden';
 import { countWords, readingMinutes, stripMarkdown, truncate } from './format';
 import { resolveCover } from './covers';
 
@@ -21,15 +22,41 @@ const VALID_STYLES: CoverStyleId[] = [
   'wave', 'nebula', 'crown', 'opera', 'aurora', 'starry', 'bubble', 'grid', 'image',
 ];
 
-/** 取全部文章：过滤草稿、按置顶 + 日期倒序 */
-export async function getPosts(): Promise<Post[]> {
+/**
+ * 隐藏的文章：不进首页 / 归档 / 标签 / 分类 / 搜索 / RSS / sitemap，
+ * 但**直接开链接仍然能看**（静态站没有登录，这是能做到的极限）。
+ *
+ * 判定两条，满足其一即可：
+ *   · category 是「日记」—— 自动，日常不用记着加开关
+ *   · frontmatter 写 private: true —— 手动，给非日记的文章用
+ */
+export { HIDDEN_CATEGORY, isHiddenData };
+
+/** 这篇文章是否隐藏（判定规则见 lib/hidden.ts） */
+export function isHidden(post: Post): boolean {
+  return isHiddenData(post.data);
+}
+
+/** 排序：置顶优先，然后按日期倒序 */
+const byDateDesc = (a: Post, b: Post): number => {
+  if (a.data.pinned !== b.data.pinned) return a.data.pinned ? -1 : 1;
+  return b.data.date.getTime() - a.data.date.getTime();
+};
+
+/** 取全部已发布文章（含隐藏的）—— 只有生成文章页时用它 */
+export async function getAllPosts(): Promise<Post[]> {
   const all = await getCollection('posts', ({ data }: Post) =>
     import.meta.env.PROD ? !data.draft : true,
   );
-  return all.sort((a, b) => {
-    if (a.data.pinned !== b.data.pinned) return a.data.pinned ? -1 : 1;
-    return b.data.date.getTime() - a.data.date.getTime();
-  });
+  return all.sort(byDateDesc);
+}
+
+/**
+ * 取「公开的」文章 —— 列表、标签、归档、RSS、sitemap、上下篇导航一律用这个。
+ * 隐藏的文章不会出现在任何浏览路径里。
+ */
+export async function getPosts(): Promise<Post[]> {
+  return (await getAllPosts()).filter((p) => !isHidden(p));
 }
 
 export const slugOf = (post: Post): string => post.id;

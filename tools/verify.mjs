@@ -19,11 +19,7 @@
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
-
-/* yaml 是 astro 自带的依赖，这里借它用，不额外增加依赖 */
-const require = createRequire(import.meta.url);
-const parseYaml = require('yaml').parse;
+import { parse as parseYaml } from 'yaml';
 
 /* 这两个是真实的依赖，已在 package.json 的 devDependencies 里声明。
    用动态 import 是为了在没装依赖时给一句人话，而不是甩一段堆栈。 */
@@ -105,6 +101,7 @@ const schema = z.object({
   coverHue: z.number().min(0).max(359).optional(),
   pinned: z.boolean().default(false),
   draft: z.boolean().default(false),
+  private: z.boolean().default(false),
 });
 
 /*
@@ -112,6 +109,9 @@ const schema = z.object({
  * 手写那版只认 `tags: [a, b]`，遇到多行列表就当成字符串，
  * 于是「网页后台保存过的文章」在这里被误报 schema 错误（踩过两次）。
  * Astro 自己也是用 yaml 解析的，这样两边才一致。
+ *
+ * yaml 已显式写进 devDependencies —— 别再「借」astro 的传递依赖：
+ * npm 会把它提升到顶层所以本地能用，pnpm 的隔离模式下却不可见（踩过）。
  */
 function parseFrontmatter(raw) {
   const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(raw);

@@ -1,13 +1,16 @@
 ---
 import { render } from 'astro:content';
 import PostLayout from '../../layouts/PostLayout.astro';
-import { getPosts } from '../../lib/posts';
+import { getAllPosts, getPosts } from '../../lib/posts';
 
 export async function getStaticPaths() {
-  const posts = await getPosts();
-  return posts.map((post) => ({
+  /* 页面本身要全部生成（隐藏的文章也要能直接开链接）… */
+  const all = await getAllPosts();
+  /* …但「上一篇 / 下一篇」只在公开文章里串，免得把隐藏的日记带进浏览路径 */
+  const visible = await getPosts();
+  return all.map((post) => ({
     params: { slug: post.id },
-    props: { post, all: posts },
+    props: { post, all: visible },
   }));
 }
 

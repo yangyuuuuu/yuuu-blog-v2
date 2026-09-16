@@ -3,7 +3,8 @@ import BaseLayout from './BaseLayout.astro';
 import CoverStyle from '../components/CoverStyle.astro';
 import { formatDate, formatISO } from '../lib/format';
 import {
-  coverStyleOf, coverHueOf, coverLetterOf, coverSrcOf, readingOf, wordsOf, neighbours, urlOf, type Post,
+  coverStyleOf, coverHueOf, coverLetterOf, coverSrcOf, readingOf, wordsOf, neighbours, urlOf, isHidden,
+  type Post,
 } from '../lib/posts';
 
 interface Props {
@@ -15,7 +16,10 @@ const { post, all, headings = [] } = Astro.props;
 const toc = headings.filter((h) => h.depth === 2 || h.depth === 3);
 const d = post.data;
 const { newer, older } = neighbours(all, post);
-const description = d.summary ?? d.title;
+/* 隐藏的文章：去掉 data-pagefind-body（Pagefind 就不会索引它），并让搜索引擎别收录。
+   分享卡片也换成中性摘要 —— 免得链接被贴到别处时，摘要跟着露出去。 */
+const hidden = isHidden(post);
+const description = hidden ? 'yuuu 的一篇私人记录' : d.summary ?? d.title;
 ---
 
 <BaseLayout
@@ -24,6 +28,7 @@ const description = d.summary ?? d.title;
   type="article"
   publishedTime={d.date}
   modifiedTime={d.updated}
+  noindex={hidden}
 >
   <div class="progress-bar" id="progressBar" aria-hidden="true"></div>
 
@@ -38,9 +43,10 @@ const description = d.summary ?? d.title;
     ></button>
 
     <div class="grid grid-cols-1 items-start gap-10 lg:grid-cols-[minmax(0,1fr)_242px]">
-    <!-- data-pagefind-body：告诉 Pagefind 只索引正文，别把导航栏/页脚/标签页也算进去 -->
+    <!-- data-pagefind-body：告诉 Pagefind 只索引正文，别把导航栏/页脚/标签页也算进去。
+         隐藏的文章不加这个属性 —— 直接访问能看，但搜不到。 -->
     <article
-      data-pagefind-body
+      data-pagefind-body={hidden ? undefined : true}
       class="t-surface t-backdrop min-w-0 rounded-card border border-line bg-surface p-6 backdrop-blur-md shadow-[var(--shadow)] sm:p-8 lg:p-11"
     >
       <header class="mb-6 border-b border-line pb-6">

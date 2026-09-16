@@ -1,7 +1,7 @@
 {
   "name": "yuuu-blog-v2",
   "type": "module",
-  "version": "2.5.1",
+  "version": "2.6.0",
   "private": true,
   "description": "yuuu - Fontaine blue personal blog. Astro 7 + Tailwind 4 + Pagefind, deployed on Cloudflare Pages.",
   "engines": {
@@ -41,8 +41,9 @@
     "@astrojs/check": "^0.9.10",
     "@astrojs/compiler": "^2.13.1",
     "pagefind": "^1.5.2",
+    "sharp": "^0.35.4",
     "typescript": "^6.0.3",
-    "zod": "^4.6.5",
-    "sharp": "^0.35.4"
+    "yaml": "^2.9.1",
+    "zod": "^4.6.5"
   }
 }

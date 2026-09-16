@@ -35,6 +35,11 @@ const posts = defineCollection({
     coverHue: z.number().min(0).max(359).optional(),
     pinned: z.boolean().default(false),
     draft: z.boolean().default(false),
+    /**
+     * 隐藏：不进首页/归档/标签/分类/搜索/RSS/sitemap，但直接开链接仍然能看。
+     * 不写这个字段时，「日记」分类会自动算作隐藏（见 src/lib/posts.ts 的 isHidden）。
+     */
+    private: z.boolean().default(false),
   }),
 });
 
