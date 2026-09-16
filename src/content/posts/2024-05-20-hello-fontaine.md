@@ -4,7 +4,7 @@ date: 2024-05-20
 category: 日记
 tags: [生活, 开始]
 summary: 终于把这个小站搭起来了。用 Astro 从零重构，主题依旧是芙宁娜，但这一次是「零 JS 优先」。
-cover: /mascot/stand.webp
+cover: stand
 coverStyle: nebula
 coverHue: 268
 pinned: true

@@ -93,6 +93,18 @@ import Changelog from '../../CHANGELOG.md';
         g.head.style.cursor = 'pointer';
       });
 
+      /* 内容本来就装得下的版本，直接把按钮去掉 —— 点「展开」没新内容很迷惑 */
+      requestAnimationFrame(function () {
+        groups.forEach(function (g) {
+          if (g.body.scrollHeight <= 178) {
+            g.wrap.classList.add('is-short');
+            g.btn.remove();
+            g.head.style.cursor = '';
+          }
+        });
+        syncAll();
+      });
+
       function syncAll() {
         if (!allBtn) return;
         var allOpen = groups.every(function (g) { return g.wrap.classList.contains('is-open'); });

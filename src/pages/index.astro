@@ -11,10 +11,10 @@ const firstPage = posts.slice(0, PAGE_SIZE);
 const hasMore = posts.length > PAGE_SIZE;
 ---
 
-<BaseLayout waves>
-  <!-- 首屏：只有徽记、站名、一句话和统计。文章列表整体下沉到第二屏 -->
+<BaseLayout>
+  <!-- 首屏：只有徽记和两个词，占满一屏，看不到下面的文章 -->
   <section class="hero" id="top">
-    <div class="hero-inner">
+    <div class="hero-inner" id="heroInner">
       <img
         src="/emblem.webp"
         alt=""
@@ -25,26 +25,9 @@ const hasMore = posts.length > PAGE_SIZE;
         decoding="async"
       />
 
-      <p class="mb-3.5 text-[11.5px] tracking-[0.5em] text-accent uppercase">FONTAINE · 水色手记</p>
-      <h1 class="hero-title">在枫丹的午后<br />写下一页页温柔</h1>
-      <p class="hero-desc">
-        日记 · 随笔 · 技术分享 —— 一个属于 <b class="text-gold">yuuu</b> 的小小水之国度。
-      </p>
-
-      <dl class="hero-stats">
-        <div>
-          <dd>{posts.length}</dd>
-          <dt>篇文章</dt>
-        </div>
-        <div>
-          <dd>{tags.length}</dd>
-          <dt>个标签</dt>
-        </div>
-        <div>
-          <dd>{categories.length}</dd>
-          <dt>个分类</dt>
-        </div>
-      </dl>
+      <p class="hero-kicker">FONTAINE · FURINA</p>
+      <p class="hero-name">yuuu</p>
+      <p class="hero-meta">{posts.length} 篇 · {tags.length} 标签 · {categories.length} 分类</p>
 
       <a href="#latest" class="hero-scroll" aria-label="下滑查看文章">
         <span>下滑</span>
@@ -115,6 +98,28 @@ const hasMore = posts.length > PAGE_SIZE;
   </div>
 
   <script>
+    /* 下滑时首屏整体缩小 + 淡出，文章版块顺势接上来。只动 transform / opacity */
+    (function () {
+      var hero = document.getElementById('top');
+      var inner = document.getElementById('heroInner');
+      if (!hero || !inner) return;
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+      var raf = 0;
+      function update() {
+        raf = 0;
+        var h = hero.offsetHeight || window.innerHeight;
+        var p = Math.min(1, Math.max(0, window.scrollY / (h * 0.8)));
+        var e = 1 - Math.pow(1 - p, 2);            // easeOutQuad，起步快收尾稳
+        inner.style.transform =
+          'translate3d(0,' + (-e * 30).toFixed(1) + 'px,0) scale(' + (1 - e * 0.2).toFixed(4) + ')';
+        inner.style.opacity = Math.max(0, 1 - e * 1.15).toFixed(3);
+      }
+      window.addEventListener('scroll', function () { if (!raf) raf = requestAnimationFrame(update); }, { passive: true });
+      window.addEventListener('resize', update);
+      update();
+    })();
+
     /* 第二屏内容进入视口时浮现一次；之后各卡片再由 .reveal 逐个淡入 */
     (function () {
       var sink = document.getElementById('sink');

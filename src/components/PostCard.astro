@@ -2,7 +2,7 @@
 import CoverStyle from './CoverStyle.astro';
 import { formatDate, formatShort } from '../lib/format';
 import {
-  coverStyleOf, coverHueOf, coverLetterOf, summaryOf, readingOf, urlOf, type Post,
+  coverStyleOf, coverHueOf, coverLetterOf, coverSrcOf, summaryOf, readingOf, urlOf, type Post,
 } from '../lib/posts';
 
 interface Props {
@@ -25,7 +25,7 @@ const isNew = Date.now() - d.date.getTime() < 1000 * 60 * 60 * 24 * 14;
       style={coverStyleOf(post)}
       hue={coverHueOf(post)}
       letter={coverLetterOf(post)}
-      image={d.cover}
+      image={coverSrcOf(post)}
       alt={d.title}
       class="card-cover h-[158px]"
     />

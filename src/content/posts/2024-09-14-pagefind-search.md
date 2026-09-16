@@ -4,7 +4,7 @@ date: 2024-09-14
 category: 技术
 tags: [Pagefind, 搜索, 性能]
 summary: 静态站点也能有实时全文搜索。Pagefind 在构建后扫描 dist 目录生成分片索引，用户聚焦搜索框时才下载，首屏一点 JS 都不占。
-cover: /mascot/stand.webp
+cover: stand
 coverStyle: starry
 coverHue: 210
 ---

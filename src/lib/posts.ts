@@ -1,5 +1,6 @@
 import { getCollection, type CollectionEntry } from 'astro:content';
 import { countWords, readingMinutes, stripMarkdown, truncate } from './format';
+import { resolveCover } from './covers';
 
 export type Post = CollectionEntry<'posts'>;
 
@@ -34,6 +35,14 @@ export async function getPosts(): Promise<Post[]> {
 export const slugOf = (post: Post): string => post.id;
 
 export const urlOf = (post: Post): string => `/posts/${post.id}/`;
+
+/**
+ * 封面图片路径。frontmatter 的 cover 支持三种写法，见 src/lib/covers.ts。
+ * 没写就按 slug 从封面池里稳定地挑一张。
+ */
+export function coverSrcOf(post: Post): string | undefined {
+  return resolveCover(post.data.cover as string | undefined, post.id) || undefined;
+}
 
 export function coverStyleOf(post: Post): CoverStyleId {
   const raw = post.data.coverStyle as CoverStyleId | undefined;

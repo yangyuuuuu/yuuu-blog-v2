@@ -13,7 +13,6 @@ interface Props {
   publishedTime?: Date;
   modifiedTime?: Date;
   noindex?: boolean;
-  waves?: boolean;
   crest?: boolean;
 }
 
@@ -25,7 +24,6 @@ const {
   publishedTime,
   modifiedTime,
   noindex = false,
-  waves = false,
   crest = false,
 } = Astro.props;
 
@@ -84,7 +82,7 @@ const ogImage = new URL(image, site).href;
       class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-100 focus:rounded-lg focus:bg-surface-2 focus:px-4 focus:py-2 focus:text-ink"
     >跳到正文</a>
 
-    <Background waves={waves} crest={crest} />
+    <Background crest={crest} />
 
     <div class="relative z-10 flex min-h-screen flex-col">
       <Header />

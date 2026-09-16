@@ -303,6 +303,33 @@ yuuu-blog-v2/
 
 字段写错**构建就会报错**，不会静默产出 `undefined`。
 
+### 封面池
+
+所有封面集中在 **`src/lib/covers.ts`**，改一处就能全站换风格。
+
+**加一张新图：**
+
+1. 把图片丢进 `public/covers/`（或 `public/mascot/`）
+2. 在 `COVER_POOL` 里加一行：
+
+   ```ts
+   { id: 'spring', src: '/covers/spring.jpg', label: '春日' },
+   ```
+
+3. 文章里写 `cover: spring` 即可
+
+**三种写法：**
+
+| frontmatter | 含义 |
+| --- | --- |
+| `cover: stand` | 用池子里的 |
+| `cover: /covers/my.jpg` | 直接用这个路径（自定义图片） |
+| `cover: https://…` | 外链 |
+| 不写 | 按 slug 从池子里**稳定**挑一张，同一篇每次构建都一样 |
+
+> 图片建议用竖版或方版，展示时会**居中留白**（不是裁切），
+> 所以长宽比差异大也不会被切掉半个身子。
+
 ### 封面样式
 
 `wave` 潮汐 · `nebula` 星云 · `crown` 王冠 · `opera` 歌剧院 · `aurora` 极光 ·

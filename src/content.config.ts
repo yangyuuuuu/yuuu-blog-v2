@@ -17,6 +17,7 @@ const posts = defineCollection({
     category: z.enum(CATEGORIES).default('随笔'),
     tags: z.array(z.string()).default([]),
     summary: z.string().optional(),
+    /** 封面：封面池 id（如 'stand'）、public 下的绝对路径、或外链。不写则按 slug 从池子稳定挑一张 */
     cover: z.string().optional(),
     coverStyle: z.enum(COVER_STYLES).optional(),
     coverHue: z.number().min(0).max(359).optional(),

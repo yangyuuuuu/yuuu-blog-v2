@@ -4,7 +4,7 @@ date: 2024-06-02
 category: 技术
 tags: [工具链, Node, 前端]
 summary: 换电脑之后重新搭了一遍开发环境，把用到的东西和踩过的坑记下来，方便下次直接抄。
-cover: /mascot/sword.webp
+cover: sword
 coverStyle: grid
 coverHue: 215
 ---

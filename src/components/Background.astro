@@ -1,12 +1,11 @@
 ---
 interface Props {
-  /** 是否渲染海浪（只在首页开） */
-  waves?: boolean;
   /** 气泡数量：全部写进 DOM，用 CSS 按屏宽裁掉多余的，零 JS */
   bubbles?: number;
+  /** 首屏背后的超大水印徽记（首页已改用真图，默认关） */
   crest?: boolean;
 }
-const { waves = false, bubbles = 18, crest = false } = Astro.props;
+const { bubbles = 18, crest = false } = Astro.props;
 
 /** 固定的气泡参数，避免每次刷新跳动；用索引做伪随机 */
 const seeds = Array.from({ length: bubbles }, (_, i) => {
@@ -43,21 +42,5 @@ const seeds = Array.from({ length: bubbles }, (_, i) => {
   )
 }
 
-{
-  waves && (
-    <div class="waves" aria-hidden="true">
-      <svg viewBox="0 0 1440 120" preserveAspectRatio="none">
-        <path
-          d="M0,64 C240,110 420,10 720,56 C1020,102 1200,20 1440,58 L1440,120 L0,120 Z"
-          fill="rgb(126 200 227 / 0.10)"
-        />
-      </svg>
-      <svg viewBox="0 0 1440 120" preserveAspectRatio="none">
-        <path
-          d="M0,80 C220,40 460,116 720,72 C980,28 1220,100 1440,66 L1440,120 L0,120 Z"
-          fill="rgb(126 200 227 / 0.17)"
-        />
-      </svg>
-    </div>
-  )
-}
+{/* 海浪已经去掉：它原本对齐首屏底边，改成满屏首屏后会横在正文中间 */}
+

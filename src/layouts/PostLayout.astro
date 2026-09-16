@@ -3,7 +3,7 @@ import BaseLayout from './BaseLayout.astro';
 import CoverStyle from '../components/CoverStyle.astro';
 import { formatDate, formatISO } from '../lib/format';
 import {
-  coverStyleOf, coverHueOf, coverLetterOf, readingOf, wordsOf, neighbours, urlOf, type Post,
+  coverStyleOf, coverHueOf, coverLetterOf, coverSrcOf, readingOf, wordsOf, neighbours, urlOf, type Post,
 } from '../lib/posts';
 
 interface Props {
@@ -73,9 +73,9 @@ const description = d.summary ?? d.title;
         style={coverStyleOf(post)}
         hue={coverHueOf(post)}
         letter={coverLetterOf(post)}
-        image={d.cover}
+        image={coverSrcOf(post)}
         alt={d.title}
-        class="mb-7 h-[150px] rounded-soft border border-line sm:h-[200px]"
+        class="mb-7 h-[190px] rounded-soft border border-line sm:h-[260px]"
       />
 
       <div class="prose-yuuu" id="postBody">

@@ -4,7 +4,7 @@ date: 2024-09-05
 category: 技术
 tags: [CSS, 动画, View Transitions]
 summary: 不引入任何动画库，用浏览器原生的 View Transitions API，多页应用也能有丝滑的转场。三行 CSS 搞定。
-cover: /mascot/cake.webp
+cover: cake
 coverStyle: aurora
 coverHue: 250
 ---

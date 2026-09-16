@@ -4,7 +4,7 @@ date: 2024-08-15
 category: 日记
 tags: [生活, 早晨]
 summary: 六点半自然醒，没有闹钟。煮了咖啡，读完了一本书的最后一章。
-cover: /mascot/shy.webp
+cover: shy
 coverStyle: bubble
 coverHue: 40
 ---

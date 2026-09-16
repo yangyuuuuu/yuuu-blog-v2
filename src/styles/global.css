@@ -129,29 +129,6 @@
   100% { transform: translate3d(40px, -112vh, 0) scale(1.1); opacity: 0; }
 }
 
-.waves {
-  position: absolute;
-  inset-inline: 0;
-  bottom: -2px;
-  height: 120px;
-  pointer-events: none;
-  overflow: hidden;
-}
-.waves svg {
-  position: absolute;
-  bottom: 0;
-  left: -6%;
-  width: 112%;
-  height: 100%;
-  will-change: transform;
-}
-.waves svg:nth-child(1) { animation: wave-shift 11s ease-in-out infinite; }
-.waves svg:nth-child(2) { animation: wave-shift 15s ease-in-out infinite reverse; }
-@keyframes wave-shift {
-  0%, 100% { transform: translate3d(0, 0, 0); }
-  50%      { transform: translate3d(-40px, 0, 0); }
-}
-
 .aurora {
   position: fixed;
   inset: 0;
@@ -563,6 +540,9 @@ mark.find-hit::after {
 /* 输入框聚焦后藏掉 placeholder —— 否则文字会紧贴光标，看起来像光标被遮住 */
 .search-input:focus::placeholder { color: transparent; }
 
+/* 空着的时候让光标停在中间；一开始打字就回到左对齐，免得边打边跳 */
+.search-input:placeholder-shown { text-align: center; }
+
 /* 快捷键提示做成输入框右侧的小徽标，聚焦后淡出（这时已经不需要提示了） */
 .search-kbd {
   flex-shrink: 0;
@@ -583,7 +563,8 @@ mark.find-hit::after {
    -------------------------------------------------------------------------- */
 .cl-group { position: relative; }
 .cl-group > h2 { scroll-margin-top: 92px; }
-.cl-group:not(.is-open) .cl-body {
+.cl-group.is-short .cl-body { max-height: none; -webkit-mask-image: none; mask-image: none; }
+.cl-group:not(.is-open):not(.is-short) .cl-body {
   max-height: 170px;
   overflow: hidden;
   /* 底部渐隐，暗示「下面还有」，比直接截断自然 */
@@ -648,64 +629,67 @@ mark.find-hit::after {
 /* --------------------------------------------------------------------------
    首页首屏：只留徽记、站名、一句话和统计，文章列表整体下沉到第二屏
    -------------------------------------------------------------------------- */
+/* 首屏占满一屏（减掉 68px 的吸顶导航），所以默认看不到文章列表 */
 .hero {
   display: grid;
   place-items: center;
-  min-height: 70vh;
-  min-height: min(80svh, 760px);
-  padding: 36px 20px 28px;
+  min-height: calc(100vh - 68px);
+  min-height: calc(100svh - 68px);
+  padding: 20px;
+  overflow: hidden;
 }
-.hero-inner { max-width: 760px; text-align: center; }
+.hero-inner {
+  max-width: 880px;
+  text-align: center;
+  transform-origin: 50% 38%;
+  will-change: transform, opacity;
+}
 
 .hero-emblem {
   display: block;
-  width: clamp(92px, 14vw, 128px);
+  width: clamp(148px, 22vw, 244px);
   height: auto;
-  margin: 0 auto 20px;
+  margin: 0 auto 26px;
   animation: heroFloat 7s ease-in-out infinite;
-  filter: drop-shadow(0 16px 34px color-mix(in srgb, var(--accent) 34%, transparent));
+  filter: drop-shadow(0 20px 44px color-mix(in srgb, var(--accent) 36%, transparent));
 }
 @keyframes heroFloat {
   0%, 100% { transform: translateY(0); }
   50%      { transform: translateY(-10px); }
 }
 
-.hero-title {
-  margin: 0 0 16px;
+.hero-kicker {
+  margin: 0 0 12px;
+  font-size: clamp(10.5px, 1.4vw, 13px);
+  letter-spacing: 0.62em;
+  text-indent: 0.62em;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+.hero-name {
+  margin: 0;
   font-family: var(--font-title);
-  font-size: clamp(28px, 5.6vw, 58px);
-  line-height: 1.16;
-  letter-spacing: 0.02em;
-  background: linear-gradient(96deg, var(--ink), var(--accent) 52%, var(--gold));
+  font-size: clamp(54px, 12vw, 124px);
+  line-height: 0.98;
+  letter-spacing: 0.04em;
+  background: linear-gradient(96deg, var(--ink), var(--accent) 54%, var(--gold));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
-.hero-desc { margin: 0 auto; max-width: 600px; font-size: 16.5px; color: var(--ink-2); }
-
-.hero-stats {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px 34px;
-  margin: 30px 0 0;
+.hero-meta {
+  margin: 20px 0 0;
+  font-size: 12.5px;
+  letter-spacing: 0.18em;
+  color: var(--muted);
 }
-.hero-stats > div { min-width: 68px; text-align: center; }
-.hero-stats dd {
-  margin: 0;
-  font-family: var(--font-title);
-  font-size: 27px;
-  line-height: 1.1;
-  color: var(--gold);
-}
-.hero-stats dt { font-size: 11.5px; letter-spacing: 0.18em; color: var(--muted); }
 
 .hero-scroll {
   display: inline-flex;
   flex-direction: column;
   align-items: center;
   gap: 5px;
-  margin-top: 38px;
+  margin-top: 44px;
   font-size: 11px;
   letter-spacing: 0.34em;
   color: var(--muted);
