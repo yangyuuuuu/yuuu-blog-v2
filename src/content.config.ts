@@ -8,12 +8,24 @@ export const COVER_STYLES = [
 
 export const CATEGORIES = ['日记', '技术', '随笔'] as const;
 
+/**
+ * 可选日期：允许空值。
+ *
+ * 网页后台（/admin）把「最后修改」清空时会写成 `updated: ''`，
+ * 而 z.coerce.date() 会把空字符串转成 Invalid Date，整篇文章直接构建失败。
+ * 空字符串 / null 一律当「没填」处理。
+ */
+const optionalDate = z.preprocess(
+  (v) => (v === '' || v === null ? undefined : v),
+  z.coerce.date().optional(),
+);
+
 const posts = defineCollection({
   loader: glob({ pattern: '**/*.md', base: './src/content/posts' }),
   schema: z.object({
     title: z.string(),
     date: z.coerce.date(),
-    updated: z.coerce.date().optional(),
+    updated: optionalDate,
     category: z.enum(CATEGORIES).default('随笔'),
     tags: z.array(z.string()).default([]),
     summary: z.string().optional(),

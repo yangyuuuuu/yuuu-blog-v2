@@ -19,6 +19,11 @@
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+
+/* yaml 是 astro 自带的依赖，这里借它用，不额外增加依赖 */
+const require = createRequire(import.meta.url);
+const parseYaml = require('yaml').parse;
 
 /* 这两个是真实的依赖，已在 package.json 的 devDependencies 里声明。
    用动态 import 是为了在没装依赖时给一句人话，而不是甩一段堆栈。 */
@@ -84,10 +89,14 @@ if (compiled === astroFiles.length) ok(astroFiles.length + ' 个 .astro 全部�
 /* ---------------------------------------------------------------- 2. 内容 schema */
 head('2. 文章 frontmatter 校验（zod，与 Content Collections 同规则）');
 const COVER_STYLES = ['wave', 'nebula', 'crown', 'opera', 'aurora', 'starry', 'bubble', 'grid', 'image'];
+/* 必须和 src/content.config.ts 保持一致 —— 网页后台清空日期字段会写 updated: ''，
+   而 z.coerce.date() 会把空串转成 Invalid Date 让构建失败。
+   这个坑就是「两边 schema 各写一份」造成的，改一边记得改另一边。 */
+const optionalDate = z.preprocess((v) => (v === '' || v === null ? undefined : v), z.coerce.date().optional());
 const schema = z.object({
   title: z.string(),
   date: z.coerce.date(),
-  updated: z.coerce.date().optional(),
+  updated: optionalDate,
   category: z.enum(['日记', '技术', '随笔']).default('随笔'),
   tags: z.array(z.string()).default([]),
   summary: z.string().optional(),
@@ -98,26 +107,21 @@ const schema = z.object({
   draft: z.boolean().default(false),
 });
 
+/*
+ * frontmatter 用真正的 YAML 解析器，不再手写。
+ * 手写那版只认 `tags: [a, b]`，遇到多行列表就当成字符串，
+ * 于是「网页后台保存过的文章」在这里被误报 schema 错误（踩过两次）。
+ * Astro 自己也是用 yaml 解析的，这样两边才一致。
+ */
 function parseFrontmatter(raw) {
   const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(raw);
   if (!m) return { data: {}, body: raw };
-  const data = {};
-  for (const line of m[1].split(/\r?\n/)) {
-    if (!line.trim() || /^\s*#/.test(line)) continue;
-    const i = line.indexOf(':');
-    if (i < 0) continue;
-    const key = line.slice(0, i).trim();
-    let val = line.slice(i + 1).trim();
-    if (/^\[.*\]$/.test(val)) {
-      val = val.slice(1, -1).split(',').map((s) => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
-    } else if (val === 'true' || val === 'false') {
-      val = val === 'true';
-    } else if (/^-?\d+(\.\d+)?$/.test(val)) {
-      val = Number(val);
-    } else {
-      val = val.replace(/^["']|["']$/g, '');
-    }
-    data[key] = val;
+  let data;
+  try {
+    data = parseYaml(m[1]) ?? {};
+  } catch (e) {
+    bad('frontmatter 不是合法 YAML: ' + (e && e.message ? e.message : e));
+    data = {};
   }
   return { data, body: raw.slice(m[0].length) };
 }
