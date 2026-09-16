@@ -80,6 +80,12 @@ const inlineRank = inlineTags
   })
   .sort((a, b) => b.bytes - a.bytes);
 
+/*
+ * 首屏到底要下载哪些 JS？两种都要算：
+ *   1. index.html 里内联的（行内脚本 + 被内联进来的模块）
+ *   2. index.html 用 <script src> 直接引的静态入口 chunk
+ * 只有「构建时切出去、运行时才 import() 的按需 chunk」不算 —— 那些见下面的懒加载表。
+ */
 const extSrcs = [...indexHtml.matchAll(/<script[^>]*\bsrc=["']([^"']+)["']/g)].map((m) => m[1]);
 let extRaw = 0, extGz = 0;
 const extList = [];
@@ -93,17 +99,72 @@ for (const src of extSrcs) {
   extGz += g;
   extList.push([file, buf.length, g]);
 }
+
+/* 首屏只该下载 HTML 里出现过的东西；_astro 下其余的 .js 都是 import() 切的按需 chunk */
+const onDemand = walk('_astro', (p) => p.endsWith('.js'))
+  .filter((p) => !extList.some(([f]) => f.split(/[\\/]/).pop() === p.split(/[\\/]/).pop()))
+  .map((p) => [p, read(p)]);
+const lazy = [];
+for (const [file, src] of onDemand) {
+  const engine = /search-engine/.test(file) || src.includes('excerptLength') || src.includes('yuuuSearchPanel');
+  const settings = /settings-panel/.test(file) || src.includes('yuuu-skin');
+  const more = /loadMore|postGrid|__yuuuReveal/.test(src);
+  const label = engine ? '搜索引擎（聚焦 / Ctrl+K 时才下载）'
+    : settings ? '设置面板（点齿轮时才下载）'
+      : more ? '首页加载更多（点按钮时才下载）'
+        : 'Vite 共享依赖（静态入口的静态 import，随首屏一起下）';
+  lazy.push([file, label, engine || settings || more]);
+}
 console.log('    行内脚本合计        ' + kb(inline) + '（共 ' + inlineTags.length + ' 段）');
 for (const r of inlineRank) {
   console.log('      · ' + kb(r.bytes).padStart(9) + '  ' + r.label + (r.isModule ? '  [module]' : ''));
 }
 for (const [f, r, g] of extList) console.log('    ' + f.padEnd(20) + kb(r) + '  → gzip ' + gz(g));
+for (const [f, label, isDeferred] of lazy) {
+  console.log('    ' + (isDeferred ? '按需 ' : '静态 ') + f.padEnd(46) + kb(size(f)) + '  ' + label);
+}
 const totalGz = inline + extGz;
 if (inline < 10 * 1024) ok('首屏行内 JS ' + kb(inline) + ' < 10 KB');
 else bad('首屏行内 JS ' + kb(inline) + ' 超过 10 KB');
 ok('首屏 JS 实际传输（含 gzip 外部包）约 ' + kb(totalGz));
 if (totalGz < 10 * 1024) ok('总计 ' + kb(totalGz) + ' < 10 KB 红线');
 else wrn('总计 ' + kb(totalGz) + ' 超过 10 KB，按 PRD 需要砍功能');
+
+/*
+ * 关键回归检查：搜索引擎如果被构建回入口（内联进 HTML 或并成静态 chunk），
+ * 「首屏 JS」的账面上看不出来，但用户其实照样在首屏下载它。
+ * 这里直接按产物内容判定：HTML/入口里出现了 pagefind 或 search-hit 就是退回去了。
+ */
+/*
+ * 只扫脚本正文，不扫 <div id="yuuuSearchPanel"> 这种标记 ——
+ * 引导脚本要往面板里写「正在准备搜索…」占位，提到这个 id 是正常的。
+ * 这里找的是只有在引擎里才会出现的字符串。
+ *   excerptLength / search-chips / search-hit → 结果渲染
+ *   pagefind.js                               → 索引加载
+ */
+const firstScreenSrc = inlineTags.map((m) => m[2]).join('\n') +
+  extList.map(([f]) => read(f)).join('\n');
+const engineMarks = ['excerptLength', 'search-chips', 'search-hit', 'search-empty-art', 'pagefind.js'];
+const leaked = engineMarks.filter((k) => firstScreenSrc.includes(k));
+if (leaked.length) {
+  bad('搜索引擎代码又回到首屏了（命中 ' + leaked.join(' / ') + '）：它应该只存在于按需 chunk 里' +
+      '（见 src/scripts/search-engine.ts，别改成静态 import）');
+} else {
+  ok('搜索引擎不在首屏脚本里，只在按需 chunk 里（聚焦 / Ctrl+K 才下载）');
+}
+const engineChunk = walk('_astro', (p) => /search-engine/.test(p) && p.endsWith('.js'))[0];
+if (!engineChunk) bad('缺少 search-engine 按需 chunk —— 构建没有把它切出去，或者动态 import 写错了');
+else {
+  const code = read(engineChunk);
+  const missing = engineMarks.filter((k) => !code.includes(k));
+  if (missing.length) bad('search-engine chunk 里缺少 ' + missing.join(' / ') + '，可能被打包器摇掉了');
+  else ok('按需 chunk ' + engineChunk + ' 内容完整（' + kb(size(engineChunk)) + '，gzip ' + gz(gzipSync(readFileSync(abs(engineChunk))).length) + '）');
+  /* 引导里的 import() 必须指向这个 chunk，否则用户一聚焦就是 404 */
+  const boot = extList.map(([f]) => read(f)).join('\n');
+  const target = engineChunk.split(/[\\/]/).pop().replace(/\.js$/, '');
+  if (boot.includes(target)) ok('SearchBox 引导的 import() 指向 ' + target + '（路径对得上）');
+  else bad('SearchBox 引导里的 import() 没指向 ' + target + '，聚焦搜索会 404');
+}
 
 /* ---------------------------------------------------------------- 3. 第三方脚本 */
 head('3. 第三方脚本');

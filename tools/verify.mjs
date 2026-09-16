@@ -10,6 +10,8 @@
  *   3. 检查所有相对 import 是否指向真实存在的文件
  *   4. CSS 括号配平 + 禁用项扫描
  *   5. 首屏 JS 体积预算（PRD 硬红线 < 10KB）
+ *      —— 只算「首屏真要下载的」：is:inline 原样输出 + 会进 HTML/入口 chunk 的模块脚本；
+ *         dynamic import() 出去的按需 chunk（搜索引擎、设置面板）单独列出来，不计入。
  *   6. PRD 要求的多端适配 / 禁止事项自查
  *
  * 用法：node tools/verify.mjs
@@ -214,7 +216,36 @@ for (const file of firstScreenFiles) {
 for (const [f, a, b] of budget) {
   console.log('    ' + f.padEnd(34) + '行内 ' + (a / 1024).toFixed(2) + ' KB   打包 ' + (b / 1024).toFixed(2) + ' KB');
 }
-console.log('    ' + '（Pagefind 索引与模块）'.padEnd(30) + '聚焦后才加载，首屏 0');
+
+/*
+ * 按需加载的模块：被 import() 拉进来的那些文件，构建时切成独立 chunk，
+ * 首屏不下载，所以从预算里排除。判据是「只被动态 import 引用」——
+ * 一旦有人把它改成静态 import（或用 <script src> 直接引），这里立刻报错，
+ * 免得哪天悄悄退回首屏。
+ */
+const lazyModules = [
+  ['src/scripts/search-engine.ts', '搜索引擎'],
+  ['src/scripts/settings-panel.ts', '设置面板'],
+];
+const codeSources = walk('src', (p) => /\.(astro|ts|tsx|js|mjs)$/.test(p));
+let lazyBytes = 0;
+for (const [file, label] of lazyModules) {
+  if (!exists(file)) { bad('按需模块不见了: ' + file); continue; }
+  const base = file.slice(file.lastIndexOf('/') + 1).replace(/\.[^.]+$/, '');
+  const staticallyImported = codeSources.filter((other) => {
+    if (other === file) return false;
+    const src = read(other);
+    return new RegExp('import\\s+(?:[\\w*{},\\s]+\\s+from\\s+)?[\'"]\\.\\.?/[^\'"]*' + base + '[\'"]').test(src);
+  });
+  const bytes = Buffer.byteLength(read(file), 'utf8');
+  lazyBytes += bytes;
+  if (staticallyImported.length) {
+    bad(label + '（' + file + '）被静态 import 了，会回到首屏：' + staticallyImported.join(', '));
+  } else {
+    console.log('    ' + ('按需加载：' + label).padEnd(30) + (bytes / 1024).toFixed(2) + ' KB   首次交互才下载');
+  }
+}
+if (lazyBytes) console.log('    ' + '（Pagefind 索引与运行时）'.padEnd(30) + '再次之后才下载，首屏 0');
 const kb = inlineBytes / 1024;
 if (kb < 10) ok('首屏行内 JS ' + kb.toFixed(2) + ' KB，低于 10KB 红线');
 else bad('首屏行内 JS ' + kb.toFixed(2) + ' KB 超过 10KB，按 PRD 必须砍功能');
