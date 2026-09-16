@@ -180,8 +180,25 @@ for (const p of pages) {
 if (!third.length) ok('公开页面 0 个第三方脚本（统计脚本需填 token 才会注入）');
 else third.forEach((t) => bad('公开页面出现外部脚本: ' + t));
 if (adminThird.length) {
-  ok('/admin 的 ' + adminThird.length + ' 个外链脚本已隔离（Sveltia CMS，只在后台加载）');
-  adminThird.forEach((t) => console.log('      ' + t));
+  bad('/admin 又引入外链脚本了：' + adminThird.join(' · '));
+  console.log('      CMS 是自托管的（public/admin/sveltia-cms.mjs），不该再依赖 unpkg / jsDelivr —— ');
+  console.log('      CDN 一挂后台就打不开。升级步骤见 public/admin/index.html 里的注释。');
+} else {
+  ok('/admin 没有外链脚本（CMS 自托管）');
+}
+
+/* 自托管的 CMS 是一整块大文件，最容易在改目录时被漏掉或删掉 */
+const adminHtml = existsSync(abs('admin/index.html')) ? read('admin/index.html') : '';
+const cmsMatch = /<script[^>]*\bsrc=["']([^"']*sveltia[^"']*)["']/.exec(adminHtml);
+if (!cmsMatch) {
+  wrn('admin/index.html 里没找到 Sveltia 的 script 标签，确认后台还能打开');
+} else {
+  const cmsPath = cmsMatch[1].replace(/^\//, '');
+  if (existsSync(abs(cmsPath))) {
+    ok('自托管 CMS 已随产物发布：' + cmsPath + '（' + kb(size(cmsPath)) + '）');
+  } else {
+    bad('admin/index.html 引用了 ' + cmsMatch[1] + '，但 dist 里没有这个文件 —— 后台会白屏');
+  }
 }
 
 /* ---------------------------------------------------------------- 4. 首页分页 */
