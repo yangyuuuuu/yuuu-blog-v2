@@ -132,8 +132,19 @@ for (const file of postFiles) {
     continue;
   }
   if (!/^[\u4e00-\u9fa5]/.test(data.title)) warn(relative('src/content/posts', file) + ' 标题不是以中文开头（仅提示）');
-  if (body.trim().length < 20) bad(relative('src/content/posts', file) + ' 正文太短');
-  if (!r.data.draft) published.push({ file, ...r.data });
+  /*
+   * 正文长度只卡「要发布的」文章。
+   * 草稿（draft: true）本来就是写一半的半成品 —— 刚 npm run new 建出来的草稿
+   * 正文只有一句占位，卡它等于逼你先写满 20 字才能提交。
+   * 别忘了：草稿本来也不会被构建出去，不存在发空文上去的风险。
+   */
+  if (!r.data.draft) {
+    if (body.trim().length < 20) {
+      bad(relative('src/content/posts', file) + ' 正文太短（' + body.trim().length + ' 字）' +
+          ' — 要发布的文章至少 20 字，或者先标成 draft: true');
+    }
+    published.push({ file, ...r.data });
+  }
 }
 if (published.length === postFiles.length && postFiles.length) {
   ok(postFiles.length + ' 篇文章 frontmatter 全部合法');

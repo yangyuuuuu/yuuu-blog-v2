@@ -64,11 +64,20 @@ if (drafts.length) {
 
 /* ---------------------------------------------------------------- 2. 源码自检 */
 head('2. 源码自检（npm run verify）');
-try {
-  run('node', ['tools/verify.mjs']);
-} catch {
+const verify = spawnSync('node tools/verify.mjs', [], {
+  cwd: ROOT, encoding: 'utf8', shell: true, maxBuffer: 20 * 1024 * 1024,
+});
+const verifyOut = (verify.stdout || '') + (verify.stderr || '');
+process.stdout.write(verifyOut);
+if (verify.status !== 0) {
   console.log('');
-  console.log('  ✗ 自检没过，先修上面的问题再发布。什么都没提交。');
+  console.log('  ✗ 自检没过（看上面带 ✗ 的那几行），什么都没提交。');
+  console.log('    草稿（draft: true）不会被卡正文长度；要发布的文章至少 20 字。');
+  process.exit(1);
+}
+if (verify.error) {
+  console.log('');
+  console.log('  ✗ 没能启动自检：' + verify.error.message);
   process.exit(1);
 }
 
