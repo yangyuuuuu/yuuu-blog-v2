@@ -1,7 +1,7 @@
 {
   "name": "yuuu-blog-v2",
   "type": "module",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "private": true,
   "description": "yuuu - Fontaine blue personal blog. Astro 7 + Tailwind 4 + Pagefind, deployed on Cloudflare Pages.",
   "engines": {
@@ -22,6 +22,9 @@
     "audit": "node tools/audit-dist.mjs",
     "smoke": "node tools/smoke-search.mjs",
     "check:all": "npm run verify && npm run smoke && npm run audit",
+    "new": "node tools/new-post.mjs",
+    "posts": "explorer src\\content\\posts",
+    "publish": "node tools/publish.mjs",
     "og": "node tools/make-og.mjs",
     "deploy": "npm run build && npx wrangler pages deploy dist",
     "domain": "node tools/set-domain.mjs",

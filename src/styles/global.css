@@ -921,16 +921,20 @@ html.fx-scrollblur.is-fast #main { filter: blur(1.8px); }
 /* 太阳 / 月亮：切换时旋转着换位，而不是硬切 */
 .theme-glyph {
   position: relative;
+  /* 固定成正方形 + margin: auto，让它在按钮里水平和垂直都严格居中 */
   display: block;
-  width: 1.15em;
-  height: 1.15em;
+  width: 18px;
+  height: 18px;
+  margin: auto;
 }
-.theme-glyph i {
+.theme-glyph svg {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
-  font-style: normal;
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* SVG 的几何中心就是视觉中心，不需要再靠字体度量对齐 */
+  transform-origin: 50% 50%;
   transition:
     opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1),
     transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
@@ -940,7 +944,7 @@ html.fx-scrollblur.is-fast #main { filter: blur(1.8px); }
 html[data-theme='light'] .g-moon { opacity: 0; transform: rotate(90deg) scale(0.4); }
 html[data-theme='light'] .g-sun { opacity: 1; transform: rotate(0deg) scale(1); }
 @media (prefers-reduced-motion: reduce) {
-  .theme-glyph i { transition: none; }
+  .theme-glyph svg { transition: none; }
 }
 
 /* --------------------------------------------------------------------------

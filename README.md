@@ -162,17 +162,18 @@ pnpm run verify
 
 | 我想…… | 运行什么 | 打开 |
 | --- | --- | --- |
-| **写文章**（推荐） | 什么都不用跑 | `https://你的域名/admin` |
-| **本地看完整效果**（含搜索） | `pnpm run serve` | <http://localhost:4321> |
-| **改样式 / 组件**（热更新） | `pnpm run dev` | <http://localhost:4321> |
-| **提交前自检** | `pnpm run verify` + `pnpm run audit` | — |
-| **发布** | `git push` | Cloudflare 自动构建 |
+| **新建一篇文章** | `npm run new` | — |
+| **看看有哪些文章** | `npm run posts` | 资源管理器 |
+| **本地看完整效果**（含搜索） | `npm run serve` | <http://localhost:4321> |
+| **改样式 / 组件**（热更新） | `npm run dev` | <http://localhost:4321> |
+| **提交前自检** | `npm run check:all` | — |
+| **发布上线** | `npm run publish` | Cloudflare 自动构建 |
+| **写文章**（网页后台，可选） | 什么都不用跑 | `https://你的域名/admin` |
 
 ### 写文章
 
-不用碰本地环境。打开 `/admin`，GitHub 登录，写完点发布 ——
-CMS 会 commit 到 `src/content/posts/`，Cloudflare Pages 检测到 push 后自动重建，
-**约 60 秒上线**。
+三条路都行，详见下方「[写文章](#写文章)」：`npm run new`（最快）/ `/admin` 网页后台 /
+直接改 `src/content/posts/` 里的 `.md`。
 
 ### 本地看效果：`pnpm run serve`
 
@@ -193,7 +194,23 @@ Astro 开发服务器只服务源码，不提供 `dist/pagefind/` 索引，搜�
 
 ### 发布
 
-推送到 GitHub 就行。Cloudflare Pages 的构建命令是 `pnpm run build`，输出目录 `dist`。
+一条命令搞定：**构建自检 → 提交 → 推送**，Cloudflare 收到 push 后自己构建，约 60 秒上线。
+
+```cmd
+npm run publish
+npm run publish -- "post: 换了封面"
+npm run publish -- --dry-run
+```
+
+它会先跑 `verify` 和 `build`：**构建不过就什么都不提交**，
+不会把错误推上去让 Cloudflare 那边报错。有草稿（`draft: true`）时会列出来提醒你。
+
+> **为什么要 push 才会更新线上？**
+> 线上是 Cloudflare Pages 在构建你的 GitHub 仓库，不是你的电脑。
+> 它只认「仓库有新的 push」这一个信号 —— 所以 `git commit` 只是存在本地，
+> **必须有 `git push`**（`npm run publish` 已经包含了）。
+> 想完全不碰 git，就配好 `/admin`（见「写文章 · 方式一」），
+> 网页上点发布，CMS 会替你 commit + push。
 
 ---
 
@@ -274,16 +291,77 @@ yuuu-blog-v2/
 
 ## 写文章
 
-### 方式一：网页后台（推荐）
+文章就是 `src/content/posts/` 下的一个 Markdown 文件，**文件名即网址**：
+`2026-09-17-my-post.md` → `/posts/2026-09-17-my-post/`。
+
+### 方式一：本地新建（推荐，立刻可用）
+
+```cmd
+npm run new
+```
+
+会依次问你标题 / 日期 / 分类 / 标签 / 封面样式 / 摘要，**直接回车就用方括号里的默认值**。
+生成的文件长这样：
+
+```markdown
+---
+title: 我的新文章
+date: 2026-09-17
+category: 随笔
+tags: [随手记]
+draft: true
+---
+
+正文写在这里。
+```
+
+也支持一条命令建好（不用回答问题）：
+
+```cmd
+npm run new -- "我的新文章" 技术 "前端, 笔记" --cover=wave --summary="一句话摘要"
+```
+
+> Windows 下 `npm run new -- "中文标题"` 没问题 —— Node 拿到的是宽的 argv，不走代码页。
+> 但**别用 `git commit -m "中文"`**：cmd.exe 会按本地代码页编码，提交说明会变成乱码
+> （`npm run publish` 已经帮你绕开了这个坑）。
+
+### 方式二：网页后台（配好之后最省事）
 
 1. 打开 `https://你的域名/admin`；
-2. 用 GitHub 登录；
+2. 用 GitHub 登录（需要先部署 OAuth Worker，见 [DEPLOY.md](DEPLOY.md) 第 3 节）；
 3. 新建文章、填字段、写正文、发布；
-4. CMS 会 commit 到 `src/content/posts/`，Cloudflare Pages 检测到 push 后自动重建，**约 60 秒内上线**。
+4. CMS 自己 commit + push，Cloudflare 检测到后重建，**约 60 秒内上线**。
 
-### 方式二：本地写 Markdown
+**这条路完全不用碰 git**，代价是要先花一次时间配 OAuth Worker + 关闭「公开注册」。
 
-在 `src/content/posts/` 新建 `2024-09-01-my-post.md`，push 即可。
+### 方式三：直接改文件
+
+在 `src/content/posts/` 里新建或编辑 `.md`，然后 `npm run publish`。
+
+### 改一篇文章
+
+改正文就改正文；改了标题/日期想改网址，**改文件名**（文件名就是 slug）。
+改完 `npm run publish`。
+
+「最后修改时间」不会自动更新 —— 想显示就在 frontmatter 加一行
+`updated: 2026-09-20`（不写就不显示）。
+
+### 写完怎么看效果
+
+```cmd
+npm run serve
+```
+
+打开 <http://localhost:4321> 就能看到，**搜索也能用**。
+草稿（`draft: true`）不会出现在页面上 —— 那是故意的，
+想预览就把 `draft: true` 临时改成 `false`。
+
+### 怎么算「发布」
+
+两件事，缺一不可：
+
+1. 把 `draft: true` 删掉（或改成 `false`）—— 否则构建时会被跳过；
+2. `npm run publish` —— 提交并推送到 GitHub，Cloudflare 才会重建线上。
 
 ### frontmatter 字段
 

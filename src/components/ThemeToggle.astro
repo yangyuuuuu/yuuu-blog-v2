@@ -10,9 +10,22 @@
   class="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] border border-line bg-surface
          text-base text-muted transition-colors hover:border-gold/60 hover:text-gold lg:h-10 lg:w-10"
 >
+  <!--
+    图标用内联 SVG 而不是 ☾ / ☀ 这两个字符：
+    字符的实际墨迹在字体 em 框里的位置随系统字体变，靠 CSS 居中会偏上或偏下。
+    SVG 的 viewBox 是绝对坐标，居中由几何决定，不看字体脸色。
+  -->
   <span class="theme-glyph" aria-hidden="true">
-    <i class="g-moon">☾</i>
-    <i class="g-sun">☀</i>
+    <!-- viewBox 收紧到 1.6~22.4：图形本身的包围盒，这样 18px 的盒子里图标是满的 -->
+    <svg class="g-moon" viewBox="1.6 1.6 20.8 20.8" fill="none" stroke="currentColor"
+         stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20.24 14.32A8.4 8.4 0 1 1 9.68 3.76a6.7 6.7 0 0 0 10.56 10.56Z" />
+    </svg>
+    <svg class="g-sun" viewBox="1.6 1.6 20.8 20.8" fill="none" stroke="currentColor"
+         stroke-width="1.75" stroke-linecap="round">
+      <circle cx="12" cy="12" r="4.2" />
+      <path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.36 5.36l1.56 1.56M17.08 17.08l1.56 1.56M18.64 5.36l-1.56 1.56M6.92 17.08l-1.56 1.56" />
+    </svg>
   </span>
 </button>
 

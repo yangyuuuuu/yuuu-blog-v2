@@ -19,6 +19,9 @@
 ```cmd
 npm run serve     构建 + 产物验收 + 起预览服务（最常用，http://localhost:4321）
 npm run dev       开发服务器（热更新，但搜索不可用）
+npm run new       新建一篇文章（逐条问；也可 npm run new -- "标题" 分类 "标签,标签"）
+npm run posts     在资源管理器里打开文章目录
+npm run publish   发布上线（自检 → 构建 → 提交 → 推送，Cloudflare 自动重建）
 npm run verify    源码自检（组件编译 / frontmatter / import / 首屏 JS 预算 / 按需模块）
 npm run audit     产物验收（对 dist/ 量 PRD 红线）
 npm run smoke     搜索运行时冒烟测试（跑真实按需 chunk，需要先 build）
@@ -28,16 +31,21 @@ npm run domain    换域名（一次改 6 处）
 npm run og        重新生成 OG 图
 ```
 
+> 没有 pnpm 也能跑：仓库里两份 lockfile 都在，`npm` / `pnpm` 都试过。
+> README 里写的是 pnpm，实际上用的是 **npm**。
+
 ---
 
 ## 当前状态
 
-- 工作区**干净**，全部已提交（最近一次是「搜索引擎按需加载」）
+- 工作区分两步看：用户可能会自己改文章，所以**别假设它是干净的**
 - `npm run verify` → 全部通过（3 条提示）
 - `npm run smoke` → 全部通过
 - `npm run audit` → **产物验收全部通过**（0 条提示）
 - ✅ **首屏 JS 达标**：行内 7.88 KB + 外链 gzip 2.11 KB = **9.99 KB**（< 10 KB 红线）
   —— 搜索引擎 7.80 KB（gzip 3.33 KB）已经切成按需 chunk，用户聚焦 / Ctrl+K 时才下载
+- ⚠️ **本地领先远端若干提交**：线上是 Cloudflare Pages 构建 GitHub 仓库，
+  **不 push 就不上线**。用户以前是手动 push 的，现在有 `npm run publish` 了
 
 ---
 
@@ -61,12 +69,15 @@ npm run og        重新生成 OG 图
 | 正文宽度可拖拽（双击复位） | ✅ |
 | 皮肤系统（枫丹 / 歌剧院 / 深海 × 深浅） | ✅ |
 | 主题单按钮切换 + 太阳月亮旋转动画 | ✅ |
+| **主题图标改成内联 SVG 并严格居中** | ✅ |
 | 设置面板（配色 / 列数 / 四个显示开关 / 导入导出） | ✅ |
 | 更新历史按版本折叠（短内容自动去掉展开按钮） | ✅ |
 | 封面池 `src/lib/covers.ts` | ✅ |
 | 文章卡片进出场动画 | ✅ |
 | **搜索引擎按需加载**（首屏 JS 压到 10 KB 内） | ✅ |
+| **写作流程脚本化**（`new` / `posts` / `publish`） | ✅ |
 | Cloudflare Access 加 /admin 门禁（文档已写，**用户尚未在控制台操作**） | 📄 |
+| /admin 的 OAuth Worker（`workers/oauth`，**用户尚未部署**） | 📄 |
 
 ---
 
@@ -74,7 +85,7 @@ npm run og        重新生成 OG 图
 
 | 需求 | 前置条件 | 难度 |
 | --- | --- | --- |
-| 首页「加载更多」也拆成按需（`src/pages/index.astro` 还占 5.60 KB 行内，gzip 余量只剩 10 字节） | 无 | 小~中 |
+| 首页「加载更多」也拆成按需（`src/pages/index.astro` 占 5.60 KB 行内，gzip 余量只剩 10 字节） | 无 | 小~中 |
 | 阅读位置记录 + 恢复提示（空格跳转、可自定义组合键） | 无 | 中 |
 | 「造物主」命令面板（双击 Ctrl 唤出，输入 `search`/`setting` 跳转） | 无 | 中 |
 | 「库」知识库（分类整理技术速查，如 GitHub 文件查找、ASCII 表） | **需用户先定分类体系** | 中 |
@@ -85,7 +96,7 @@ npm run og        重新生成 OG 图
 
 ## 踩过的坑（重要，别重复）
 
-### 0. 首屏 JS 预算到底怎么算（这次的战场）
+### 0. 首屏 JS 预算到底怎么算
 
 - 红线是 **10 KB**，但账要按**真实传输**算：`dist/index.html` 里的行内脚本
   **加上** `<script src>` 直接引的入口 chunk（gzip 后）。
@@ -105,6 +116,16 @@ npm run og        重新生成 OG 图
 
 **在聊天里给命令时绝对不要带行内注释**，用户会整行复制。
 
+### 1.5 中文进 git 的两个坑
+
+- `git commit -m "中文说明"` 在 **cmd.exe** 下会因为代码页变成乱码
+  （PowerShell 里通常没事）。`tools/publish.mjs` 用的是
+  「写进 `.git/DSh-publish-msg.txt` 再 `git commit -F`」，绕开了这个问题。
+- **PowerShell 的管道喂给 `node` 的 stdin，Node readline 只能读到第一行**
+  （`"a","b" | node x.mjs` 只会拿到 a）。想在命令行驱动交互式脚本，
+  要么用参数（`tools/new-post.mjs` 两种都支持），要么用
+  `child_process.spawn` 自己喂 stdin。别为这个怀疑脚本写错了。
+
 ### 2. 幽灵依赖
 
 `zod` / `@astrojs/compiler` / `sharp` 都曾被当成「已经装好了」直接用 ——
@@ -120,11 +141,9 @@ npm 的扁平化会掩盖，**pnpm 的隔离模式会正确报错**。发现一�
 正确做法：**原样包裹**，内部一个字符都不动 ——
 `export function init() { <原body完整粘贴> }`，改完立刻用
 `npx esbuild <file> --outfile=probe.js` 验证语法再提交。
-（2.5.0 这次是这么做的：用脚本按行切片搬过去，再逐行比对确认
-「去掉缩进后与原 body 完全一致」，然后 esbuild 过一遍。）
+（2.5.0 这次是这么做的：按行切片搬过去，再逐行比对「去掉缩进后与原 body 一致」。）
 
-教训：**不要用正则改有嵌套结构的代码**；写完必须有独立的语法校验，
-不能只靠自己的括号计数器（它会被正则字面量里的引号带偏）。
+教训：**不要用正则改有嵌套结构的代码**；写完必须有独立的语法校验。
 
 ### 4. PowerShell 重定向会写成 UTF-16
 
@@ -143,38 +162,42 @@ npm 的扁平化会掩盖，**pnpm 的隔离模式会正确报错**。发现一�
 `.reveal` / `.sink` 的初始 opacity:0 都写成 `html.js .reveal { ... }`，
 否则 JS 挂了内容会永远隐身。
 
-### 7. 懒加载模块的「初始化时机」陷阱（2.5.0 新踩）
+### 7. 懒加载模块的「初始化时机」陷阱
 
 拆成按需加载后，模块 `init()` **必然在用户还没输入时执行**，
 所以任何 `if (input.value.trim()) { 补跑搜索 }` 都**永远不会成立** ——
 写的时候觉得很合理，跑起来静默失效。
-正确写法：**先无条件挂兜底**（`setTimeout(..., 240)`），
-触发时再判断「有没有值 / 是不是已经有结果」。
+正确写法：**先无条件挂兜底**（`setTimeout(..., 240)`），触发时再判断。
 `tools/smoke-search.mjs` 第 2 节就是专门盯这条的，别删。
 
-同类问题：键盘唤起（`/`、Ctrl+K）是**引导脚本先聚焦、再下载模块**，
-用户敲进去的字一定落后于 `init()`，所以引导脚本本身要么接住第一下，
-要么保证引擎里有兜底 —— 两者至少要有一个。
+### 8. 用字符当图标会「看起来没居中」
 
-### 8. `astro check` 的存量噪音（别被吓到，也别背锅）
+主题切换原来用的是 `☾` / `☀` 这两个 Unicode 字符。
+**字符的墨迹在字体 em 框里的位置随系统字体变**，CSS 怎么调都可能在别人的机器上偏。
+现在换成内联 SVG（`viewBox` 收紧到图形包围盒），居中由几何决定。
+改完用 Edge 无头截图核对过（见坑 10）。
 
-`npm run check` 是 **astro check**，跟这次的改动无关，它现在报 **76 个 error**，
-全部是老代码（`index.astro` 30 / `PostLayout` 17 / `changelog` 13 /
-`search-guide` 6 / `SettingsPanel` 4），都是内联脚本里的 `implicitly has an 'any' type`。
-	extbf{`search-engine.ts` 与 `SearchBox.astro` 现在是 0 error}，改完这两个文件可以拿
+### 9. `astro check` 的存量噪音（别被吓到，也别背锅）
+
+`npm run check` 是 **astro check**，现在报 **76 个 error**，全部是老代码
+（`index.astro` 30 / `PostLayout` 17 / `changelog` 13 / `search-guide` 6 /
+`SettingsPanel` 4），都是内联脚本里的 `implicitly has an 'any' type`。
+	extbf{`search-engine.ts` 与 `SearchBox.astro` 是 0 error}，改完这两个文件可以拿
 `npx astro check 2>&1 | Select-String 'search-engine|SearchBox'` 单独看。
-**它不参与 `npm run build`**，所以不影响部署；`npm run check:all` 跑的才是三项自检。
+**它不参与 `npm run build`**，所以不影响部署。
 
-### 9. 沙箱限制（本环境特有）
+### 10. 本环境能做的真实验证（比想象的强）
 
-- 早先 `astro build` 在本沙箱跑不起来（spawn EPERM / Vite 内部报错），
-  所以才有 `tools/verify.mjs`（源码层）和 `tools/audit-dist.mjs`（产物层）。
-  **2.5.0 这次 `npm run build` 能正常跑通了**（约 1.3 s），先试构建，失败再退回自检。
-- 本环境**没有浏览器**，所以搜索的运行时验证靠
-  `tools/smoke-search.mjs`：极简 DOM 假件 + 假 Pagefind，
-  把 `dist` 里真实的按需 chunk import 进来跑。
-- 系统 PowerShell 里 `node -e "..."` 的嵌套引号极其容易炸，
-  写超过一行的脚本请落到 `tools/_probe.mjs` 再 `node` 跑，别跟引号搏斗。
+- `npm run build` **能跑通**（约 1.3 s），早先「沙箱跑不了 astro build」的记录已经过时
+- **没有浏览器，但有 Edge**：`C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`
+  可以无头截图，验证视觉改动。要点：
+  - 用 `file:///D:/...` 这种正斜杠 URL；只写 `D:\...` 会被当成搜索词
+  - **必须加 `--virtual-time-budget=3000`**，否则截出来是错误页
+  - 加 `--user-data-dir=<临时目录>`，否则多个实例会抢 profile 锁
+  - **绝对路径在 `file://` 下全废**（CSS / 图片 404）。
+    要看真实页面就 `npx serve dist -l 4400` 起个临时静态服务，
+    截完记得把那个后台任务 kill 掉，**不要留着**（用户在 3080 用 DSH Web）
+  - 截完删掉临时的 `.edge-profile` 目录和探针 html
 
 ---
 
@@ -188,13 +211,17 @@ npm 的扁平化会掩盖，**pnpm 的隔离模式会正确报错**。发现一�
 | `src/scripts/search-engine.ts` | **搜索引擎本体（按需）**，导出 `init()` |
 | `src/scripts/settings-panel.ts` | 设置面板逻辑（按需） |
 | `src/components/SearchBox.astro` | 搜索 UI + 引导脚本（只负责「什么时候拉引擎」） |
+| `src/components/ThemeToggle.astro` | 深浅切换（内联 SVG 图标） |
 | `src/layouts/BaseLayout.astro` | SEO / 防闪白内联脚本 / reveal / 滑动模糊 |
 | `src/styles/theme.css` | 配色令牌（`--a`/`--g` 分量派生）+ 皮肤 |
 | `src/styles/global.css` | 全部组件样式（单文件，约 1000 行） |
 | `tools/verify.mjs` | 源码自检（含按需模块必须只被 `import()` 引用） |
 | `tools/audit-dist.mjs` | 产物验收（PRD 红线的唯一裁判，含「引擎没回首屏」回归） |
 | `tools/smoke-search.mjs` | 搜索运行时冒烟测试（改搜索前后都跑） |
-| `DEPLOY.md` | 部署 / Cloudflare Access / Lighthouse / 排查表 |
+| `tools/new-post.mjs` | 新建文章（`npm run new`） |
+| `tools/publish.mjs` | 自检 → 构建 → 提交 → 推送（`npm run publish`） |
+| `DEPLOY.md` | 部署 / OAuth Worker / Cloudflare Access / Lighthouse / 排查表 |
+| `README.md` | 日常命令与写作流程（用户最先看这个） |
 | `CHANGELOG.md` | 版本历史 |
 
 ---
@@ -203,5 +230,4 @@ npm 的扁平化会掩盖，**pnpm 的隔离模式会正确报错**。发现一�
 
 > 读一下 `D:\DS\yuuu-blog-v2\HANDOFF.md`，然后继续做「阅读位置记录 + 恢复提示」。
 
-（备选：把首页「加载更多」也拆成按需，给首屏 10 KB 红线留点余量 ——
-`src/pages/index.astro` 现在还是 5.60 KB 行内，其中一半是加载更多与分类筛选。）
+（备选：把首页「加载更多」也拆成按需，给首屏 10 KB 红线留点余量。）
