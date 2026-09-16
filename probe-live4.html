@@ -1,0 +1,119 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-auto-theming="true" data-underline-links="true" data-beta="false" data-dev-mode="false"><head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>内容管理 · yuuu</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+    <style>
+      body { margin: 0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+      #cmsFallback { max-width: 620px; margin: 80px auto; padding: 0 20px; font-size: 14px; line-height: 1.8; color: #556; }
+      #cmsFallback b { color: #223; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Sveltia CMS（Decap/Netlify CMS 的现代替代品，配置格式兼容）。配置在同目录 config.yml。
+
+      ⚠️ 加载策略（改动前先读完，都是踩出来的）：
+        1. 不从本站自托管 —— 那是个 1.9 MB 的文件，在「挂代理 / 跨境」的网络上
+           经常被中途掐断（实测 curl: schannel: server closed abruptly），
+           浏览器拿到半截 JS 就解析失败 → 整页白屏且没有提示。
+        2. 必须重试：这类链路到 CDN 的连接时好时坏（同一 URL 一次成功一次失败，实测复现）。
+        3. 版本锁死 0.213.2：CDN 上永远拿同一个文件，不会被新版悄悄改坏配置。
+        4. 用「抓下来 + blob import + try/catch」而不是 <script src>：
+           <script src> 里的异常在页面外抓不到，只能干瞪眼白屏；
+           这样写能把真实错误显示在页面上，出问题一眼就知道原因。
+      判断「起来了没」：<html> 上会出现 data-auto-theming 属性（Sveltia 自己写的）。
+    -->
+    <noscript>这个后台需要 JavaScript。</noscript>
+
+    <div id="cmsStatus" style="max-width:640px;margin:80px auto;padding:0 20px;font:14px/1.8 -apple-system,'PingFang SC','Microsoft YaHei',sans-serif;color:#556">
+      <b style="color:#223">后台正在加载…</b>
+      <p id="cmsNote">状态：脚本已加载，但界面 30 秒都没挂出来 —— 这基本是 Sveltia 本身在这个浏览器里初始化失败了，把这段告诉 yuuu。</p>
+      <pre id="cmsError" style="display:none;white-space:pre-wrap;font-size:12px;color:#a33;background:#fff5f5;border:1px solid #f3c;border-radius:8px;padding:10px"></pre>
+    </div>
+
+    <script>
+      (function () {
+        var VER = '0.212.2';
+        var SOURCES = [
+          'https://cdn.jsdelivr.net/npm/@sveltia/cms@' + VER + '/dist/sveltia-cms.mjs',
+          'https://unpkg.com/@sveltia/cms@' + VER + '/dist/sveltia-cms.mjs',
+        ];
+        var MAX = 4;
+        var note = document.getElementById('cmsNote');
+        var status = document.getElementById('cmsStatus');
+        var errBox = document.getElementById('cmsError');
+        var say = function (t) { if (note) note.textContent = '状态：' + t; };
+        var showErr = function (t) {
+          if (!errBox) return;
+          errBox.style.display = 'block';
+          errBox.textContent = String(t).slice(0, 4000);
+        };
+
+        /*
+         * ⚠️ 别用 data-auto-theming 判断「启动成功」—— Sveltia 在很早的阶段就写这个属性，
+         * 那时界面还没挂出来。之前这里判早了，导致状态提示被删掉、用户只看到一片白。
+         * 这里改成看「界面上真的长出东西了没」。
+         */
+        var uiReady = function () {
+          return document.querySelector('[class*="svelte-"], [class*="sveltiacms"]') !== null;
+        };
+
+        window.addEventListener('error', function (e) {
+          if (!uiReady()) showErr('页面错误：' + (e.message || e.error || ''));
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          if (!uiReady()) showErr('未处理的 Promise 异常：' + ((e.reason && (e.reason.stack || e.reason.message)) || e.reason));
+        });
+
+        var watch = setInterval(function () {
+          if (uiReady()) { clearInterval(watch); if (status && status.parentNode) status.remove(); }
+        }, 300);
+        /* 30 秒还没界面就明说，别一直挂着「正在加载」 */
+        setTimeout(function () {
+          clearInterval(watch);
+          if (!uiReady()) say('脚本已加载，但界面 30 秒都没挂出来 —— 这基本是 Sveltia 本身在这个浏览器里初始化失败了，把这段告诉 yuuu。');
+        }, 30000);
+
+        var attempt = 0;
+        function tryLoad() {
+          if (uiReady()) return;
+          if (attempt >= MAX) { say('试了 ' + MAX + ' 次都没成功，多半是网络/代理不稳。'); return; }
+          var src = SOURCES[attempt % SOURCES.length];
+          var name = src.indexOf('jsdelivr') >= 0 ? 'jsDelivr' : 'unpkg';
+          attempt++;
+          say('第 ' + attempt + '/' + MAX + ' 次：正在下载 ' + name + '…');
+
+          fetch(src)
+            .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+            .then(function (code) {
+              say(name + ' 已下载（' + Math.round(code.length / 1024) + ' KB），正在启动…');
+              var url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+              return new Promise(function (resolve, reject) {
+                var s = document.createElement('script');
+                s.type = 'module';
+                s.src = url;
+                s.onload = function () { URL.revokeObjectURL(url); resolve(); };
+                s.onerror = function () { URL.revokeObjectURL(url); reject(new Error('blob 脚本执行失败')); };
+                document.body.appendChild(s);
+              });
+            })
+            .then(function () {
+              setTimeout(function () {
+                if (!uiReady()) say('脚本已加载并执行完，但界面没挂出来（Sveltia 初始化失败）');
+              }, 8000);
+            })
+            .catch(function (e) {
+              say('第 ' + attempt + ' 次失败（' + name + '）');
+              showErr('加载/执行 ' + name + ' 失败：\n' + ((e && (e.stack || e.message)) || e));
+              setTimeout(tryLoad, 1500);
+            });
+        }
+        tryLoad();
+      })();
+    </script>
+  <script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v31edd6df95cf4e85bb4c19e7a9bdbcba1788362987495" integrity="sha512-iIg7k2xntmwu6/uSb5tpc/hySgZc4eoL31yB29W6tJFo2akwjPWcEqnCEdJvGexCL0KEQwVYv5BlowfhVz26hg==" data-cf-beacon="{&quot;version&quot;:&quot;2024.11.0&quot;,&quot;token&quot;:&quot;a1e74efe64b7406fb057c4cc83489066&quot;,&quot;r&quot;:1,&quot;spa&quot;:2}" crossorigin="anonymous"></script>
+
+<script type="module" src="blob:https://yuuu.love/3b1bad85-7c66-41a8-97b4-152220116638"></script></body></html>
