@@ -1,12 +1,18 @@
 ---
 title: 读《献给阿尔吉农的花束》
 date: 2024-08-28
+updated: ''
 category: 随笔
-tags: [读书, 随笔]
+tags:
+  - 读书
+  - 随笔
+  - 测试
 summary: 一本用日记体写成的科幻小说。一个人从愚笨变聪明，再变回愚笨，而记录这一切的，正是他自己越来越短的日记。
 cover: cry
 coverStyle: opera
 coverHue: 285
+pinned: false
+draft: false
 ---
 
 ## 形式即内容
