@@ -14,10 +14,100 @@ import Changelog from '../../CHANGELOG.md';
   </section>
 
   <section class="mx-auto w-full max-w-[900px] px-5 pb-24">
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <p class="text-[13px] text-muted">
+        默认只展开最新一版，其余收起。
+      </p>
+      <button
+        id="clToggleAll"
+        type="button"
+        class="rounded-full border border-line-strong bg-surface px-4 py-2 text-[13px] text-ink backdrop-blur transition-colors hover:border-gold/60 hover:text-gold"
+      >全部展开</button>
+    </div>
+
     <article class="t-surface t-backdrop rounded-card border border-line bg-surface p-7 backdrop-blur-md shadow-[var(--shadow)] sm:p-11">
-      <div class="prose-yuuu changelog-body">
+      <div class="prose-yuuu changelog-body" id="changelogBody">
         <Changelog />
       </div>
     </article>
   </section>
+
+  <script>
+    /**
+     * 把更新历史按 <h2>（版本号）切成若干组：
+     * 最新一版完整展开，其余收成一小段，配「展开」按钮。
+     */
+    (function () {
+      var body = document.getElementById('changelogBody');
+      var allBtn = document.getElementById('clToggleAll');
+      if (!body) return;
+
+      var groups = [];
+      var cur = null;
+      [].slice.call(body.children).forEach(function (el) {
+        if (el.tagName === 'H2') {
+          cur = { head: el, body: document.createElement('div') };
+          cur.body.className = 'cl-body';
+          groups.push(cur);
+          el.parentNode.insertBefore(cur.body, el.nextSibling);
+        } else if (cur) {
+          cur.body.appendChild(el);
+        }
+      });
+      if (groups.length < 2) return;
+
+      function setOpen(g, open) {
+        g.wrap.classList.toggle('is-open', open);
+        g.btn.textContent = open ? '收起' : '展开';
+        g.btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      }
+
+      groups.forEach(function (g, i) {
+        // 包一层，方便整体控制
+        var wrap = document.createElement('section');
+        wrap.className = 'cl-group';
+        g.head.parentNode.insertBefore(wrap, g.head);
+        wrap.appendChild(g.head);
+        wrap.appendChild(g.body);
+        g.wrap = wrap;
+
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'cl-btn';
+        wrap.appendChild(btn);
+        g.btn = btn;
+
+        var open = i === 0;           // 只有最新一版默认展开
+        wrap.classList.toggle('is-open', open);
+        btn.textContent = open ? '收起' : '展开';
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        btn.addEventListener('click', function () {
+          setOpen(g, !wrap.classList.contains('is-open'));
+          syncAll();
+        });
+
+        // 折叠时点标题也能展开，省得去找按钮
+        g.head.addEventListener('click', function () {
+          if (!wrap.classList.contains('is-open')) { setOpen(g, true); syncAll(); }
+        });
+        g.head.style.cursor = 'pointer';
+      });
+
+      function syncAll() {
+        if (!allBtn) return;
+        var allOpen = groups.every(function (g) { return g.wrap.classList.contains('is-open'); });
+        allBtn.textContent = allOpen ? '全部收起' : '全部展开';
+        allBtn.dataset.allOpen = allOpen ? '1' : '0';
+      }
+
+      if (allBtn) {
+        allBtn.addEventListener('click', function () {
+          var toOpen = allBtn.dataset.allOpen !== '1';
+          groups.forEach(function (g) { setOpen(g, toOpen); });
+          syncAll();
+        });
+      }
+      syncAll();
+    })();
+  </script>
 </BaseLayout>

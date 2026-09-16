@@ -2,6 +2,48 @@
 
 > 版本号语义化：主.次.修订。每次改动在这里加一节。
 
+## 2.3.0 · 2026-09-16
+
+### 新增
+
+- **真的 favicon**。用 `tools/make-icons.mjs` 处理参考图：从四条边泛洪填充抠背景
+  （不是「白色变透明」—— 角色头发也是白的，那样会打出窟窿），裁边，
+  输出 `favicon.ico`（16/32/48 三尺寸）、`icon-192/512.png`、`apple-touch-icon.png`
+  和一份 `site.webmanifest`。
+- **7 张表情包**处理成透明背景的 WebP，放在 `public/mascot/`，用作文章封面与空状态插画。
+- **主页重构成两屏**：首屏只有徽记、站名、一句话和统计；文章列表整体下沉 +
+  模糊，滚进视口后一次性浮现。下滑提示带轻微浮动动画。
+- **搜索快捷键 `/`**（`Ctrl/Cmd+K` 保留）。↑↓ 在结果间移动，Enter 打开选中项。
+- **从搜索结果点进文章会定位**：链接带上 `?q=`，文章页找到正文第一处匹配，
+  包上 `<mark>` 并 `scrollIntoView({ block: 'center' })` 滚到屏幕中央，
+  配一个只动 opacity/transform 的脉冲圈。
+- **更新历史按版本折叠**：默认只展开最新一版，其余收成 170px 并底部渐隐，
+  每段有「展开/收起」，顶部有「全部展开」。
+- `tools/set-domain.mjs` + `pnpm run domain`：一条命令改全站 6 处域名。
+
+### 修复
+
+- **首页分类筛选点任何分类都是 0 篇**。`index.astro` 读 `el.dataset.category`，
+  但 `PostCard.astro` 从来没输出过 `data-category`，永远是 `undefined`，
+  所有卡片都被 `hidden`。已补上属性。
+- **搜索框光标被 placeholder 遮住**。快捷键提示原本写在 placeholder 里，
+  聚焦后文字紧贴光标。现在提示做成独立的 `<kbd>` 徽标，聚焦后淡出，
+  placeholder 在聚焦时也变透明。
+- **卡片 hover 生硬**。原来 300ms 线性位移 + 阴影重绘。现在统一用
+  `cubic-bezier(0.22, 1, 0.36, 1)` 长缓动，阴影改由伪元素淡入
+  （不逐帧重绘 `box-shadow`），封面缓慢放大，标题变色。
+- `sharp` 之前是幽灵依赖（和 `zod` 一样的坑），已显式声明。
+
+### 与 PRD 的偏离
+
+- **PRD 9.5 禁止用 `filter: blur()` 做动画**，但需求明确要求「文章下沉模糊」。
+  采取折中：模糊只在进入视口时过渡一次，`transitionend` 后加 `.is-done`
+  把 `filter` 摘掉，不留长期合成层。
+  `tools/verify.mjs` 的对应规则也拆成两条：`@keyframes` 里动 blur 一律禁止；
+  `transition` 里含 filter 则要求必须配 `.is-done` 摘除。
+
+---
+
 ## 2.1.2 · 2026-09-16
 
 ### 修复（搜索质量）

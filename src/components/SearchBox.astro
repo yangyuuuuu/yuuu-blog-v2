@@ -16,10 +16,12 @@
     <input
       id="yuuuSearch"
       type="search"
-      placeholder="搜索文章…  Ctrl K"
+      placeholder="搜索文章…"
       autocomplete="off"
-      class="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-muted"
+      class="search-input min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-muted"
     />
+    <!-- 快捷键提示做成独立徽标：放进 placeholder 会盖住输入光标 -->
+    <kbd class="search-kbd" id="yuuuSearchKbd" aria-hidden="true">/</kbd>
     <button
       id="yuuuSearchClear"
       type="button"
@@ -46,6 +48,9 @@
     if (!root || !input || !panel || !out) return;
 
     var mod = null, loading = false, timer = null, seq = 0, lastError = '';
+    var hits = [];          // 当前面板里的结果链接
+    var active = -1;        // 键盘选中的下标，-1 表示没选
+    var pendingOpen = false; // 结果还没出来时就按了回车 → 出来立刻打开第一条
 
     function esc(s) {
       return String(s == null ? '' : s)
@@ -104,28 +109,68 @@
     function hide() {
       panel.hidden = true;
       panel.classList.remove('is-interactive');
+      hits = [];
+      active = -1;
+      pendingOpen = false;
+    }
+
+    /* 键盘选择：上下键在结果间移动，并把选中项滚进可视区 */
+    function paint() {
+      hits.forEach(function (a, i) { a.classList.toggle('is-active', i === active); });
+      if (active < 0 || !hits[active]) return;
+      var r = hits[active].getBoundingClientRect();
+      var p = panel.getBoundingClientRect();
+      if (r.top < p.top || r.bottom > p.bottom) hits[active].scrollIntoView({ block: 'nearest' });
+    }
+    function move(delta) {
+      if (!hits.length) return;
+      active = active < 0
+        ? (delta > 0 ? 0 : hits.length - 1)
+        : (active + delta + hits.length) % hits.length;
+      paint();
+    }
+    function openCurrent() {
+      var a = hits[active >= 0 ? active : 0];
+      if (!a) return false;
+      location.href = a.href;
+      return true;
     }
 
     function render(list, q) {
       if (!list.length) {
-        show('<p class="search-empty">没有找到「' + esc(q) + '」相关的文章</p>');
+        hits = []; active = -1; pendingOpen = false;
+        show('<div class="search-empty search-empty-art">' +
+          '<img src="/mascot/pillow.webp" alt="" width="469" height="400" loading="lazy" decoding="async">' +
+          '<p>没有找到「' + esc(q) + '」相关的文章</p></div>');
         return;
       }
       show(list.map(function (r) {
         var title = (r.meta && r.meta.title) || r.url;
         var date = (r.meta && r.meta.date) || '';
-        return '<a class="search-hit" href="' + esc(r.url) + '">' +
+        // 带上 ?q=，文章页会把第一处匹配滚到屏幕中央并高亮
+        var href = r.url + '?q=' + encodeURIComponent(q);
+        return '<a class="search-hit" href="' + esc(href) + '">' +
           '<span class="search-hit-top"><b>' + esc(title) + '</b>' +
           (date ? '<i>' + esc(date) + '</i>' : '') + '</span>' +
           '<span class="search-hit-excerpt">' + (r.excerpt || '') + '</span>' +
           '</a>';
-      }).join(''));
+      }).join('') +
+        '<div class="search-foot">' +
+        '<span><kbd>↑</kbd><kbd>↓</kbd> 选择</span>' +
+        '<span><kbd>Enter</kbd> 打开</span>' +
+        '<span><kbd>Esc</kbd> 关闭</span></div>');
+      hits = [].slice.call(out.querySelectorAll('.search-hit'));
+      active = -1;
+      // 用户已经按过回车了，结果一到就直接打开第一条
+      if (pendingOpen) { pendingOpen = false; openCurrent(); }
     }
 
     function run(q) {
       q = (q || '').trim();
       if (!q) { hide(); return; }
       var mine = ++seq;
+      hits = [];
+      active = -1;
       show('<p class="search-empty">搜索中…</p>');
       load().then(function (pf) {
         if (mine !== seq) return;
@@ -156,9 +201,40 @@
     document.addEventListener('click', function (e) {
       if (!root.contains(e.target)) hide();
     });
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); move(1); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); return; }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        // 结果还没渲染出来就先立刻搜一次并记为「待打开」，别让回车看起来没反应
+        if (!hits.length) {
+          if (!input.value.trim()) return;
+          clearTimeout(timer);
+          pendingOpen = true;
+          run(input.value);
+          return;
+        }
+        openCurrent();
+      }
+    });
+
+    /* 判断焦点是不是在可输入元素里 —— 在输入框里打「/」不该抢焦点 */
+    function isTyping(el) {
+      if (!el || !el.tagName) return false;
+      var t = el.tagName;
+      return t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT' || el.isContentEditable === true;
+    }
+
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') hide();
+      if (e.key === 'Escape') { hide(); input.blur(); return; }
       if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        input.focus();
+        input.select();
+        return;
+      }
+      // 「/」也能唤起搜索（不带修饰键、且当前没在别处打字）
+      if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey && !isTyping(e.target)) {
         e.preventDefault();
         input.focus();
         input.select();

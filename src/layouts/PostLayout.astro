@@ -154,6 +154,72 @@ const description = d.summary ?? d.title;
       update();
     })();
 
+    /**
+     * 从搜索结果点进来时带 ?q=关键词
+     * → 在正文里找第一处匹配，包上 <mark> 并滚到屏幕中央
+     */
+    (function () {
+      var q = '';
+      try { q = new URLSearchParams(location.search).get('q') || ''; } catch (e) { return; }
+      q = q.trim();
+      if (!q) return;
+
+      var body = document.getElementById('postBody');
+      if (!body) return;
+      var needle = q.toLowerCase();
+
+      var walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
+        acceptNode: function (n) {
+          if (!n.nodeValue || !n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+          var p = n.parentNode;
+          if (!p) return NodeFilter.FILTER_REJECT;
+          var tag = p.nodeName;
+          if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'MARK') return NodeFilter.FILTER_REJECT;
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      });
+
+      var node, text = null, idx = -1;
+      while ((node = walker.nextNode())) {
+        var i = node.nodeValue.toLowerCase().indexOf(needle);
+        if (i >= 0) { text = node; idx = i; break; }
+      }
+      if (!text) return;
+
+      var mark = null;
+      try {
+        var range = document.createRange();
+        range.setStart(text, idx);
+        range.setEnd(text, idx + needle.length);
+        mark = document.createElement('mark');
+        mark.className = 'find-hit';
+        range.surroundContents(mark);
+      } catch (e) {
+        // 匹配跨越多个元素时 surroundContents 会抛错，退化成只滚动不包裹
+        mark = null;
+      }
+
+      var target = mark || text.parentNode;
+      if (!target) return;
+
+      // 等两帧，让字体与布局稳定后再算位置，否则会滚偏
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          try {
+            target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          } catch (e) {
+            target.scrollIntoView();
+          }
+          // 地址栏里的 ?q= 用完就清掉，避免刷新时反复定位
+          try {
+            var u = new URL(location.href);
+            u.searchParams.delete('q');
+            history.replaceState(null, '', u.pathname + u.search + u.hash);
+          } catch (e) {}
+        });
+      });
+    })();
+
     /* 复制链接 */
     (function () {
       var btn = document.getElementById('copyLink');

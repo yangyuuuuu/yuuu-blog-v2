@@ -4,6 +4,7 @@ date: 2024-07-05
 category: 技术
 tags: [CSS, 前端, 设计]
 summary: 玻璃拟态的三个关键属性：半透明背景、背景模糊、细高光边框。附一份可以直接抄的代码，以及一个性能警告。
+cover: /mascot/cake.webp
 coverStyle: nebula
 coverHue: 205
 ---

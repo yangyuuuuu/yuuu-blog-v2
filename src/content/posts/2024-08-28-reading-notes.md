@@ -4,6 +4,7 @@ date: 2024-08-28
 category: 随笔
 tags: [读书, 随笔]
 summary: 一本用日记体写成的科幻小说。一个人从愚笨变聪明，再变回愚笨，而记录这一切的，正是他自己越来越短的日记。
+cover: /mascot/cry.webp
 coverStyle: opera
 coverHue: 285
 ---

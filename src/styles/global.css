@@ -286,7 +286,23 @@ html[data-theme='light'] .aurora i { opacity: 0.28; }
     linear-gradient(160deg, hsl(var(--ch) 56% 9%), hsl(var(--ch) 70% 25%) 70%, hsl(var(--ch) 84% 44%));
   background-size: 22px 22px, 22px 22px, 100% 100%, 100% 100%;
 }
-.cover-image { background-image: none; background-color: #0a1926; }
+/* 用图片当封面时的展示方式：
+   竖版插画居中留白，而不是被 object-cover 裁掉半个身子 */
+.cover-image {
+  background-image:
+    radial-gradient(120% 96% at 50% 4%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 68%),
+    linear-gradient(158deg, var(--panel-2), var(--panel));
+  display: grid;
+  place-items: center;
+}
+.cover-image img {
+  width: auto;
+  height: auto;
+  max-width: 82%;
+  max-height: 84%;
+  object-fit: contain;
+  filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.3));
+}
 
 .cover-letter {
   position: absolute;
@@ -410,12 +426,41 @@ html[data-theme='dark'] .astro-code { background-color: var(--code-bg) !importan
 /* --------------------------------------------------------------------------
    Pagefind 结果高亮 —— 跟随主题
    -------------------------------------------------------------------------- */
-mark, .pagefind-ui mark {
+/* 摘要里的高亮：做成「荧光笔划一道」的样子，比套个方块优雅 */
+.search-hit-excerpt mark,
+.yuuu-search .pagefind-ui__result-excerpt mark {
+  background: linear-gradient(transparent 58%, var(--hl-ring) 58%);
+  color: var(--ink);
+  font-weight: 600;
+  border-radius: 0;
+  padding: 0 1px;
+  box-shadow: none;
+}
+
+/* 正文里的命中位置（从搜索结果跳进来时定位到的那一处） */
+mark.find-hit {
+  position: relative;
   background: var(--hl-bg);
   color: var(--ink);
   border-radius: 4px;
-  padding: 0 4px;
+  padding: 0 3px;
   box-shadow: 0 0 0 1px var(--hl-ring);
+  scroll-margin-block: 42vh;
+}
+/* 只动 opacity 与 transform，不碰会触发重排的属性 */
+mark.find-hit::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 8px;
+  border: 2px solid var(--accent);
+  opacity: 0;
+  pointer-events: none;
+  animation: findPulse 1.5s cubic-bezier(0.22, 1, 0.36, 1) 3;
+}
+@keyframes findPulse {
+  0%   { opacity: 0.85; transform: scale(0.94); }
+  100% { opacity: 0;    transform: scale(1.18); }
 }
 
 /* Pagefind UI 变量覆盖，让它长得像本站 */
@@ -480,6 +525,225 @@ mark, .pagefind-ui mark {
 .search-hit-excerpt { display: block; margin-top: 4px; font-size: 12.5px; line-height: 1.7; color: var(--ink-2); }
 .search-empty { margin: 0; padding: 16px 12px; font-size: 13px; color: var(--muted); text-align: center; }
 .search-empty code { padding: 1px 6px; border-radius: 5px; background: var(--hover); color: var(--accent); }
+
+/* 键盘上下键选中的那一条 */
+.search-hit.is-active { background: var(--hover-strong); border-color: var(--accent); }
+.search-hit.is-active .search-hit-top b { color: var(--accent); }
+
+/* 无结果时的小插画 */
+.search-empty-art { padding: 6px 12px 16px; }
+.search-empty-art img {
+  display: block;
+  width: min(180px, 58%);
+  height: auto;
+  margin: 0 auto 4px;
+  opacity: 0.9;
+}
+
+/* 面板底部的键盘提示 */
+.search-foot {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  margin: 6px 4px 2px;
+  padding-top: 9px;
+  border-top: 1px dashed var(--line);
+  font-size: 11px;
+  color: var(--muted);
+}
+.search-foot kbd {
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: var(--hover);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+}
+
+/* 输入框聚焦后藏掉 placeholder —— 否则文字会紧贴光标，看起来像光标被遮住 */
+.search-input:focus::placeholder { color: transparent; }
+
+/* 快捷键提示做成输入框右侧的小徽标，聚焦后淡出（这时已经不需要提示了） */
+.search-kbd {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--hover);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+  transition: opacity 0.22s ease;
+}
+#searchRoot:focus-within .search-kbd { opacity: 0; }
+
+/* --------------------------------------------------------------------------
+   更新历史：按版本折叠
+   -------------------------------------------------------------------------- */
+.cl-group { position: relative; }
+.cl-group > h2 { scroll-margin-top: 92px; }
+.cl-group:not(.is-open) .cl-body {
+  max-height: 170px;
+  overflow: hidden;
+  /* 底部渐隐，暗示「下面还有」，比直接截断自然 */
+  -webkit-mask-image: linear-gradient(180deg, #000 50%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 50%, transparent 100%);
+}
+.cl-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 4px 0 20px;
+  padding: 6px 15px;
+  border-radius: 99px;
+  border: 1px solid var(--line);
+  background: var(--hover);
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.3s ease, border-color 0.3s ease, background-color 0.3s ease;
+}
+.cl-btn:hover { color: var(--gold); border-color: var(--gold); }
+
+/* --------------------------------------------------------------------------
+   文章卡片：hover 用一条统一的长缓动，避免「弹一下」的生硬感。
+   只动 transform 与 opacity —— 阴影改由伪元素淡入，不逐帧重绘 box-shadow。
+   -------------------------------------------------------------------------- */
+.card {
+  transition:
+    transform 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  background: radial-gradient(125% 82% at 50% 0%,
+    color-mix(in srgb, var(--accent) 15%, transparent), transparent 62%);
+}
+.card-title { transition: color 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
+.card-cover { transition: transform 0.75s cubic-bezier(0.22, 1, 0.36, 1); }
+
+@media (hover: hover) and (pointer: fine) {
+  .card:hover {
+    transform: translateY(-6px);
+    border-color: var(--line-strong);
+  }
+  .card:hover::after { opacity: 1; }
+  .card:hover .card-cover { transform: scale(1.055); }
+  .card:hover .card-title { color: var(--accent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card, .card::after, .card-cover, .card-title { transition: none; }
+  .card:hover { transform: none; }
+  .card:hover .card-cover { transform: none; }
+  mark.find-hit::after { animation: none; }
+}
+
+/* --------------------------------------------------------------------------
+   首页首屏：只留徽记、站名、一句话和统计，文章列表整体下沉到第二屏
+   -------------------------------------------------------------------------- */
+.hero {
+  display: grid;
+  place-items: center;
+  min-height: 70vh;
+  min-height: min(80svh, 760px);
+  padding: 36px 20px 28px;
+}
+.hero-inner { max-width: 760px; text-align: center; }
+
+.hero-emblem {
+  display: block;
+  width: clamp(92px, 14vw, 128px);
+  height: auto;
+  margin: 0 auto 20px;
+  animation: heroFloat 7s ease-in-out infinite;
+  filter: drop-shadow(0 16px 34px color-mix(in srgb, var(--accent) 34%, transparent));
+}
+@keyframes heroFloat {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-10px); }
+}
+
+.hero-title {
+  margin: 0 0 16px;
+  font-family: var(--font-title);
+  font-size: clamp(28px, 5.6vw, 58px);
+  line-height: 1.16;
+  letter-spacing: 0.02em;
+  background: linear-gradient(96deg, var(--ink), var(--accent) 52%, var(--gold));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hero-desc { margin: 0 auto; max-width: 600px; font-size: 16.5px; color: var(--ink-2); }
+
+.hero-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 34px;
+  margin: 30px 0 0;
+}
+.hero-stats > div { min-width: 68px; text-align: center; }
+.hero-stats dd {
+  margin: 0;
+  font-family: var(--font-title);
+  font-size: 27px;
+  line-height: 1.1;
+  color: var(--gold);
+}
+.hero-stats dt { font-size: 11.5px; letter-spacing: 0.18em; color: var(--muted); }
+
+.hero-scroll {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  margin-top: 38px;
+  font-size: 11px;
+  letter-spacing: 0.34em;
+  color: var(--muted);
+  transition: color 0.3s ease;
+}
+.hero-scroll:hover { color: var(--accent); }
+.hero-scroll svg { animation: heroBob 2.1s ease-in-out infinite; }
+@keyframes heroBob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(7px); }
+}
+
+/* --------------------------------------------------------------------------
+   第二屏起的内容：初始下沉 + 模糊，进入视口后一次性浮现
+   ⚠️ 初始态挂在 html.js 下 —— 没有 JS 时内容照常可见，不会隐身
+   -------------------------------------------------------------------------- */
+html.js .sink {
+  opacity: 0;
+  transform: translateY(40px);
+  filter: blur(10px);
+}
+html.js .sink.is-in {
+  opacity: 1;
+  transform: none;
+  filter: blur(0);
+  transition:
+    opacity 0.95s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.95s cubic-bezier(0.22, 1, 0.36, 1),
+    filter 0.95s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* 动画结束后彻底摘掉 filter 层，避免长期占着一张合成层 */
+html.js .sink.is-done { filter: none; transition: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-emblem, .hero-scroll svg { animation: none; }
+  html.js .sink,
+  html.js .sink.is-in { opacity: 1; transform: none; filter: none; transition: none; }
+}
 
 /* 目录当前项 */
 #tocNav a.is-on {

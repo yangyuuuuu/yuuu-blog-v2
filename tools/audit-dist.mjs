@@ -47,7 +47,11 @@ function walk(dir, filter, out = []) {
 head('1. 页面产物');
 const pages = walk('.', (p) => p.endsWith('.html'));
 ok(pages.length + ' 个 HTML 页面');
-for (const p of ['index.html', '404.html', 'rss.xml', 'sitemap-index.xml', 'og-default.png', 'robots.txt', 'favicon.svg', 'admin/index.html']) {
+for (const p of [
+  'index.html', '404.html', 'rss.xml', 'sitemap-index.xml', 'og-default.png', 'robots.txt',
+  'favicon.ico', 'favicon-32.png', 'icon-192.png', 'apple-touch-icon.png', 'site.webmanifest',
+  'emblem.webp', 'admin/index.html',
+]) {
   if (existsSync(abs(p))) ok(p);
   else bad('缺少 ' + p);
 }

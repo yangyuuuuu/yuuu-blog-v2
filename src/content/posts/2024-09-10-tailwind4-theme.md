@@ -4,6 +4,7 @@ date: 2024-09-10
 category: 技术
 tags: [Tailwind, CSS, 主题]
 summary: Tailwind 4 改成 CSS-first 配置后，怎么让工具类跟着 data-theme 实时变化？答案是 @theme inline 加上 CSS custom properties。
+cover: /mascot/sword.webp
 coverStyle: grid
 coverHue: 190
 ---

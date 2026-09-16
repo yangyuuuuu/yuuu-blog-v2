@@ -11,54 +11,53 @@ const firstPage = posts.slice(0, PAGE_SIZE);
 const hasMore = posts.length > PAGE_SIZE;
 ---
 
-<BaseLayout waves crest>
-  <section class="relative overflow-hidden px-5 pt-20 pb-24">
-    <div class="relative z-10 mx-auto max-w-[1140px] text-center">
-      <div class="mx-auto mb-6 h-[92px] w-[92px]">
-        <svg viewBox="0 0 48 48" class="crest h-full w-full" aria-hidden="true">
-          <path d="M9 34 6.6 17.5l8.9 5.9L24 10.6l8.5 12.8 8.9-5.9L39 34z" class="fill-accent"></path>
-          <circle cx="24" cy="27.5" r="2.4" class="fill-gold"></circle>
-          <rect x="9" y="34" width="30" height="6" rx="3" class="fill-gold"></rect>
-        </svg>
-      </div>
+<BaseLayout waves>
+  <!-- 首屏：只有徽记、站名、一句话和统计。文章列表整体下沉到第二屏 -->
+  <section class="hero" id="top">
+    <div class="hero-inner">
+      <img
+        src="/emblem.webp"
+        alt=""
+        width="256"
+        height="256"
+        class="hero-emblem"
+        fetchpriority="high"
+        decoding="async"
+      />
 
       <p class="mb-3.5 text-[11.5px] tracking-[0.5em] text-accent uppercase">FONTAINE · 水色手记</p>
-      <h1
-        class="mb-4 font-title text-[clamp(28px,5.6vw,58px)] leading-tight tracking-wide
-               bg-gradient-to-r from-[var(--ink)] via-[var(--accent)] to-[var(--gold)]
-               bg-clip-text text-transparent"
-      >
-        在枫丹的午后<br />写下一页页温柔
-      </h1>
-      <p class="mx-auto mb-8 max-w-[620px] text-[16.5px] text-ink-2">
+      <h1 class="hero-title">在枫丹的午后<br />写下一页页温柔</h1>
+      <p class="hero-desc">
         日记 · 随笔 · 技术分享 —— 一个属于 <b class="text-gold">yuuu</b> 的小小水之国度。
       </p>
 
-      <div class="flex flex-wrap justify-center gap-3.5">
-        <a href="#latest" class="rounded-full bg-gradient-to-r from-[var(--accent-2)] to-[var(--accent)] px-7 py-3 text-[14.5px] font-bold text-[var(--accent-ink)] shadow-[0_12px_30px_-14px_var(--accent)] transition-transform hover:-translate-y-0.5">开始阅读</a>
-        <a href="/archive/" class="rounded-full border border-line-strong bg-surface px-7 py-3 text-[14.5px] text-ink backdrop-blur transition-colors hover:border-gold/60 hover:text-gold">全部归档</a>
-      </div>
-
-      <dl class="mt-12 flex flex-wrap justify-center gap-x-10 gap-y-4">
-        <div class="min-w-[72px] text-center">
-          <dt class="sr-only">文章数</dt>
-          <dd class="font-title text-[27px] leading-tight text-gold">{posts.length}</dd>
-          <dd class="text-xs tracking-[0.18em] text-muted">篇文章</dd>
+      <dl class="hero-stats">
+        <div>
+          <dd>{posts.length}</dd>
+          <dt>篇文章</dt>
         </div>
-        <div class="min-w-[72px] text-center">
-          <dt class="sr-only">标签数</dt>
-          <dd class="font-title text-[27px] leading-tight text-gold">{tags.length}</dd>
-          <dd class="text-xs tracking-[0.18em] text-muted">个标签</dd>
+        <div>
+          <dd>{tags.length}</dd>
+          <dt>个标签</dt>
         </div>
-        <div class="min-w-[72px] text-center">
-          <dt class="sr-only">分类数</dt>
-          <dd class="font-title text-[27px] leading-tight text-gold">{categories.length}</dd>
-          <dd class="text-xs tracking-[0.18em] text-muted">个分类</dd>
+        <div>
+          <dd>{categories.length}</dd>
+          <dt>个分类</dt>
         </div>
       </dl>
+
+      <a href="#latest" class="hero-scroll" aria-label="下滑查看文章">
+        <span>下滑</span>
+        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 5v13M6 13l6 6 6-6"></path>
+        </svg>
+      </a>
     </div>
   </section>
 
+  <!-- 以下内容初始下沉 + 模糊，滚进视口后浮上来 -->
+  <div class="sink" id="sink">
   <section class="mx-auto w-full max-w-[1140px] px-5 pb-24" id="latest">
     <header class="mb-6 flex flex-wrap items-end justify-between gap-3">
       <div>
@@ -113,8 +112,34 @@ const hasMore = posts.length > PAGE_SIZE;
       </p>
     </div>
   </section>
+  </div>
 
   <script>
+    /* 第二屏内容进入视口时浮现一次；之后各卡片再由 .reveal 逐个淡入 */
+    (function () {
+      var sink = document.getElementById('sink');
+      if (!sink) return;
+      var done = false;
+      function show() {
+        if (done) return;
+        done = true;
+        sink.classList.add('is-in');
+        sink.addEventListener('transitionend', function () {
+          sink.classList.add('is-done');   // 摘掉 filter 层
+        }, { once: true });
+      }
+      // 直接带着 #latest 打开时，不要等观察器
+      if (location.hash === '#latest' || !('IntersectionObserver' in window)) { show(); }
+      else {
+        var io = new IntersectionObserver(function (entries) {
+          entries.forEach(function (e) {
+            if (e.isIntersecting) { show(); io.disconnect(); }
+          });
+        }, { rootMargin: '0px 0px -10% 0px', threshold: 0.01 });
+        io.observe(sink);
+      }
+    })();
+
     (function () {
       var grid = document.getElementById('postGrid');
       var btn = document.getElementById('loadMore');

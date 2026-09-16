@@ -4,6 +4,7 @@ date: 2024-08-10
 category: 技术
 tags: [JavaScript, 前端, 技巧]
 summary: 写业务代码的时候数组操作占了三分之一。整理一份日常最常用的写法，附一张「会不会改变原数组」的速查表。
+cover: /mascot/snack.webp
 coverStyle: wave
 coverHue: 150
 ---

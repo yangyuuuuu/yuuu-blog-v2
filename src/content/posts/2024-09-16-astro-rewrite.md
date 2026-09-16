@@ -4,6 +4,7 @@ date: 2024-09-16
 category: 技术
 tags: [Astro, 前端, 性能]
 summary: 记录一次彻底的重构：为什么放弃手写方案、Astro 的岛屿架构到底省掉了什么、以及怎么把首屏 JS 压到 10KB 以内。
+cover: /mascot/pillow.webp
 coverStyle: grid
 coverHue: 202
 ---

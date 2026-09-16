@@ -14,20 +14,20 @@ const href = urlOf(post);
 const isNew = Date.now() - d.date.getTime() < 1000 * 60 * 60 * 24 * 14;
 ---
 
+<!-- data-category 是首页分类筛选按钮的判据，缺了它点任何分类都会显示 0 篇 -->
 <article
-  class="reveal group relative flex flex-col overflow-hidden rounded-card border border-line
-         bg-surface t-surface t-backdrop backdrop-blur-md shadow-[var(--shadow-soft)]
-         transition-[transform,border-color,box-shadow] duration-300
-         hover:-translate-y-1.5 hover:border-line-strong"
+  data-category={d.category}
+  class="card reveal group relative flex flex-col overflow-hidden rounded-card border border-line
+         bg-surface t-surface t-backdrop backdrop-blur-md shadow-[var(--shadow-soft)]"
 >
-  <a href={href} aria-label={d.title} class="block">
+  <a href={href} aria-label={d.title} class="block overflow-hidden">
     <CoverStyle
       style={coverStyleOf(post)}
       hue={coverHueOf(post)}
       letter={coverLetterOf(post)}
       image={d.cover}
       alt={d.title}
-      class="h-[158px] transition-transform duration-500 group-hover:scale-[1.03]"
+      class="card-cover h-[158px]"
     />
   </a>
 
@@ -40,7 +40,7 @@ const isNew = Date.now() - d.date.getTime() < 1000 * 60 * 60 * 24 * 14;
     </div>
 
     <h3 class="mb-2.5 font-title text-[19.5px] leading-snug">
-      <a href={href} class="text-ink transition-colors hover:text-accent">{d.title}</a>
+      <a href={href} class="card-title text-ink">{d.title}</a>
     </h3>
 
     <p class="mb-4 line-clamp-3 text-sm leading-relaxed text-ink-2">{summaryOf(post)}</p>

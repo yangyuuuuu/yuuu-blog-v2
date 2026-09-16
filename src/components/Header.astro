@@ -21,13 +21,17 @@ const isActive = (href: string) => (href === '/' ? path === '/' : path.startsWit
   <div class="mx-auto flex h-[68px] w-full max-w-[1140px] items-center gap-4 px-5">
     <a href="/" class="flex shrink-0 items-center gap-3 text-ink">
       <span
-        class="grid h-10 w-10 place-items-center rounded-xl border border-line-strong"
+        class="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-line-strong"
         style="background: var(--hover)"
       >
-        <svg viewBox="0 0 48 48" class="h-[26px] w-[26px]" aria-hidden="true">
-          <path d="M9 34 6.6 17.5l8.9 5.9L24 10.6l8.5 12.8 8.9-5.9L39 34z" class="fill-accent"></path>
-          <rect x="9" y="34" width="30" height="6" rx="3" class="fill-gold"></rect>
-        </svg>
+        <img
+          src="/emblem.webp"
+          alt=""
+          width="256"
+          height="256"
+          class="h-[30px] w-[30px] object-contain"
+          decoding="async"
+        />
       </span>
       <span class="flex flex-col leading-none">
         <b class="font-title text-lg tracking-[0.14em]">yuuu</b>

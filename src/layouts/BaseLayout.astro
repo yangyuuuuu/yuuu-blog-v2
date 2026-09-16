@@ -43,7 +43,11 @@ const ogImage = new URL(image, site).href;
     <title>{pageTitle}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     <link rel="alternate" type="application/rss+xml" title={SITE_TITLE} href="/rss.xml" />
     <meta name="generator" content={Astro.generator} />
     <meta name="theme-color" content="#0d1b2a" media="(prefers-color-scheme: dark)" />
@@ -67,6 +71,9 @@ const ogImage = new URL(image, site).href;
           var t = localStorage.getItem('yuuu-theme');
           if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
         } catch (e) {}
+        /* 打上 js 标记，首页的「下沉」初始态只在有 JS 时才生效。
+           这样脚本挂了内容也不会永远隐身 —— 旧版踩过这个坑。 */
+        document.documentElement.classList.add('js');
       })();
     </script>
   </head>

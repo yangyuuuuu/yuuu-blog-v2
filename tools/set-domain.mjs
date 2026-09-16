@@ -32,7 +32,7 @@ const JOBS = [
   { file: 'public/robots.txt', label: 'Sitemap', re: /Sitemap: \S+/, to: 'Sitemap: ' + domain + '/sitemap-index.xml' },
   { file: 'public/admin/config.yml', label: 'site_url', re: /^site_url: .*$/m, to: 'site_url: ' + domain },
   { file: 'public/admin/config.yml', label: 'display_url', re: /^display_url: .*$/m, to: 'display_url: ' + domain },
-  { file: 'public/admin/config.yml', label: 'logo_url', re: /^logo_url: .*$/m, to: 'logo_url: ' + domain + '/favicon.svg' },
+  { file: 'public/admin/config.yml', label: 'logo_url', re: /^logo_url: .*$/m, to: 'logo_url: ' + domain + '/icon-192.png' },
   { file: 'workers/oauth/wrangler.toml', label: 'ALLOWED_ORIGIN', re: /^ALLOWED_ORIGIN = .*$/m, to: 'ALLOWED_ORIGIN = "' + domain + '"' },
 ];
 

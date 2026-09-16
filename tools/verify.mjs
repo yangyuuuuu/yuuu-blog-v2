@@ -246,20 +246,42 @@ else ok('没有手写 Markdown 解析器，渲染交给 Astro');
 if (/localStorage\.setItem\([^)]*(body|content)/.test(allSrc)) bad('用 localStorage 存了文章正文（PRD 9.6 禁止）');
 else ok('没有用 localStorage 存文章正文');
 
-if (/filter:\s*blur\([^)]*\)[^;]*;?\s*(transition|animation)/.test(css)) bad('疑似用 filter: blur() 做动画（PRD 9.5 禁止）');
-else ok('动画没有使用 filter: blur()');
+/*
+ * PRD 9.5 禁止用 filter: blur() 做动画 —— 因为逐帧重算模糊非常贵。
+ * 但「一次性浮现」是可控的例外：模糊只在进入视口那一刻过渡一次，
+ * 结束后用 .is-done 把 filter 摘掉，不会长期占着合成层。
+ * 所以这里分开判定：
+ *   @keyframes 里动 blur        → 循环/持续动画，一律禁止
+ *   transition 里含 filter      → 只允许上面那种一次性模式，且必须配 .is-done 摘除
+ */
+const kfBlocks = [...css.matchAll(/@keyframes\s+[\w-]+\s*\{([\s\S]*?)\n\}/g)].map((m) => m[1]);
+const kfBlur = kfBlocks.filter((b) => /filter:\s*blur/.test(b));
+if (kfBlur.length) bad('@keyframes 里动了 filter: blur()，循环重算模糊会掉帧（PRD 9.5 禁止）');
+else ok('没有在 @keyframes 里动 filter: blur()');
 
 const transitionProps = [...css.matchAll(/transition(?:-[a-z]+)?:\s*([^;]+);/g)].map((m) => m[1]);
-const illegal = transitionProps.filter((v) => /\b(width|height|filter|box-shadow)\b/.test(v));
-if (illegal.length) warn('有 ' + illegal.length + ' 处过渡动了 width/height/filter/box-shadow（建议只动 transform/opacity）');
-else ok('所有 transition 只涉及 transform / opacity / 颜色');
+const animFilter = transitionProps.filter((v) => /\bfilter\b/.test(v));
+const animLayout = transitionProps.filter((v) => /\b(width|height|box-shadow)\b/.test(v));
+
+if (animLayout.length) warn('有 ' + animLayout.length + ' 处过渡动了 width/height/box-shadow（建议只动 transform/opacity）');
+else ok('没有过渡 width / height / box-shadow');
+
+if (!animFilter.length) {
+  ok('transition 没有涉及 filter');
+} else if (/\.sink\.is-done\s*\{[^}]*filter:\s*none/.test(css)) {
+  ok('filter 过渡只用于「一次性浮现」，且结束后用 .is-done 摘掉 filter 层');
+} else {
+  bad('有 filter 过渡，但没有在动画结束后摘除 filter 层（会长期占合成层）');
+}
 
 if (/id=.?.?loadMore/.test(allSrc)) ok('首页分页存在（首屏仅渲染最近 10 篇）');
 
 /* ---------------------------------------------------------------- 7. PRD 结构 */
 head('7. PRD 文件结构核对');
 const required = [
-  'public/favicon.svg', 'public/og-default.png',
+  'public/favicon.ico', 'public/favicon-32.png', 'public/icon-192.png',
+  'public/icon-512.png', 'public/apple-touch-icon.png', 'public/site.webmanifest',
+  'public/emblem.webp', 'public/og-default.png',
   'src/content.config.ts',
   'src/components/Header.astro', 'src/components/Footer.astro', 'src/components/PostCard.astro',
   'src/components/TagCloud.astro', 'src/components/SearchBox.astro', 'src/components/ThemeToggle.astro',

@@ -4,6 +4,7 @@ date: 2024-06-18
 category: 随笔
 tags: [原神, 芙宁娜, 随想]
 summary: 关于芙宁娜的一些漫谈。她演了五百年，最后终于可以做一个普通人。
+cover: /mascot/shy.webp
 coverStyle: crown
 coverHue: 44
 ---
