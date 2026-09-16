@@ -38,9 +38,19 @@ ${body}
   );
 }
 
-/** Sveltia / Decap CMS 约定的握手脚本 */
+/**
+ * Sveltia / Decap CMS 约定的握手脚本。
+ *
+ * 协议（照抄 CMS 端的正则，错一个字符就会显示 "No data"）：
+ *   1. 本窗口(window.opener = CMS)先发 'authorizing:github'
+ *   2. CMS 回一条 'authorizing:github' 到本窗口（带它的 origin）
+ *   3. 本窗口再发 'authorization:github:<success|error>:<JSON>'
+ * 注意第 3 条的 provider 段不能省 —— CMS 用
+ * /^authorization:github:(success|error):(?<result>.+)/ 去匹配，
+ * 少一段就解析成空值，界面直接报 "No data"。
+ */
 function handshake(status: 'success' | 'error', payload: Record<string, string>): string {
-  const message = `authorization:${status}:${JSON.stringify(payload)}`;
+  const message = `authorization:github:${status}:${JSON.stringify(payload)}`;
   return `
     (function () {
       var msg = ${JSON.stringify(message)};
