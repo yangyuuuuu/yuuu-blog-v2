@@ -240,6 +240,64 @@ GitHub OAuth App 的回调地址填 `https://oauth.你的域名/callback`。
 
 ---
 
+## 3.5 给 /admin 加门禁（Cloudflare Access）
+
+**访客照常浏览，只是进不了 `/admin`。** 这层是加在 Sveltia CMS 的 GitHub 登录**之前**的。
+
+> 顺带说明：CMS 本身已经要求 GitHub OAuth，只有拥有你仓库权限的账号能进。
+> 再加 Access 的好处是**多一层且不依赖 GitHub** —— 在没登录 GitHub 的设备上也能用邮箱验证码进后台。
+
+### 步骤
+
+1. <https://one.dash.cloudflare.com/> → **Access** → **Applications** → **Add an application**
+2. 选 **Self-hosted**
+3. 填：
+
+   | 字段 | 填什么 |
+   | --- | --- |
+   | Application name | `yuuu 博客后台` |
+   | Session Duration | `24 hours`（自己定） |
+   | Application domain | 选 `yuuu.love`，**Path 填 `admin`** |
+
+   > Path 只填 `admin` 就够了（不要带斜杠），这样只有 `/admin` 及其子路径被保护，
+   > 其余页面照常公开。
+
+4. **Add a policy**：
+
+   | 字段 | 填什么 |
+   | --- | --- |
+   | Policy name | `管理员` |
+   | Action | `Allow` |
+   | Include | `Emails` → 填你自己的邮箱 |
+
+5. **Identity providers**：勾 **One-time PIN**（内置的，不用配任何东西，
+   登录时给你邮箱发 6 位验证码）
+
+6. 保存
+
+### 效果
+
+| 谁 | 能做什么 |
+| --- | --- |
+| 访客 | 正常浏览全站，`/admin` 会跳转到邮箱验证页 |
+| 你（白名单邮箱） | 收到验证码 → 进入 `/admin` → 再走 GitHub 登录 → 正常编辑发布 |
+| 其他邮箱 | 即使收到验证码也进不去（不在策略里） |
+
+**日志**：<https://one.dash.cloudflare.com/> → **Logs** → **Access**，
+能看到「谁、什么时候、从哪个 IP 尝试访问」。
+
+免费额度：50 个用户以内不收费。
+
+### 这层做不到什么
+
+- ❌ **公开注册**：没有「用户自行注册」的入口，只能你往白名单里加邮箱
+- ❌ **只读账号**：Access 是按应用授权的，进去了就是全权限，没有角色区分
+
+如果以后确实需要「任何人都能注册、但只能是只读」，那要自建用户系统（D1 + Functions），
+是另一个量级的工程，需要时再单独开一轮。
+
+---
+
 ## 4. 跑 Lighthouse
 
 ### 方式一：Chrome DevTools（推荐，不用装东西）
