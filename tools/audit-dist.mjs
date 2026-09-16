@@ -194,25 +194,28 @@ for (const p of pages) {
 }
 if (!third.length) ok('公开页面 0 个第三方脚本（统计脚本需填 token 才会注入）');
 else third.forEach((t) => bad('公开页面出现外部脚本: ' + t));
-if (adminThird.length) {
-  bad('/admin 又引入外链脚本了：' + adminThird.join(' · '));
-  console.log('      CMS 是自托管的（public/admin/sveltia-cms.mjs），不该再依赖 unpkg / jsDelivr —— ');
-  console.log('      CDN 一挂后台就打不开。升级步骤见 public/admin/index.html 里的注释。');
-} else {
-  ok('/admin 没有外链脚本（CMS 自托管）');
-}
-
-/* 自托管的 CMS 是一整块大文件，最容易在改目录时被漏掉或删掉 */
+/*
+ * /admin 的 CMS 脚本来自 CDN —— 这是刻意的，别再改回自托管。
+ * 自托管 = 浏览器要从本站下一个 1.9 MB 的文件，在「挂代理 + 跨境」的网络上
+ * 经常被中途掐断，浏览器拿到半截 JS 就整页白屏、还没有任何提示（真实踩过）。
+ * 这里要守住的是「必须锁死版本」：不然某天 CDN 上的新版会悄悄改坏配置。
+ */
 const adminHtml = existsSync(abs('admin/index.html')) ? read('admin/index.html') : '';
-const cmsMatch = /<script[^>]*\bsrc=["']([^"']*sveltia[^"']*)["']/.exec(adminHtml);
-if (!cmsMatch) {
-  wrn('admin/index.html 里没找到 Sveltia 的 script 标签，确认后台还能打开');
+if (!adminHtml) {
+  bad('缺少 admin/index.html —— 后台打不开');
+} else if (/unpkg\.com|cdn\.jsdelivr\.net/.test(adminHtml)) {
+  const pinned = [...adminHtml.matchAll(/@sveltia\/cms@(\d+\.\d+\.\d+)/g)].map((m) => m[1]);
+  const loose = /@sveltia\/cms(?!@\d)/.test(adminHtml) || /@sveltia\/cms\/dist/.test(adminHtml);
+  if (loose) bad('/admin 的 CMS 地址没有锁版本（缺 @x.y.z）—— CDN 发新版可能改坏配置');
+  else ok('/admin 从 CDN 加载 Sveltia CMS，版本已锁定：' + [...new Set(pinned)].join(' / '));
+  if (/cmsFallback/.test(adminHtml)) ok('/admin 有加载失败提示（不会一片白屏让人看不懂）');
+  else wrn('/admin 没有加载失败提示，CDN 不通时会白屏无提示');
 } else {
-  const cmsPath = cmsMatch[1].replace(/^\//, '');
-  if (existsSync(abs(cmsPath))) {
-    ok('自托管 CMS 已随产物发布：' + cmsPath + '（' + kb(size(cmsPath)) + '）');
+  const cmsMatch = /<script[^>]*\bsrc=["']([^"']*sveltia[^"']*)["']/.exec(adminHtml);
+  if (cmsMatch && existsSync(abs(cmsMatch[1].replace(/^\//, '')))) {
+    ok('CMS 自托管在 ' + cmsMatch[1] + '（注意：大文件在弱网下容易被截断导致白屏）');
   } else {
-    bad('admin/index.html 引用了 ' + cmsMatch[1] + '，但 dist 里没有这个文件 —— 后台会白屏');
+    bad('admin/index.html 里找不到 CMS 的加载方式，后台会白屏');
   }
 }
 
