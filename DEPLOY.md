@@ -124,6 +124,44 @@ Pages 项目 → **Custom domains** → **Set up a custom domain** → 输入域
 
 ---
 
+## 方式 A′：Cloudflare Workers 静态资源（Dashboard 连 Git）
+
+如果你在 Cloudflare 控制台看到的是 **Workers → Create an app → Import a repository**
+（而不是 Pages），那走的是 Workers 静态资源这条新路。它同样能自动构建，
+但**需要仓库里有 `wrangler.toml`** 告诉它「把 dist 当站点托管」。
+仓库里已经放好了：
+
+```toml
+name = "yuuu-blog-v2"
+compatibility_date = "2025-01-01"
+
+[assets]
+directory = "./dist"
+not_found_handling = "404-page"
+html_handling = "auto-trailing-slash"
+```
+
+Dashboard 里对应填：
+
+| 字段 | 填什么 |
+| --- | --- |
+| Build command | `pnpm run build` |
+| **Deploy command** | **保持默认的 `npx wrangler deploy`** |
+| Project name | `yuuu-blog-v2`（要和 `wrangler.toml` 里的 `name` 一致） |
+| Advanced settings → 环境变量 | `NODE_VERSION` = `22` |
+
+> 没加 `wrangler.toml` 的话，`npx wrangler deploy` 会报
+> `Missing entry-point to Worker script or to assets directory`。
+
+> ⚠️ `_headers` 文件在 **Pages** 上确定生效；Workers 静态资源的响应头配置方式
+> 我还没实测确认。部署完可以用下面的命令验证安全头在不在：
+>
+> ```powershell
+> (Invoke-WebRequest -Uri https://你的域名/ -Method Head).Headers
+> ```
+
+---
+
 ## 方式 B：直接上传（最快，5 分钟看到线上）
 
 不需要 GitHub。

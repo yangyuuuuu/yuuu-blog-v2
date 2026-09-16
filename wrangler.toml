@@ -1,0 +1,24 @@
+# ==========================================================================
+#  Cloudflare Workers · 静态资源配置
+#
+#  作用：让 `npx wrangler deploy` 把构建产物 dist/ 当成一个静态站点托管。
+#  没有这个文件，`wrangler deploy` 会报
+#  "Missing entry-point to Worker script or to assets directory"。
+#
+#  这也是 Cloudflare 现在推荐的静态站点托管方式（Pages 的后继）。
+# ==========================================================================
+
+name = "yuuu-blog-v2"
+compatibility_date = "2025-01-01"
+
+[assets]
+# 构建命令 `pnpm run build` 的产物目录
+directory = "./dist"
+
+# 找不到的路径 → 返回 dist/404.html（我们自建的 404 页）
+# 可选值：none | 404-page | single-page-application
+not_found_handling = "404-page"
+
+# 路由：Astro 生成的是 /posts/xxx/index.html，用默认的 auto-trailing-slash 即可
+# 带不带结尾斜杠都能访问
+html_handling = "auto-trailing-slash"

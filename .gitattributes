@@ -1,0 +1,24 @@
+# 统一换行符：仓库里和工作区里都用 LF。
+#
+# 不加这个文件时，Windows 上的 Git（core.autocrlf=true）会提示：
+#   warning: LF will be replaced by CRLF the next time Git touches it
+# 那只是提示，不影响构建；但加上它可以让三件事更确定：
+#   1. 不再出现这个警告
+#   2. 跨平台协作时不会出现「整个文件都变了」的 diff
+#   3. CI / Cloudflare 构建拿到的换行符和工作区完全一致
+* text=auto eol=lf
+
+# 二进制文件不要做换行符转换
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+
+# 锁文件不参与 diff 展示，避免 PR 里出现几十万行
+package-lock.json  -diff
+pnpm-lock.yaml     -diff
