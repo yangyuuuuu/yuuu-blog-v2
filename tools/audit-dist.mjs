@@ -205,6 +205,32 @@ if (cssFiles.length) {
   console.log('    CSS: ' + cssFiles.map((f) => f + ' ' + kb(size(f))).join(', '));
 }
 
+/* ---------------------------------------------------------------- 8. 站点 URL */
+head('8. 站点 URL 自检');
+{
+  const cfgSrc = readFileSync(join(ROOT, 'astro.config.mjs'), 'utf8');
+  const m = cfgSrc.match(/SITE\s*=\s*['"]([^'"]+)['"]/);
+  const configured = m ? m[1] : '';
+  const canon = (indexHtml.match(/rel="canonical" href="([^"]+)"/) || [])[1] || '';
+  const robots = existsSync(abs('robots.txt')) ? read('robots.txt') : '';
+
+  if (!canon) {
+    bad('首页没有 canonical');
+  } else if (configured === 'https://yuuu.pages.dev') {
+    bad('astro.config.mjs 的 SITE 还是模板占位符 —— canonical / sitemap / RSS / og:image 会全部指向错误的域名');
+  } else if (!canon.startsWith(configured)) {
+    wrn('canonical（' + canon + '）与配置的 SITE（' + configured + '）不一致，重新构建一次');
+  } else {
+    ok('canonical 与 SITE 一致：' + canon);
+  }
+
+  if (configured && !robots.includes(configured)) {
+    bad('robots.txt 里的 Sitemap 地址与配置的 SITE 不一致');
+  } else if (configured) {
+    ok('robots.txt 的 Sitemap 地址一致');
+  }
+}
+
 /* ---------------------------------------------------------------- 结果 */
 console.log('');
 console.log('================================================');

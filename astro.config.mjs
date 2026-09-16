@@ -3,8 +3,12 @@ import { defineConfig } from 'astro/config';
 import sitemap from '@astrojs/sitemap';
 import tailwindcss from '@tailwindcss/vite';
 
-/** 生产域名：部署到 Cloudflare Pages 后改成你自己的域名 */
-export const SITE = 'https://yuuu.pages.dev';
+/**
+ * 生产域名 —— 决定 canonical / sitemap / RSS / og:image 里的绝对地址。
+ * ⚠️ 换成你自己的域名后必须重新构建，否则这些标签会全部指向旧地址。
+ * 想换自定义域名，就改这一行 + public/robots.txt + public/admin/config.yml。
+ */
+export const SITE = 'https://yuuu-blog.pages.dev';
 
 export default defineConfig({
   site: SITE,

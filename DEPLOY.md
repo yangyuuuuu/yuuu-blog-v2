@@ -1,45 +1,83 @@
 # 部署与验收
 
-从零到上线，按顺序做即可。**第 0 步不做的话，canonical / sitemap / RSS 会指向错误的域名。**
+从零到上线。**先看第 1 节，再挑一条路走。**
 
 ---
 
-## 0. 上线前的配置清单
+## 0. 先弄清楚：要部署的是什么
+
+**不是一个文件，是一个文件夹：`dist/`。**
+
+`dist/` 由 `pnpm run build` 生成，是 81 个纯静态文件（约 1.7 MB），完全自包含：
+
+```text
+dist/
+├── index.html           首页
+├── 404.html
+├── archive/ about/ changelog/ tags/ posts/    各个页面
+├── admin/               CMS 后台（index.html + config.yml）
+├── api/posts/2.json     「加载更多」的数据
+├── pagefind/            搜索索引（25 个文件）
+├── _astro/              打包后的 CSS / JS
+├── _headers             Cloudflare 响应头
+└── robots.txt  rss.xml  sitemap-index.xml  favicon.svg  og-default.png
+```
+
+里面**没有** `src/`、`node_modules/`、`posts/` 源码、`package.json` —— 这些都不上传。
+
+---
+
+## 1. 上线前的配置清单（必做）
+
+漏了这步，canonical / sitemap / RSS 会全部指向 `yuuu.pages.dev`。
 
 | 文件 | 改什么 | 不改的后果 |
 | --- | --- | --- |
-| `astro.config.mjs` | `SITE` 改成你的正式域名 | sitemap / RSS / canonical 全是 `yuuu.pages.dev` |
+| `astro.config.mjs` | `SITE` 改成你的正式域名 | sitemap / RSS / canonical 全指错 |
 | `public/robots.txt` | 里面的 `Sitemap:` 地址 | 搜索引擎拿到错的站点地图 |
 | `public/admin/config.yml` | `repo`、`base_url`、`site_url`、`display_url` | CMS 登录失败 |
 | `workers/oauth/wrangler.toml` | `ALLOWED_ORIGIN` | OAuth 被 CORS 拦 |
 
-改完域名后重新构建一次：`pnpm run build`。
+改完重新构建一次：`pnpm run build`。
+
+> 还不知道最终域名？可以先不管，等第 4 节绑好域名再回来改，然后重新推一次。
 
 ---
 
-## 1. 先选一个包管理器
+## 2. 两条路，选一条
+
+| | 方式 A：Git 连接（推荐） | 方式 B：直接上传 |
+| --- | --- | --- |
+| 你要做什么 | `git push` | 本地 `npm run deploy` |
+| 谁来构建 | **Cloudflare 自己跑 `pnpm run build`** | 你本地先构建 |
+| 上传的东西 | 整个仓库源码 | 只有 `dist/` |
+| `/admin` 写文章 | ✅ 自动重建上线 | ❌ 用不了，每次要手动重传 |
+| 适合 | 长期用 | 先快速看一眼线上效果 |
+
+**PRD 要求的「发布后 60 秒自动更新」只有方式 A 能做到** —— 它需要 Cloudflare 监听 GitHub push。
+
+---
+
+## 方式 A：Git 连接（推荐）
+
+### A1. 先选一个包管理器
 
 仓库里**同时存在** `package-lock.json` 和 `pnpm-lock.yaml`。
 Cloudflare Pages 靠 lockfile 判断用哪个包管理器，**两个都在可能判断错**，所以只留一个。
 
-### 用 pnpm（推荐）
+用 pnpm（推荐，`pnpm-workspace.yaml` 已配好 `allowBuilds`）：
 
 ```powershell
 Remove-Item -Force package-lock.json
 ```
 
-`pnpm-workspace.yaml` 已经配好了 `allowBuilds`，Cloudflare 上 `pnpm install` 不会因为
-esbuild / sharp 的构建脚本被拦而失败。
-
-### 用 npm
+想用 npm 就反过来：
 
 ```powershell
 Remove-Item -Force pnpm-lock.yaml, pnpm-workspace.yaml
 ```
 
----
-
-## 2. 推到 GitHub
+### A2. 推到 GitHub
 
 ```bash
 cd yuuu-blog-v2
@@ -51,11 +89,9 @@ git remote add origin https://github.com/你的用户名/yuuu-blog-v2.git
 git push -u origin main
 ```
 
----
+### A3. 在 Cloudflare 连接仓库
 
-## 3. 连接 Cloudflare Pages
-
-1. 打开 <https://dash.cloudflare.com/> → 左侧 **Workers & Pages** → **Create** → **Pages**
+1. <https://dash.cloudflare.com/> → **Workers & Pages** → **Create** → **Pages**
 2. 选 **Connect to Git**，授权 GitHub，选中刚推的仓库
 3. 构建配置：
 
@@ -63,35 +99,88 @@ git push -u origin main
 | --- | --- |
 | Production branch | `main` |
 | Framework preset | `Astro` |
-| Build command | `pnpm run build`（用 npm 就填 `npm run build`） |
+| Build command | `pnpm run build` |
 | Build output directory | `dist` |
-| Root directory | 留空（仓库根就是项目根） |
+| Root directory | 留空 |
 
 4. **环境变量**：`NODE_VERSION` = `22`
 
-   > Astro 7 要求 Node >= 22.12.0。项目里已经放了 `.nvmrc`（内容 `22`），
-   > Cloudflare Pages 会自动读它。**两处都配上最稳**，因为默认 Node 版本可能偏低。
+   > ⚠️ **最容易漏、后果最严重的一步。** Astro 7 要求 Node >= 22.12.0，
+   > Cloudflare 默认版本偏低，不改就是构建直接失败。
+   > 项目里已经放了 `.nvmrc`（内容 `22`），Cloudflare 会自动读它 —— 两处都配上最稳。
 
-5. 点 **Save and Deploy**。
+5. 点 **Save and Deploy**
 
-构建大约 1 分钟。完成后会给你一个 `https://yuuu-blog-v2.pages.dev` 之类的地址。
+构建约 1 分钟。以后每次 `git push` 都会自动重新构建。
 
----
+### A4. 绑定自定义域名
 
-## 4. 绑定自定义域名
+Pages 项目 → **Custom domains** → **Set up a custom domain** → 输入域名。
 
-Pages 项目 → **Custom domains** → **Set up a custom domain** → 输入你的域名。
-
-- 域名已经在 Cloudflare 托管：会自动加好 DNS 记录，**HTTPS 证书自动签发**
+- 域名已在 Cloudflare 托管：DNS 记录和 HTTPS 证书全自动
 - 域名在别处：按提示把 CNAME 指到 `<项目>.pages.dev`
 
-绑定后回第 0 步，把域名填进配置再推一次。
+绑完回**第 1 节**把域名填进配置，再推一次。
 
 ---
 
-## 5. 配 OAuth Worker（要让 `/admin` 能登录才需要）
+## 方式 B：直接上传（最快，5 分钟看到线上）
 
-详见 [`workers/oauth/README.md`](workers/oauth/README.md)。三步：
+不需要 GitHub。
+
+```cmd
+cd /d D:\DS\yuuu-blog-v2
+npm run deploy
+```
+
+这条命令 = `astro build` + `pagefind` + `wrangler pages deploy dist`。
+
+第一次会：
+
+1. 提示登录 —— 打开浏览器用 Cloudflare 账号授权
+2. 问要不要创建新项目 —— 输 `y`，项目名随便起（比如 `yuuu-blog-v2`）
+3. 传完给你一个 `https://yuuu-blog-v2.pages.dev` 地址
+
+之后更新就再跑一次 `npm run deploy`。
+
+> 想从方式 B 转成方式 A：照上面的 A1~A3 走一遍，Cloudflare 会接管构建。
+
+### 方式 B 失败时（比如 Cloudflare API 返回 502）
+
+`wrangler` 依赖 Cloudflare API。如果它报 `GET /accounts -> 502 Bad Gateway`
+（带 Ray ID），那是 Cloudflare 自己的接口临时故障，不是你的问题。三个应对：
+
+**1. 直接重试**（登录状态已存在本地，不会重新授权）
+
+```cmd
+npm run deploy
+```
+
+**2. 指定 Account ID，跳过那次出错的 `/accounts` 查询**
+
+登录后去 <https://dash.cloudflare.com/> 右侧栏找 **Account ID**：
+
+```cmd
+set CLOUDFLARE_ACCOUNT_ID=你的AccountID
+npm run deploy
+```
+
+**3. 改用域名后台拖拽上传（完全绕开 wrangler 和 API）**
+
+1. <https://dash.cloudflare.com/> → **Workers & Pages** → **Create** → **Pages**
+2. 选 **Upload assets**（不是 Connect to Git）
+3. 项目名填 `yuuu-blog-v2`
+4. 把 `dist` 文件夹整个拖进去
+5. Deploy
+
+这条路不经过任何 API 调用，最稳。缺点和方式 B 一样：
+以后改文章要手动重传，`/admin` 用不了。
+
+---
+
+## 3. 配 OAuth Worker（要让 `/admin` 能登录才需要）
+
+详见 [`workers/oauth/README.md`](workers/oauth/README.md)。
 
 ```bash
 cd workers/oauth
@@ -108,20 +197,16 @@ GitHub OAuth App 的回调地址填 `https://oauth.你的域名/callback`。
 
 ---
 
-## 6. 跑 Lighthouse
+## 4. 跑 Lighthouse
 
 ### 方式一：Chrome DevTools（推荐，不用装东西）
 
-1. 起预览服务
+```cmd
+pnpm run serve
+```
 
-   ```cmd
-   pnpm run serve
-   ```
-
-2. Chrome 打开 <http://localhost:4321>
-3. 按 <kbd>F12</kbd> → 顶部标签选 **Lighthouse**
-4. 勾选 **Performance**（想看全就全勾），Device 选 **Desktop**，Mode 选 **Navigation**
-5. 点 **Analyze page load**
+Chrome 打开 <http://localhost:4321> → <kbd>F12</kbd> → **Lighthouse** 标签 →
+勾 **Performance** → Device 选 **Desktop** → **Analyze page load**。
 
 ### 方式二：命令行
 
@@ -129,48 +214,48 @@ GitHub OAuth App 的回调地址填 `https://oauth.你的域名/callback`。
 npx lighthouse http://localhost:4321 --view --preset=desktop
 ```
 
-（会临时下载 Lighthouse，不写进项目依赖。手机端跑就把 `--preset=desktop` 去掉。）
+会临时下载 Lighthouse，不写进项目依赖。手机端跑就去掉 `--preset=desktop`。
 
-### ⚠️ 本地分数会比线上低，这是正常的
+### ⚠️ 本地分数一定比线上低，这是正常的
 
 `astro preview` 是本地静态服务器，它：
 
 - **不做 gzip / brotli 压缩** —— 43 KB 的 CSS 原样传输，线上会被压到 8 KB 左右
-- **没有 CDN 缓存和 HTTP/2 推送**
-- 没有 Cloudflare 的边缘节点
+- **没有 CDN 缓存**
+- 没有 Cloudflare 边缘节点
 
-所以本地跑出 85 分、线上 97 分是常见情况。
+所以**本地 85 分、线上 97 分是常态**。
 **PRD 要求的 ≥ 95 应该以线上地址为准**，本地跑主要用来发现可优化项。
 
-### 要看什么
+### 期望分数
 
-| 指标 | 期望 | 说明 |
+| 指标 | 期望 | 依据 |
 | --- | --- | --- |
-| Performance | ≥ 95（线上） | 首屏 JS 只有 7.14 KB，主要是样式和动画 |
+| Performance | ≥ 95（线上） | 首屏 JS 只有 7.14 KB，封面是 CSS 渐变无图 |
 | Accessibility | ≥ 95 | 有 `aria-label`、`sr-only` 跳转链接、语义标签 |
-| Best Practices | ≥ 95 | 无第三方脚本、有 `nosniff` 等安全头（见 `public/_headers`） |
-| SEO | 100 | 有 canonical、sitemap、robots、RSS、OG 标签 |
+| Best Practices | ≥ 95 | 无第三方脚本，`public/_headers` 里有安全头 |
+| SEO | 100 | canonical、sitemap、robots、RSS、OG 齐全 |
 
-如果 Performance 没到 95，最可能的两处：
+### 没到 95 就按这个顺序砍
 
-1. **`backdrop-filter`** —— 首页有 10 张毛玻璃卡片。想再快就在
-   `src/styles/global.css` 里把 `.card` 的 `backdrop-blur` 去掉，视觉损失不大。
-2. **`.aurora` 的大面积 `filter: blur(90px)`** —— 首屏要光栅化三个巨大的模糊圆。
-   想省掉就把 `src/components/Background.astro` 里的 `aurora` 那段删了。
+1. **`backdrop-filter`** —— 首页 10 张毛玻璃卡片，最可能的瓶颈。
+   把 `src/styles/global.css` 里 `.card` 的 `backdrop-blur` 去掉，视觉损失不大。
+2. **`.aurora` 的 `filter: blur(90px)`** —— 首屏要光栅化三个巨大的模糊圆。
+   删掉 `src/components/Background.astro` 里 `aurora` 那段即可。
 
 改完重新 `pnpm run build` + `pnpm run serve` 再测。
 
 ---
 
-## 7. 上线后验收
+## 5. 上线后验收
 
 逐条对一遍 PRD 的清单：
 
-- [ ] 打开线上首页，首屏正好 10 张卡片
+- [ ] 首页首屏正好 10 张卡片
 - [ ] 点「加载更多」，追加出第 11、12 篇
-- [ ] 搜「芙宁娜」，出 3 篇真实文章并带日期
+- [ ] 搜「芙宁娜」，出 3 篇真实文章并带日期（不是标签页）
 - [ ] 点右上角 ☾ 切主题，无掉帧
-- [ ] 点进文章，有水波淡入转场（Chrome / Edge 126+）
+- [ ] 点进文章有水波淡入转场（Chrome / Edge 126+）
 - [ ] `/rss.xml` 能打开
 - [ ] `/sitemap-index.xml` 能打开
 - [ ] `/admin` 能 GitHub 登录并发布
@@ -180,9 +265,9 @@ npx lighthouse http://localhost:4321 --view --preset=desktop
 
 ---
 
-## 8. 日常维护
+## 6. 日常维护
 
-发布文章不需要本地环境：
+发布文章**不需要本地环境**：
 
 1. 打开 `https://你的域名/admin`
 2. GitHub 登录
@@ -190,3 +275,20 @@ npx lighthouse http://localhost:4321 --view --preset=desktop
 4. Cloudflare 检测到 push，约 60 秒重新构建上线
 
 改了样式或组件之后，本地跑一次 `pnpm run verify` 和 `pnpm run audit` 再推。
+
+---
+
+## 7. 构建失败排查
+
+Cloudflare 构建日志里出现下面这些，对应关系是：
+
+| 日志 | 原因 | 解决 |
+| --- | --- | --- |
+| `Unsupported engine ... Required: {"node":">=22.12.0"}` | Node 版本太低 | 加环境变量 `NODE_VERSION=22` |
+| `ERR_PNPM_IGNORED_BUILDS` | pnpm 拦了构建脚本 | 确认 `pnpm-workspace.yaml` 里的 `allowBuilds` 还在 |
+| 包管理器判断异常 / 依赖装错 | 两个 lockfile 打架 | 只留一个（见 A1） |
+| `Failed to resolve ... zod` | 幽灵依赖 | 已在 2.1.1 修复，确认 `devDependencies` 里有 `zod` |
+| 页面正常但没有搜索 | `pagefind` 那步没跑到 | 构建命令必须是 `pnpm run build`，不是 `pnpm run build:only` |
+| `GET /accounts -> 502 Bad Gateway`（带 Ray ID） | Cloudflare API 临时故障，与项目无关 | 重试；或设 `CLOUDFLARE_ACCOUNT_ID`；或改用后台拖拽上传（见方式 B 的兜底） |
+| `wrangler` 提示 `Not authenticated` | 登录态过期 | `npx wrangler login` 重新授权 |
+| 拖拽上传后 `/admin` 打不开 | 方式 B/C 没有 Git 监听，CMS 用不了 | 转方式 A（Git 连接） |
