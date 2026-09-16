@@ -12,12 +12,18 @@
   </head>
   <body>
     <!--
-      Sveltia CMS（Decap/Netlify CMS 的现代替代品）。配置在同目录 config.yml。
-      这就是仓库最初能用的写法 —— 请不要再往里加东西。
-      排查记录：自托管 1.9 MB 大文件、fetch+blob 执行、重试包装、自插状态框，
-      这几种「改进」都会让 Sveltia 不挂载界面；只有这三行一直正常。
-      唯一改动：版本锁死（原来是 @latest 风格的 URL，新版可能改坏配置）。
-      自检页：/admin/_diag.html
+      Sveltia CMS（Decap / Netlify CMS 的现代替代品，配置格式兼容）。
+      配置文件是同目录的 config.yml。
+
+      这就是最开始的写法，请不要再往里加东西。排查记录：
+        · 自托管那个 1.9 MB 的 JS    → 弱网/代理链路会截断 → 整页白屏
+        · fetch 下来再用 blob 执行    → Sveltia 不挂载界面
+        · 加重试包装 / 自己插状态提示  → 同上
+      只有下面这三行从建站起一直正常。
+      唯一的改动：版本号锁死（原来是不带版本号的 URL，CDN 永远给最新版，
+      某天发新版就可能悄悄改坏配置）。
+
+      升级：改下面的版本号，然后打开 /admin 确认能进后台、能发文。
     -->
     <script type="module" src="https://unpkg.com/@sveltia/cms@0.212.2/dist/sveltia-cms.mjs"></script>
   </body>

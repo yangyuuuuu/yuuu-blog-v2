@@ -1,6 +1,6 @@
 # ==========================================================================
 #  Sveltia CMS 配置（格式与 Decap / Netlify CMS 兼容）
-#  repo / base_url / site_url 三处都已按真实站点填好，改域名时记得一起改。
+#  repo / base_url / site_url 三处已按真实站点填好，换域名时记得一起改。
 # ==========================================================================
 
 backend:
@@ -16,7 +16,6 @@ backend:
     uploadMedia: "media: 上传 {{path}}"
     deleteMedia: "media: 删除 {{path}}"
 
-# ▼ 改成你的正式域名
 site_url: https://yuuu.love
 display_url: https://yuuu.love
 logo_url: https://yuuu.love/icon-192.png
@@ -46,15 +45,19 @@ collections:
       - label: 置顶
         field: pinned
         pattern: true
+      - label: 隐藏
+        field: private
+        pattern: true
     fields:
       - { name: title, label: 标题, widget: string }
       - { name: date, label: 创建时间, widget: datetime, date_format: "YYYY-MM-DD", time_format: false, picker_utc: true }
-      - { name: updated, label: 最后修改, widget: datetime, date_format: "YYYY-MM-DD", time_format: false, required: false }
+      - { name: updated, label: 最后修改, widget: datetime, date_format: "YYYY-MM-DD", time_format: false, required: false, hint: "留空就别填 —— 后台清空它会写成空字符串（schema 已容错）" }
       - name: category
         label: 分类
         widget: select
         options: [日记, 技术, 随笔]
         default: 随笔
+        hint: "选「日记」会自动隐藏：不进首页/标签/搜索/RSS/sitemap，但链接仍可访问"
       - { name: tags, label: 标签, widget: list, default: [], hint: "回车添加一个标签" }
       - { name: summary, label: 摘要, widget: text, required: false, hint: "留空则自动截取正文开头" }
       - { name: cover, label: 封面图, widget: image, required: false, choose_url: true, hint: "留空则使用 CSS 渐变封面" }
@@ -80,5 +83,5 @@ collections:
         label: 隐藏
         widget: boolean
         default: false
-        hint: "打开后：首页 / 归档 / 标签 / 搜索 / RSS / sitemap 里都不出现，但直接开链接仍能看。分类选「日记」会自动隐藏，不用在这里手动开。"
+        hint: "首页/归档/标签/搜索/RSS/sitemap 里都不出现，但直接开链接仍能看。分类选「日记」会自动隐藏。"
       - { name: body, label: 正文, widget: markdown }
