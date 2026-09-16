@@ -4,7 +4,7 @@
 
 <div class="relative w-full" id="searchRoot">
   <label class="sr-only" for="yuuuSearch">搜索文章</label>
-  <div class="search-box flex h-11 items-center gap-2 rounded-full border border-line bg-soft px-3.5">
+  <div class="search-box flex h-9 items-center gap-2 rounded-full border border-line bg-soft px-3 lg:h-11 lg:px-3.5">
     <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor"
          stroke-width="2" stroke-linecap="round" aria-hidden="true">
       <circle cx="11" cy="11" r="7" class="text-muted"></circle>
@@ -254,6 +254,33 @@
       return bits;
     }
 
+    /**
+     * 相关度打分。
+     * Pagefind 对中文没有分词，会把「不喜欢」拆成单字匹配，
+     * 于是只含「不」的文章也可能排在前面。这里补一层排序：
+     * 完整命中标题 > 完整命中摘要 > 命中比例高 > Pagefind 原始顺序。
+     */
+    function score(d, needle) {
+      var n = String(needle || '').toLowerCase();
+      if (!n) return 0;
+      var title = String((d.meta && d.meta.title) || '').toLowerCase();
+      var text = String(d.excerpt || '').replace(/<[^>]+>/g, '').toLowerCase();
+      var s = 0;
+      if (title.indexOf(n) >= 0) s += 1000;      // 整串出现在标题里
+      if (text.indexOf(n) >= 0) s += 400;        // 整串出现在摘要里
+      var hit = 0;
+      for (var i = 0; i < n.length; i++) if (text.indexOf(n[i]) >= 0) hit++;
+      s += (hit / n.length) * 30;                // 命中比例
+      return s;
+    }
+
+    function rank(list, needle) {
+      return list
+        .map(function (d, i) { return { d: d, s: score(d, needle), i: i }; })
+        .sort(function (a, b) { return b.s - a.s || a.i - b.i; })  // 同分保持原序
+        .map(function (x) { return x.d; });
+    }
+
     function render(list, raw, q) {
       var chips = describeQuery(q);
       var head = chips.length
@@ -299,33 +326,49 @@
       if (!raw) { hide(); return; }
 
       var q = parseQuery(raw);
-      var term = q.text.join(' ').trim();
+      var plain = q.text.join(' ').trim();
+      /* 短语检索：把词用引号包起来，逼 Pagefind 只匹配连续出现的整串。
+         中文没分词，不加引号时「不喜欢」会被拆成单字，含「不」的文章也能中。 */
+      var phrase = q.text.map(function (w) {
+        return /\s/.test(w) ? '"' + w + '"' : w.length > 1 ? '"' + w + '"' : w;
+      }).join(' ').trim();
+
       var filters = {};
       if (q.tag) filters.tag = q.tag;
       if (q.cat) filters.category = q.cat;
       var hasFilter = Object.keys(filters).length > 0;
 
       // 光有筛选条件没关键词也行；两样都没有就没什么可搜的
-      if (!term && !hasFilter) { hide(); return; }
+      if (!plain && !hasFilter) { hide(); return; }
 
       var mine = ++seq;
       hits = [];
       active = -1;
       show('<p class="search-empty">搜索中…</p>');
 
+      var opts = hasFilter ? { filters: filters } : {};
+
+      function grab(pf, term) {
+        return pf.search(term || null, opts).then(function (res) {
+          // 多取一些：后面还要做区间筛选和重排，取太少会不够一屏
+          return Promise.all(res.results.slice(0, 40).map(function (r) { return r.data(); }));
+        });
+      }
+
       load().then(function (pf) {
         if (mine !== seq) return;
         if (!pf) { explain(); return; }
-        // term 为空时传 null，让 Pagefind 只按筛选器枚举
-        return pf.search(term || null, hasFilter ? { filters: filters } : {})
-          .then(function (res) {
-            // 多取一些再做区间筛选，否则筛完可能凑不满一屏
-            return Promise.all(res.results.slice(0, 24).map(function (r) { return r.data(); }));
-          })
-          .then(function (list) {
-            if (mine !== seq) return;
-            render(list.filter(function (d) { return matchMeta(q, d.meta); }), raw, q);
-          });
+
+        return grab(pf, phrase).then(function (list) {
+          // 严格短语一个都没中，再放宽成普通检索，免得直接「无结果」
+          if (list.length || !plain || phrase === plain) return list;
+          return grab(pf, plain);
+        }).then(function (list) {
+          if (mine !== seq) return;
+          var kept = list.filter(function (d) { return matchMeta(q, d.meta); });
+          // 排序用的关键词：优先拿自由文本，纯筛选查询就按原标题顺序
+          render(rank(kept, plain).slice(0, 12), raw, q);
+        });
       }).catch(function () {
         if (mine === seq) show('<p class="search-empty">搜索出错了，稍后重试</p>');
       });

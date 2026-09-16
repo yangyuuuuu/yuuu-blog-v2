@@ -86,6 +86,10 @@ const ogImage = new URL(image, site).href;
         if (fx.sink !== false) de.classList.add('fx-sink');
         if (fx.glass !== false) de.classList.add('fx-glass');
         if (fx.scrollBlur !== false) de.classList.add('fx-scrollblur');
+
+        /* 主页列数：首屏前就设好，避免从 3 列跳变 */
+        var cols = Number(localStorage.getItem('yuuu-cols') || 3);
+        if (cols >= 2 && cols <= 6) de.style.setProperty('--home-cols', String(cols));
       })();
     </script>
   </head>

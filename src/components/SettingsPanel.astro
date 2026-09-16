@@ -14,8 +14,8 @@ const SKINS = [
     aria-label="设置"
     aria-expanded="false"
     title="设置"
-    class="grid h-10 w-10 shrink-0 place-items-center rounded-[11px] border border-line bg-surface
-           text-[15px] text-muted transition-colors hover:border-gold/60 hover:text-gold"
+    class="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] border border-line bg-surface
+           text-[15px] text-muted transition-colors hover:border-gold/60 hover:text-gold lg:h-10 lg:w-10"
   >⚙</button>
 
   <div class="theme-menu" id="settingsMenu" hidden>
@@ -29,6 +29,11 @@ const SKINS = [
           </button>
         ))
       }
+    </div>
+
+    <p class="theme-menu-label">主页列数</p>
+    <div class="theme-cols">
+      {[2, 3, 4, 5, 6].map((n) => <button type="button" data-cols={n}>{n}</button>)}
     </div>
 
     <p class="theme-menu-label">显示</p>
@@ -65,6 +70,10 @@ const SKINS = [
     function applyFx(o) { FX.forEach(function (k) { html.classList.toggle('fx-' + k, o[k] !== false); }); }
 
     function paint() {
+      var cols = Number(read('yuuu-cols', '3')) || 3;
+      [].slice.call(menu.querySelectorAll('[data-cols]')).forEach(function (b) {
+        b.classList.toggle('is-on', Number(b.dataset.cols) === cols);
+      });
       var s = read('yuuu-skin', 'fontaine');
       [].slice.call(menu.querySelectorAll('[data-skin]')).forEach(function (b) {
         b.classList.toggle('is-on', b.dataset.skin === s);
@@ -84,7 +93,15 @@ const SKINS = [
 
     menu.addEventListener('click', function (e) {
       var b = e.target && e.target.closest ? e.target.closest('button') : null;
-      if (!b || !b.dataset.skin || SKINS.indexOf(b.dataset.skin) < 0) return;
+      if (!b) return;
+      if (b.dataset.cols) {
+        var n = String(Math.min(6, Math.max(2, Number(b.dataset.cols) || 3)));
+        html.style.setProperty('--home-cols', n);
+        try { localStorage.setItem('yuuu-cols', n); } catch (e2) {}
+        paint();
+        return;
+      }
+      if (!b.dataset.skin || SKINS.indexOf(b.dataset.skin) < 0) return;
       html.classList.add('theme-switching');
       html.setAttribute('data-skin', b.dataset.skin);
       try { localStorage.setItem('yuuu-skin', b.dataset.skin); } catch (e) {}

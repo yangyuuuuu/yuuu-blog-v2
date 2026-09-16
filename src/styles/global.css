@@ -719,6 +719,59 @@ html.is-searching #navToggle {
 /* --------------------------------------------------------------------------
    首页首屏：只留徽记、站名、一句话和统计，文章列表整体下沉到第二屏
    -------------------------------------------------------------------------- */
+/* 文章页正文宽度：默认 1140，可拖右边缘调整 */
+.article-wrap { max-width: var(--article-w, 1140px); }
+.article-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -5px;
+  z-index: 20;
+  width: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+.article-resizer::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  width: 3px;
+  height: 52px;
+  margin-top: -26px;
+  border-radius: 99px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.article-resizer:hover::after,
+.article-resizer:focus-visible::after,
+.article-resizer.is-dragging::after { opacity: 0.85; }
+@media (max-width: 1023px) {
+  .article-resizer { display: none; }
+}
+
+/* 顶栏下滑让位、上滑归位 */
+#siteHeader {
+  transition: transform 0.36s cubic-bezier(0.22, 1, 0.36, 1);
+}
+#siteHeader.is-hidden { transform: translateY(-102%); }
+@media (prefers-reduced-motion: reduce) {
+  #siteHeader { transition: none; }
+}
+
+/* 首页文章网格列数：xl 以下固定 1/2 列，xl 以上听用户的（--home-cols，2~6） */
+#postGrid { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 640px) {
+  #postGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1280px) {
+  #postGrid { grid-template-columns: repeat(var(--home-cols, 3), minmax(0, 1fr)); }
+}
+
 /* 横向溢出兜底：用 clip 而不是 hidden —— hidden 会造出滚动容器，把吸顶导航搞坏 */
 html,
 body {
@@ -958,6 +1011,23 @@ html[data-theme='light'] .g-sun { opacity: 1; transform: rotate(0deg) scale(1); 
   height: 14px;
   border-radius: 50%;
   box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.28);
+}
+.theme-cols { display: flex; gap: 5px; margin-bottom: 15px; }
+.theme-cols button {
+  flex: 1;
+  padding: 6px 0;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--hover);
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.25s ease, border-color 0.25s ease, background-color 0.25s ease;
+}
+.theme-cols button.is-on {
+  border-color: var(--accent);
+  background: var(--hover-strong);
+  color: var(--accent);
 }
 .theme-fx { display: flex; flex-direction: column; gap: 1px; margin-bottom: 15px; }
 .theme-fx label {

@@ -15,14 +15,21 @@ const isActive = (href: string) => (href === '/' ? path === '/' : path.startsWit
 ---
 
 <header
+  id="siteHeader"
   class="sticky top-0 z-60 border-b border-line backdrop-blur-xl backdrop-saturate-150 t-backdrop"
   style="background: var(--header-bg)"
 >
+  <!--
+    手机：两栏 [logo | 搜索+按钮]，全在一行
+    桌面：三栏 [logo | 导航居中 | 搜索+按钮]，导航真正居中而不是被挤到一边
+  -->
   <div
-    class="mx-auto flex w-full max-w-[1140px] flex-wrap items-center gap-x-3 gap-y-2.5 px-4 py-3
-            lg:h-[68px] lg:flex-nowrap lg:gap-4 lg:px-5 lg:py-0 2xl:max-w-[1320px]"
+    class="mx-auto grid w-full max-w-[1140px] grid-cols-[auto_minmax(0,1fr)] items-center gap-2
+           px-3 py-2.5
+           lg:h-[68px] lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:gap-4 lg:px-5 lg:py-0
+           2xl:max-w-[1320px]"
   >
-    <a href="/" class="flex shrink-0 items-center gap-3 text-ink">
+    <a href="/" class="flex shrink-0 items-center gap-2.5 text-ink lg:gap-3">
       <span
         class="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-line-strong"
         style="background: var(--hover)"
@@ -36,13 +43,13 @@ const isActive = (href: string) => (href === '/' ? path === '/' : path.startsWit
           decoding="async"
         />
       </span>
-      <span class="flex flex-col leading-none">
+      <span class="hidden flex-col leading-none sm:flex">
         <b class="font-title text-lg tracking-[0.14em]">yuuu</b>
         <i class="mt-0.5 text-[10px] not-italic tracking-[0.3em] text-muted">FONTAINE</i>
       </span>
     </a>
 
-    <nav class="ml-auto hidden items-center gap-1 lg:flex 2xl:ml-6" id="mainNav" aria-label="主导航">
+    <nav class="hidden items-center justify-center gap-1 lg:flex" id="mainNav" aria-label="主导航">
       {
         NAV.map((item) => (
           <a
@@ -61,12 +68,12 @@ const isActive = (href: string) => (href === '/' ? path === '/' : path.startsWit
       }
     </nav>
 
-    <!-- 手机上搜索独占第二行，桌面上收回导航栏右侧 -->
-    <div class="relative order-last w-full lg:order-none lg:ml-2 lg:w-[240px] lg:shrink-0">
-      <SearchBox />
-    </div>
+    <div class="flex min-w-0 items-center gap-1.5 lg:gap-2">
+      <!-- 手机上被压缩到剩余宽度，桌面上固定 240px -->
+      <div class="relative min-w-0 flex-1 lg:ml-2 lg:w-[240px] lg:flex-none">
+        <SearchBox />
+      </div>
 
-    <div class="ml-auto flex shrink-0 items-center gap-2 lg:ml-0">
       <ThemeToggle />
       <SettingsPanel />
 
@@ -75,8 +82,8 @@ const isActive = (href: string) => (href === '/' ? path === '/' : path.startsWit
       type="button"
       aria-label="打开菜单"
       aria-expanded="false"
-        class="grid h-10 w-10 shrink-0 place-items-center rounded-[11px] border border-line bg-surface
-               text-muted transition-colors hover:border-gold/60 hover:text-gold lg:hidden"
+        class="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] border border-line bg-surface
+               text-muted transition-colors hover:border-gold/60 hover:text-gold lg:hidden lg:h-10 lg:w-10"
       >☰</button>
     </div>
   </div>
@@ -104,6 +111,28 @@ const isActive = (href: string) => (href === '/' ? path === '/' : path.startsWit
 </header>
 
 <script is:inline>
+  /* 下滑时顶栏自动让位，上滑立刻回来。搜索中不隐藏，免得打断输入 */
+  (function () {
+    var header = document.getElementById('siteHeader');
+    if (!header) return;
+    var lastY = window.scrollY, ticking = false;
+
+    function update() {
+      ticking = false;
+      var y = window.scrollY;
+      var searching = document.documentElement.classList.contains('is-searching');
+      var menuOpen = header.querySelector('.theme-menu:not([hidden])');
+      if (!searching && !menuOpen && y > lastY && y > 150) header.classList.add('is-hidden');
+      else header.classList.remove('is-hidden');
+      lastY = y;
+    }
+
+    window.addEventListener('scroll', function () {
+      if (!ticking) { ticking = true; requestAnimationFrame(update); }
+    }, { passive: true });
+    window.addEventListener('focusin', function () { header.classList.remove('is-hidden'); });
+  })();
+
   (function () {
     var btn = document.getElementById('navToggle');
     var nav = document.getElementById('mobileNav');

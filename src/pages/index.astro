@@ -76,7 +76,7 @@ const hasMore = posts.length > PAGE_SIZE;
       <TagCloud tags={tags} />
     </div>
 
-    <div class="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" id="postGrid">
+    <div class="grid gap-6" id="postGrid">
       {firstPage.map((post) => <PostCard post={post} />)}
     </div>
 
