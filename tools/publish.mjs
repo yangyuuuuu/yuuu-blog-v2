@@ -152,7 +152,14 @@ head('5. 提交并推送');
 const stamp = new Date().toISOString().slice(0, 10);
 const postNames = status.split('\n')
   .filter((l) => l.includes('src/content/posts/'))
-  .map((l) => l.replace(/^\s*\S+\s+/, '').replace(/^src\/content\/posts\//, '').replace(/\.md$/, ''));
+  .map((l) => l
+    /* git 遇到非 ASCII 路径会给整条路径加双引号，还可能有 \ 转义 —— 先摘掉再取文件名 */
+    .replace(/^\s*\S+\s+/, '')
+    .replace(/^"(.*)"$/, '$1')
+    .replace(/\\/g, '/')
+    .replace(/^src\/content\/posts\//, '')
+    .replace(/\.md$/, ''));
+
 const finalMessage = message
   || (postNames.length ? 'post: ' + postNames.join('、') : 'chore: 更新站点内容 ' + stamp);
 
