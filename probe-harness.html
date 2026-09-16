@@ -1,0 +1,6 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-auto-theming="true" data-underline-links="true" data-beta="false" data-dev-mode="false"><head><meta charset="utf-8"><title>local cms test</title></head><body>
+  <div id="status">loading…</div>
+  <script>window.addEventListener('error',e=>{document.getElementById('status').textContent='ERR: '+e.message});
+  window.addEventListener('unhandledrejection',e=>{document.getElementById('status').textContent='REJ: '+(e.reason&&(e.reason.stack||e.reason.message)||e.reason)});</script>
+<script type="module" src="/cms.mjs"></script></body></html>

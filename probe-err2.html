@@ -1,11 +1,10 @@
-<!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="robots" content="noindex, nofollow" />
+﻿<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-auto-theming="true" data-underline-links="true" data-beta="false" data-dev-mode="false"><head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
     <title>内容管理 · yuuu</title>
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
     <style>
       body { margin: 0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
       #cmsFallback { max-width: 620px; margin: 80px auto; padding: 0 20px; font-size: 14px; line-height: 1.8; color: #556; }
@@ -29,20 +28,11 @@
     -->
     <noscript>这个后台需要 JavaScript。</noscript>
 
-    <div id="cmsStatus" style="max-width:640px;margin:80px auto;padding:0 20px;font:14px/1.8 -apple-system,'PingFang SC','Microsoft YaHei',sans-serif;color:#556">
-      <b style="color:#223">后台正在加载…</b>
-      <p id="cmsNote">状态：准备请求脚本</p>
-      <pre id="cmsError" style="display:none;white-space:pre-wrap;font-size:12px;color:#a33;background:#fff5f5;border:1px solid #f3c;border-radius:8px;padding:10px"></pre>
-    </div>
+    
 
     <script>
       (function () {
-        /*
-         * 版本别乱升：0.213.2 是 2026-09-16 11:04 发布的，升级后后台直接白屏
-         * （脚本下载成功、开始执行，然后界面不挂载）。0.212.2 是升级前一直在用的版本。
-         * 要升级就自己在浏览器里验一次：能进后台、能发文，再改这里。
-         */
-        var VER = '0.212.2';
+        var VER = '0.213.2';
         var SOURCES = [
           'https://cdn.jsdelivr.net/npm/@sveltia/cms@' + VER + '/dist/sveltia-cms.mjs',
           'https://unpkg.com/@sveltia/cms@' + VER + '/dist/sveltia-cms.mjs',
@@ -91,11 +81,7 @@
             .then(function (code) {
               say(name + ' 已下载（' + Math.round(code.length / 1024) + ' KB），正在启动…');
               var url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
-              /* 模块「求值阶段」抛的错，window.onerror 抓不到 —— 这里同步执行才抓得住 */
-              return import(url).catch(function (e) {
-                showErr('CMS 启动失败：\n' + ((e && (e.stack || e.message)) || e));
-                throw e;
-              });
+              return import(url);
             })
             .then(function () {
               /* 导入成功；界面由 Sveltia 自己接管 */
@@ -112,5 +98,7 @@
         tryLoad();
       })();
     </script>
-  </body>
-</html>
+  <script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v31edd6df95cf4e85bb4c19e7a9bdbcba1788362987495" integrity="sha512-iIg7k2xntmwu6/uSb5tpc/hySgZc4eoL31yB29W6tJFo2akwjPWcEqnCEdJvGexCL0KEQwVYv5BlowfhVz26hg==" data-cf-beacon="{&quot;version&quot;:&quot;2024.11.0&quot;,&quot;token&quot;:&quot;a1e74efe64b7406fb057c4cc83489066&quot;,&quot;r&quot;:1,&quot;spa&quot;:2}" crossorigin="anonymous"></script>
+
+
+</body></html>
