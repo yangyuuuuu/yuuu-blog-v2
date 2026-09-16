@@ -38,6 +38,16 @@ dist/
 | `public/admin/config.yml` | `repo`、`base_url`、`site_url`、`display_url` | CMS 登录失败 |
 | `workers/oauth/wrangler.toml` | `ALLOWED_ORIGIN` | OAuth 被 CORS 拦 |
 
+**一条命令改完上面全部**（含 OAuth Worker 的 `ALLOWED_ORIGIN`，共 6 处）：
+
+```bash
+pnpm run domain https://你的域名
+pnpm run build
+pnpm run audit
+```
+
+`audit` 会核对产物里的 canonical 和 robots 是否与配置一致，不一致会直接报错。
+
 改完重新构建一次：`pnpm run build`。
 
 > 还不知道最终域名？可以先不管，等第 4 节绑好域名再回来改，然后重新推一次。
@@ -121,7 +131,22 @@ Pages 项目 → **Custom domains** → **Set up a custom domain** → 输入域
 - 域名已在 Cloudflare 托管：DNS 记录和 HTTPS 证书全自动
 - 域名在别处：按提示把 CNAME 指到 `<项目>.pages.dev`
 
-绑完回**第 1 节**把域名填进配置，再推一次。
+绑完回**第 1 节**把域名填进配置。一条命令改完 6 处：
+
+```bash
+pnpm run domain https://你的域名
+pnpm run build
+pnpm run audit
+```
+
+### A5. 关于统计脚本
+
+**Cloudflare Pages 会默认给站点注入 Web Analytics**
+（`static.cloudflareinsights.com/beacon.min.js`）。这是 PRD 里唯一允许的第三方脚本例外。
+
+只要**不在** `src/lib/site.ts` 里填 `CF_BEACON_TOKEN`，就不会重复加载 —— 保持留空即可。
+
+想做到字面上的「0 个第三方脚本」：Dashboard → **Web Analytics** → 关掉这个站点。
 
 ---
 

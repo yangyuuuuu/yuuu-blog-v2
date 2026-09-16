@@ -18,9 +18,9 @@ backend:
     deleteMedia: "media: 删除 {{path}}"
 
 # ▼ 改成你的正式域名
-site_url: https://yuuu-blog.pages.dev
-display_url: https://yuuu-blog.pages.dev
-logo_url: https://yuuu-blog.pages.dev/favicon.svg
+site_url: https://yuuu.love
+display_url: https://yuuu.love
+logo_url: https://yuuu.love/favicon.svg
 
 locale: zh_Hans
 publish_mode: simple

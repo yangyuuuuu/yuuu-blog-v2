@@ -9,7 +9,7 @@ compatibility_date = "2025-01-01"
 
 [vars]
 # ▼ 改成你的博客正式域名，避免被别的站点拿去用
-ALLOWED_ORIGIN = "https://yuuu.pages.dev"
+ALLOWED_ORIGIN = "https://yuuu.love"
 
 # 密钥不要写在这里，用命令写入：
 #   wrangler secret put GITHUB_CLIENT_ID
