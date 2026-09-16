@@ -16,21 +16,23 @@
     <!--
       Sveltia CMS（Decap/Netlify CMS 的现代替代品，配置格式兼容）。配置在同目录 config.yml。
 
-      ⚠️ 加载策略（改动前先读完，这些都是踩出来的）：
+      ⚠️ 加载策略（改动前先读完，都是踩出来的）：
         1. 不从本站自托管 —— 那是个 1.9 MB 的文件，在「挂代理 / 跨境」的网络上
-           经常被中途掐断（实测 curl: schannel: server closed abruptly），拿到半截 JS
-           就解析失败 → 整页白屏且没有提示。
-        2. 必须**重试**：这类网络到 CDN 的连接是时好时坏的 ——
-           同一个 URL，一次成功、一次失败，实测复现过。单次尝试必然经常挂。
-        3. 两个 CDN 轮换（jsDelivr / unpkg），最多试 5 次，每次间隔递增。
-        4. 版本锁死 0.213.2：CDN 上永远拿同一个文件，不会被新版悄悄改坏配置。
-      判断「起来了没」：<html> 上会出现 data-auto-theming 属性。
+           经常被中途掐断（实测 curl: schannel: server closed abruptly），
+           浏览器拿到半截 JS 就解析失败 → 整页白屏且没有提示。
+        2. 必须重试：这类链路到 CDN 的连接时好时坏（同一 URL 一次成功一次失败，实测复现）。
+        3. 版本锁死 0.213.2：CDN 上永远拿同一个文件，不会被新版悄悄改坏配置。
+        4. 用「抓下来 + blob import + try/catch」而不是 <script src>：
+           <script src> 里的异常在页面外抓不到，只能干瞪眼白屏；
+           这样写能把真实错误显示在页面上，出问题一眼就知道原因。
+      判断「起来了没」：<html> 上会出现 data-auto-theming 属性（Sveltia 自己写的）。
     -->
     <noscript>这个后台需要 JavaScript。</noscript>
 
     <div id="cmsStatus" style="max-width:640px;margin:80px auto;padding:0 20px;font:14px/1.8 -apple-system,'PingFang SC','Microsoft YaHei',sans-serif;color:#556">
       <b style="color:#223">后台正在加载…</b>
       <p id="cmsNote">状态：准备请求脚本</p>
+      <pre id="cmsError" style="display:none;white-space:pre-wrap;font-size:12px;color:#a33;background:#fff5f5;border:1px solid #f3c;border-radius:8px;padding:10px"></pre>
     </div>
 
     <script>
@@ -40,13 +42,26 @@
           'https://cdn.jsdelivr.net/npm/@sveltia/cms@' + VER + '/dist/sveltia-cms.mjs',
           'https://unpkg.com/@sveltia/cms@' + VER + '/dist/sveltia-cms.mjs',
         ];
-        var MAX = 5;
+        var MAX = 4;
         var note = document.getElementById('cmsNote');
         var status = document.getElementById('cmsStatus');
+        var errBox = document.getElementById('cmsError');
         var booted = function () { return document.documentElement.hasAttribute('data-auto-theming'); };
         var say = function (t) { if (note) note.textContent = '状态：' + t; };
+        var showErr = function (t) {
+          if (!errBox) return;
+          errBox.style.display = 'block';
+          errBox.textContent = t;
+        };
 
-        /* CMS 启动后撤掉提示；顺带刷新一下状态文字 */
+        /* 把异常也显示出来 —— 否则用户只能看到白屏 */
+        window.addEventListener('error', function (e) {
+          if (!booted()) showErr('页面错误：' + (e.message || e.error || ''));
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          if (!booted()) showErr('未处理的 Promise 异常：' + ((e.reason && (e.reason.stack || e.reason.message)) || e.reason));
+        });
+
         var watch = setInterval(function () {
           if (booted()) { clearInterval(watch); if (status && status.parentNode) status.remove(); }
         }, 300);
@@ -55,23 +70,35 @@
         function tryLoad() {
           if (booted()) return;
           if (attempt >= MAX) {
-            say('两个 CDN 试了 ' + MAX + ' 次都没成功。多半是网络/代理不稳 —— 刷新一次通常就好。');
+            say('试了 ' + MAX + ' 次都没成功，多半是网络/代理不稳 —— 刷新一次通常就好。');
             return;
           }
           var src = SOURCES[attempt % SOURCES.length];
           var name = src.indexOf('jsdelivr') >= 0 ? 'jsDelivr' : 'unpkg';
           attempt++;
-          say('第 ' + attempt + '/' + MAX + ' 次：正在请求 ' + name + '…');
+          say('第 ' + attempt + '/' + MAX + ' 次：正在下载 ' + name + '…');
 
-          var s = document.createElement('script');
-          s.type = 'module';
-          s.src = src;
-          s.onload = function () { say(name + ' 已下载，正在启动…'); };
-          s.onerror = function () {
-            say('第 ' + attempt + ' 次失败（' + name + '），' + (attempt < MAX ? '1.5 秒后重试…' : '已无重试'));
-            setTimeout(tryLoad, 1500);
-          };
-          document.body.appendChild(s);
+          fetch(src)
+            .then(function (r) {
+              if (!r.ok) throw new Error('HTTP ' + r.status);
+              return r.text();
+            })
+            .then(function (code) {
+              say(name + ' 已下载（' + Math.round(code.length / 1024) + ' KB），正在启动…');
+              var url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+              return import(url);
+            })
+            .then(function () {
+              /* 导入成功；界面由 Sveltia 自己接管 */
+              setTimeout(function () {
+                if (!booted()) showErr('脚本已加载但界面没有挂载 —— 把这段发给我。UA: ' + navigator.userAgent);
+              }, 3000);
+            })
+            .catch(function (e) {
+              say('第 ' + attempt + ' 次失败（' + name + '）：' + (e && e.message ? e.message : e));
+              showErr('加载 ' + name + ' 失败：\n' + ((e && (e.stack || e.message)) || e));
+              setTimeout(tryLoad, 1500);
+            });
         }
         tryLoad();
       })();
