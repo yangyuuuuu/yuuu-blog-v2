@@ -68,6 +68,11 @@ const ogImage = new URL(image, site).href;
         try {
           var t = localStorage.getItem('yuuu-theme');
           if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+          /* 皮肤也要在首屏绘制前应用，否则会闪一下默认配色 */
+          var s = localStorage.getItem('yuuu-skin');
+          if (s === 'opera' || s === 'abyss' || s === 'fontaine') {
+            document.documentElement.setAttribute('data-skin', s);
+          }
         } catch (e) {}
         /* 打上 js 标记，首页的「下沉」初始态只在有 JS 时才生效。
            这样脚本挂了内容也不会永远隐身 —— 旧版踩过这个坑。 */

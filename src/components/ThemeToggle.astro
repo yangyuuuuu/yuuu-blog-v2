@@ -1,14 +1,111 @@
 ---
-/** 深浅主题切换：状态存在 localStorage，首屏由 <head> 里的内联脚本提前应用 */
+/** 主题：深浅模式 + 皮肤。状态存 localStorage，首屏由 <head> 内联脚本提前应用。 */
+const SKINS = [
+  { id: 'fontaine', name: '枫丹', swatch: '#7ec8e3' },
+  { id: 'opera', name: '歌剧院', swatch: '#e8a0b4' },
+  { id: 'abyss', name: '深海', swatch: '#9b8ce8' },
+];
 ---
 
-<button
-  id="themeToggle"
-  type="button"
-  aria-label="切换深浅主题"
-  title="切换深浅主题"
-  class="grid h-10 w-10 place-items-center rounded-[11px] border border-line bg-surface
-         text-base text-muted transition-colors hover:border-gold/60 hover:text-gold"
->
-  <span id="themeIcon" aria-hidden="true">☾</span>
-</button>
+<div class="relative" id="themeRoot">
+  <button
+    id="themeToggle"
+    type="button"
+    aria-label="主题与皮肤"
+    aria-expanded="false"
+    title="主题与皮肤"
+    class="grid h-10 w-10 place-items-center rounded-[11px] border border-line bg-surface
+           text-base text-muted transition-colors hover:border-gold/60 hover:text-gold"
+  >
+    <span id="themeIcon" aria-hidden="true">☾</span>
+  </button>
+
+  <div class="theme-menu" id="themeMenu" hidden>
+    <p class="theme-menu-label">模式</p>
+    <div class="theme-modes">
+      <button type="button" data-mode="dark">深色</button>
+      <button type="button" data-mode="light">浅色</button>
+    </div>
+
+    <p class="theme-menu-label">皮肤</p>
+    <div class="theme-skins">
+      {
+        SKINS.map((s) => (
+          <button type="button" data-skin={s.id}>
+            <i style={`background:${s.swatch}`}></i>
+            <span>{s.name}</span>
+          </button>
+        ))
+      }
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var root = document.getElementById('themeRoot');
+    var btn = document.getElementById('themeToggle');
+    var menu = document.getElementById('themeMenu');
+    var icon = document.getElementById('themeIcon');
+    if (!root || !btn || !menu) return;
+
+    var html = document.documentElement;
+    var GLYPH = { dark: '☾', light: '☀' };
+    var MODES = ['dark', 'light'];
+    var SKINS = ['fontaine', 'opera', 'abyss'];
+
+    function read(key, fallback) {
+      try {
+        var v = localStorage.getItem(key);
+        return v || fallback;
+      } catch (e) { return fallback; }
+    }
+
+    function paint() {
+      var m = read('yuuu-theme', 'dark');
+      var s = read('yuuu-skin', 'fontaine');
+      if (icon) icon.textContent = GLYPH[m] || GLYPH.dark;
+      [].slice.call(menu.querySelectorAll('[data-mode]')).forEach(function (b) {
+        b.classList.toggle('is-on', b.dataset.mode === m);
+      });
+      [].slice.call(menu.querySelectorAll('[data-skin]')).forEach(function (b) {
+        b.classList.toggle('is-on', b.dataset.skin === s);
+      });
+    }
+
+    /* 切换时开一个过渡开关，让颜色平滑变化，560ms 后撤掉（正好比过渡略长） */
+    function swap(attr, value, key) {
+      html.classList.add('theme-switching');
+      html.setAttribute(attr, value);
+      try { localStorage.setItem(key, value); } catch (e) {}
+      window.setTimeout(function () { html.classList.remove('theme-switching'); }, 560);
+      paint();
+    }
+
+    function close() {
+      menu.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+    }
+
+    btn.addEventListener('click', function () {
+      menu.hidden = !menu.hidden;
+      btn.setAttribute('aria-expanded', menu.hidden ? 'false' : 'true');
+    });
+
+    menu.addEventListener('click', function (e) {
+      var b = e.target && e.target.closest ? e.target.closest('button') : null;
+      if (!b) return;
+      if (b.dataset.mode && MODES.indexOf(b.dataset.mode) >= 0) swap('data-theme', b.dataset.mode, 'yuuu-theme');
+      if (b.dataset.skin && SKINS.indexOf(b.dataset.skin) >= 0) swap('data-skin', b.dataset.skin, 'yuuu-skin');
+    });
+
+    document.addEventListener('click', function (e) {
+      if (!root.contains(e.target)) close();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') close();
+    });
+
+    paint();
+  })();
+</script>
