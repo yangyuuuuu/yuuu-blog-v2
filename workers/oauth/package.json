@@ -1,0 +1,11 @@
+{
+  "name": "yuuu-oauth",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Sveltia CMS 的 GitHub OAuth 代理（Cloudflare Worker）",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "whoami": "wrangler whoami"
+  }
+}

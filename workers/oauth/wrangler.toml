@@ -2,13 +2,14 @@ name = "yuuu-oauth"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
-# ▼ 改成你为 OAuth 准备的子域名（在 Cloudflare 里为该 Worker 配置 Custom Domain）
-# routes = [
-#   { pattern = "oauth.your-domain.com", custom_domain = true }
-# ]
+# 自定义域：部署后 Worker 就挂在 https://oauth.yuuu.love
+# （DNS 记录由 Cloudflare 自动创建，不需要手动加）
+routes = [
+  { pattern = "oauth.yuuu.love", custom_domain = true }
+]
 
 [vars]
-# ▼ 改成你的博客正式域名，避免被别的站点拿去用
+# 只允许博客自己的页面来调这个 Worker
 ALLOWED_ORIGIN = "https://yuuu.love"
 
 # 密钥不要写在这里，用命令写入：
