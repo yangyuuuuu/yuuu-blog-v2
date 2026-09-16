@@ -171,15 +171,24 @@ html[data-theme='light'] .aurora i { opacity: 0.28; }
   50%      { transform: translate3d(0, -12px, 0); }
 }
 
-/* 滚动淡入（IntersectionObserver 只加类名，动画交给 CSS） */
-.reveal {
+/* 滚动进出：只切类名，动画交给 CSS。进出用同一条缓动，来回都顺。
+   ⚠️ 初始隐藏态挂在 html.js 下 —— 没有 JS 时内容照常可见，不会隐身。 */
+html.js .reveal {
   opacity: 0;
-  transform: translate3d(0, 22px, 0);
-  transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.2, 0.8, 0.3, 1);
+  transform: translate3d(0, 26px, 0) scale(0.986);
+  transition:
+    opacity 0.62s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.62s cubic-bezier(0.22, 1, 0.36, 1);
 }
-.reveal.is-in {
+html.js .reveal.is-in {
   opacity: 1;
   transform: none;
+}
+/* 用户关掉了滚动动画 */
+html.js:not(.fx-reveal) .reveal {
+  opacity: 1 !important;
+  transform: none !important;
+  transition: none !important;
 }
 
 /* --------------------------------------------------------------------------
@@ -585,6 +594,7 @@ mark.find-hit::after {
 /* 搜索框本身发亮 */
 .search-box {
   transition:
+    transform 0.4s cubic-bezier(0.22, 1, 0.36, 1),
     border-color 0.4s cubic-bezier(0.22, 1, 0.36, 1),
     box-shadow 0.4s cubic-bezier(0.22, 1, 0.36, 1),
     background-color 0.4s cubic-bezier(0.22, 1, 0.36, 1);
@@ -592,10 +602,15 @@ mark.find-hit::after {
 #searchRoot:focus-within .search-box {
   border-color: var(--accent);
   background: var(--panel-2);
+  transform: scale(1.035);
+  /* 双层光环 + 外发光，聚焦时一眼就能看到 */
   box-shadow:
-    0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent),
-    0 20px 44px -22px color-mix(in srgb, var(--accent) 70%, transparent);
+    0 0 0 2px var(--bg),
+    0 0 0 5px color-mix(in srgb, var(--accent) 55%, transparent),
+    0 0 0 10px color-mix(in srgb, var(--accent) 16%, transparent),
+    0 24px 56px -18px color-mix(in srgb, var(--accent) 95%, transparent);
 }
+.search-box { transform-origin: 50% 50%; }
 
 /* 导航淡下去，注意力留给搜索框 */
 #mainNav, #navToggle {
@@ -812,14 +827,47 @@ html.js .sink.is-done { filter: none; transition: none; }
 }
 
 /* --------------------------------------------------------------------------
-   主题 / 皮肤选择面板
+   显示设置（HTML 上挂 fx-* 类名，默认全开；JS 失效时不加类 → 效果关闭、内容可见）
+   -------------------------------------------------------------------------- */
+
+/* 首屏下沉动画：关掉就让它直接可见 */
+html.js:not(.fx-sink) .sink,
+html.js:not(.fx-sink) .sink.is-in {
+  opacity: 1 !important;
+  transform: none !important;
+  filter: none !important;
+  transition: none !important;
+}
+
+/* 卡片毛玻璃：关掉就退回实心底，省一次 backdrop 采样 */
+html:not(.fx-glass) .t-backdrop {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html:not(.fx-glass) .t-surface {
+  background-color: var(--panel-solid) !important;
+}
+
+/* 快速滑动时的动态模糊：只在滚动速度超过阈值时短暂加一层模糊 */
+#main { transition: filter 0.16s linear; }
+html.fx-scrollblur.is-fast #main { filter: blur(1.8px); }
+
+@media (prefers-reduced-motion: reduce) {
+  html.fx-scrollblur.is-fast #main { filter: none; }
+  #main { transition: none; }
+}
+
+/* --------------------------------------------------------------------------
+   设置面板
    -------------------------------------------------------------------------- */
 .theme-menu {
   position: absolute;
   right: 0;
   top: calc(100% + 10px);
   z-index: 80;
-  width: 218px;
+  width: 236px;
+  max-height: min(80vh, 640px);
+  overflow-y: auto;
   padding: 13px;
   border-radius: 16px;
   border: 1px solid var(--line-strong);
@@ -878,6 +926,33 @@ html.js .sink.is-done { filter: none; transition: none; }
   border-radius: 50%;
   box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.28);
 }
+.theme-fx { display: flex; flex-direction: column; gap: 1px; margin-bottom: 15px; }
+.theme-fx label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 9px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+.theme-fx label:hover { background: var(--hover); color: var(--ink); }
+.theme-fx input { width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer; }
+.theme-io { display: flex; gap: 6px; }
+.theme-io button {
+  flex: 1;
+  padding: 6px 0;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--hover);
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.25s ease, border-color 0.25s ease;
+}
+.theme-io button:hover { border-color: var(--gold); color: var(--gold); }
 
 /* 目录当前项 */
 #tocNav a.is-on {

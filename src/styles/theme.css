@@ -30,6 +30,7 @@
   --bg-soft: #122436;
   --panel: rgb(23 48 74 / 0.55);
   --panel-2: rgb(16 35 56 / 0.94);
+  --panel-solid: #10233a;
   --ink: #e0f0ff;
   --ink-2: #b3cde3;
   --muted: #7997b3;
@@ -77,6 +78,7 @@ html[data-theme='light'] {
   --bg-soft: #e8f2fb;
   --panel: rgb(255 255 255 / 0.82);
   --panel-2: rgb(255 255 255 / 0.96);
+  --panel-solid: #ffffff;
   --ink: #1b3a5c;
   --ink-2: #35597f;
   --muted: #64839f;

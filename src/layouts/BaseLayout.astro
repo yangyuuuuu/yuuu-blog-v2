@@ -74,9 +74,18 @@ const ogImage = new URL(image, site).href;
             document.documentElement.setAttribute('data-skin', s);
           }
         } catch (e) {}
-        /* 打上 js 标记，首页的「下沉」初始态只在有 JS 时才生效。
+        /* 打上 js 标记，首屏「下沉」和卡片「滚动进出」的初始态只在有 JS 时才生效。
            这样脚本挂了内容也不会永远隐身 —— 旧版踩过这个坑。 */
-        document.documentElement.classList.add('js');
+        var de = document.documentElement;
+        de.classList.add('js');
+
+        /* 显示设置：默认全开。只有加了 fx-* 类才有对应效果，
+           所以「脚本挂了」= 效果关闭 + 内容可见，是安全的失败方向。 */
+        var fx = JSON.parse(localStorage.getItem('yuuu-fx') || '{}');
+        if (fx.reveal !== false) de.classList.add('fx-reveal');
+        if (fx.sink !== false) de.classList.add('fx-sink');
+        if (fx.glass !== false) de.classList.add('fx-glass');
+        if (fx.scrollBlur !== false) de.classList.add('fx-scrollblur');
       })();
     </script>
   </head>
@@ -105,43 +114,53 @@ const ogImage = new URL(image, site).href;
     </div>
 
     <script is:inline>
-      /* 主题切换：只改 data-theme，颜色过渡交给 CSS */
+      /*
+       * 进出视口都做动画：进屏幕淡入上浮，出屏幕原路退回。
+       * 观察器挂在 window 上，「加载更多」追加的卡片可以继续 observe。
+       */
       (function () {
-        var btn = document.getElementById('themeToggle');
-        var icon = document.getElementById('themeIcon');
-        function sync() {
-          var light = document.documentElement.getAttribute('data-theme') === 'light';
-          if (icon) icon.textContent = light ? '☀' : '☾';
-          if (btn) btn.title = light ? '切换到深色主题' : '切换到浅色主题';
-        }
-        sync();
-        if (btn) {
-          btn.addEventListener('click', function () {
-            var root = document.documentElement;
-            var next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
-            root.classList.add('theme-switching');
-            root.setAttribute('data-theme', next);
-            try { localStorage.setItem('yuuu-theme', next); } catch (e) {}
-            sync();
-            setTimeout(function () { root.classList.remove('theme-switching'); }, 520);
+        function showAll() {
+          [].slice.call(document.querySelectorAll('.reveal')).forEach(function (el) {
+            el.classList.add('is-in');
           });
         }
-      })();
+        if (!('IntersectionObserver' in window)) { showAll(); return; }
 
-      /* 滚动淡入：IntersectionObserver 只加类名，动画交给 CSS */
-      (function () {
-        var items = document.querySelectorAll('.reveal');
-        if (!items.length) return;
-        if (!('IntersectionObserver' in window)) {
-          items.forEach(function (el) { el.classList.add('is-in'); });
-          return;
-        }
         var io = new IntersectionObserver(function (entries) {
           entries.forEach(function (en) {
-            if (en.isIntersecting) { en.target.classList.add('is-in'); io.unobserve(en.target); }
+            en.target.classList.toggle('is-in', en.isIntersecting);
           });
-        }, { rootMargin: '0px 0px -6% 0px', threshold: 0.05 });
-        items.forEach(function (el) { io.observe(el); });
+        }, { rootMargin: '0px 0px -7% 0px', threshold: 0.06 });
+
+        window.__yuuuIO = io;
+        window.__yuuuReveal = function (nodes) {
+          [].slice.call(nodes).forEach(function (el) { io.observe(el); });
+        };
+        window.__yuuuReveal(document.querySelectorAll('.reveal'));
+      })();
+
+      /* 快速滑动时的动态模糊：按滚动速度开合一个类 */
+      (function () {
+        var de = document.documentElement;
+        if (!de.classList.contains('fx-scrollblur')) return;
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+        var lastY = window.scrollY, lastT = performance.now(), raf = 0, off = 0;
+        function sample() {
+          raf = 0;
+          var now = performance.now();
+          var v = Math.abs(window.scrollY - lastY) / Math.max(8, now - lastT); // px/ms
+          lastY = window.scrollY;
+          lastT = now;
+          if (v > 1.6) {
+            de.classList.add('is-fast');
+            clearTimeout(off);
+            off = setTimeout(function () { de.classList.remove('is-fast'); }, 130);
+          }
+        }
+        window.addEventListener('scroll', function () {
+          if (!raf) raf = requestAnimationFrame(sample);
+        }, { passive: true });
       })();
     </script>
 

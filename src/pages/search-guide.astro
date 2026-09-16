@@ -1,0 +1,141 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+/** 语法表：每条给一个例子，点一下就把例子填进顶部搜索框并直接搜 */
+const GROUPS = [
+  {
+    title: '全文检索',
+    hint: '直接打字就是全文搜索，多个词用空格隔开（任意一个命中就会返回）。',
+    rows: [
+      { syntax: '芙宁娜', desc: '搜正文、标题、标签里的这个词', demo: '芙宁娜' },
+      { syntax: '枫丹 玻璃', desc: '两个词任意命中（OR）', demo: '枫丹 玻璃' },
+      { syntax: '"枫丹玻璃"', desc: '引号包起来 = 当作一个整体，不拆词', demo: '"枫丹玻璃"' },
+    ],
+  },
+  {
+    title: '字段限定 · in:',
+    hint: '只在你指定的字段里找。多个字段用英文逗号隔开，不要加空格。',
+    rows: [
+      { syntax: 'in:title 重构', desc: '只在标题里找「重构」', demo: 'in:title 重构' },
+      { syntax: 'in:tag 前端', desc: '只在标签里找', demo: 'in:tag 前端' },
+      { syntax: 'in:category 技术', desc: '只在分类里找', demo: 'in:category 技术' },
+      { syntax: 'in:title,tag 动画', desc: '标题或标签任意一个命中', demo: 'in:title,tag 动画' },
+    ],
+  },
+  {
+    title: '标签与分类',
+    hint: '走 Pagefind 原生筛选器，比全文搜索更精确，可以单独使用（不写关键词）。',
+    rows: [
+      { syntax: 'tag:前端', desc: '只看带「前端」标签的文章', demo: 'tag:前端' },
+      { syntax: 'category:日记', desc: '只看「日记」分类', demo: 'category:日记' },
+      { syntax: 'tag:原神 水', desc: '在「原神」标签里搜「水」', demo: 'tag:原神 水' },
+    ],
+  },
+  {
+    title: '数值与日期区间',
+    hint: '支持闭区间 a..b，也支持比较符 < > <= >=。',
+    rows: [
+      { syntax: 'words:500..2000', desc: '字数在 500 到 2000 之间', demo: 'words:500..2000' },
+      { syntax: 'words:<2000', desc: '字数小于 2000', demo: 'words:<2000' },
+      { syntax: 'words:>=1500', desc: '字数大于等于 1500', demo: 'words:>=1500' },
+      { syntax: 'min:1..3', desc: '阅读时长 1 到 3 分钟', demo: 'min:1..3' },
+      { syntax: 'date:2024-07-01..2024-09-30', desc: '创建时间在 2024 年第三季度', demo: 'date:2024-07-01..2024-09-30' },
+      { syntax: 'date:>=2024-09-01', desc: '2024 年 9 月及以后建的', demo: 'date:>=2024-09-01' },
+    ],
+  },
+  {
+    title: '组合使用',
+    hint: '空格就是 AND：所有条件都要满足。顺序随意。',
+    rows: [
+      { syntax: 'tag:技术 words:<1200', desc: '技术标签里篇幅较短的', demo: 'tag:技术 words:<1200' },
+      { syntax: 'in:title 动画 min:>=2', desc: '标题含「动画」且阅读 2 分钟以上', demo: 'in:title 动画 min:>=2' },
+      { syntax: 'category:随笔 date:>=2024-08-01', desc: '8 月以后写的随笔', demo: 'category:随笔 date:>=2024-08-01' },
+    ],
+  },
+];
+
+const KEYS = [
+  { k: '/', desc: '唤起搜索框' },
+  { k: 'Ctrl / ⌘ + K', desc: '同上' },
+  { k: '↑ ↓', desc: '在结果之间选择' },
+  { k: 'Enter', desc: '打开选中的那篇（没选就是第一篇）' },
+  { k: 'Esc', desc: '关闭结果面板' },
+];
+---
+
+<BaseLayout title="搜索语法" description="yuuu 博客的站内搜索支持字段限定、标签筛选、字数与日期区间">
+  <section class="mx-auto w-full max-w-[1140px] px-5 pt-14 pb-8">
+    <p class="text-[11px] tracking-[0.42em] text-accent uppercase">SEARCH</p>
+    <h1 class="mt-2.5 mb-3 font-title text-[clamp(26px,4.2vw,42px)] tracking-wide text-ink">搜索语法</h1>
+    <p class="max-w-[680px] text-ink-2">
+      站内搜索基于 Pagefind 的静态索引。除了普通全文检索，还支持字段限定、标签分类筛选、
+      字数和日期区间。<strong class="text-ink">下面每一条都能点，点了会直接把例子填进顶部搜索框并搜给你看。</strong>
+    </p>
+  </section>
+
+  <div class="mx-auto w-full max-w-[1140px] px-5 pb-24">
+    <div class="mb-8 t-surface t-backdrop rounded-card border border-line bg-surface p-6 backdrop-blur-md shadow-[var(--shadow-soft)]">
+      <p class="mb-3 text-[11px] tracking-[0.36em] text-accent uppercase">键盘</p>
+      <dl class="grid grid-cols-1 gap-x-8 gap-y-2.5 sm:grid-cols-2">
+        {
+          KEYS.map((r) => (
+            <div class="flex items-baseline gap-3">
+              <dt class="shrink-0">
+                <kbd class="rounded-md border border-line bg-[var(--hover)] px-2 py-0.5 font-mono text-[12px] text-accent">{r.k}</kbd>
+              </dt>
+              <dd class="text-[14px] text-ink-2">{r.desc}</dd>
+            </div>
+          ))
+        }
+      </dl>
+    </div>
+
+    <div class="flex flex-col gap-6">
+      {
+        GROUPS.map((g) => (
+          <section class="t-surface t-backdrop rounded-card border border-line bg-surface p-6 backdrop-blur-md shadow-[var(--shadow-soft)] sm:p-7">
+            <h2 class="mb-1.5 font-title text-[21px] tracking-wide text-ink">{g.title}</h2>
+            <p class="mb-5 text-[13.5px] text-muted">{g.hint}</p>
+
+            <div class="flex flex-col divide-y divide-[var(--line)]">
+              {g.rows.map((r) => (
+                <div class="flex flex-col gap-2 py-3.5 sm:flex-row sm:items-center sm:gap-5">
+                  <button
+                    type="button"
+                    class="sg-demo shrink-0 self-start rounded-lg border border-line bg-[var(--hover)] px-3 py-1.5 text-left font-mono text-[12.5px] text-accent transition-colors hover:border-gold/60 hover:text-gold"
+                    data-q={r.demo}
+                  >{r.syntax}</button>
+                  <span class="text-[13.5px] text-ink-2">{r.desc}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))
+      }
+    </div>
+
+    <p class="mt-8 text-[13px] text-muted">
+      写错的键会被当成普通关键词处理，不会报错。比如 <code class="rounded bg-[var(--hover)] px-1.5 py-0.5 text-accent">size:1024</code>
+      里的 <code class="rounded bg-[var(--hover)] px-1.5 py-0.5 text-accent">size</code> 不认识，整串就按字面去搜。
+    </p>
+  </div>
+
+  <script>
+    /* 点例子 → 填进顶部搜索框 → 触发一次真实搜索 */
+    (function () {
+      var input = document.getElementById('yuuuSearch');
+      var root = document.getElementById('searchRoot');
+      if (!input) return;
+
+      [].slice.call(document.querySelectorAll('.sg-demo')).forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          input.focus();
+          input.value = btn.dataset.q || '';
+          // 让 SearchBox 的 input 监听跑起来（它自己带防抖）
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          if (root) root.scrollIntoView({ block: 'nearest' });
+        });
+      });
+    })();
+  </script>
+</BaseLayout>

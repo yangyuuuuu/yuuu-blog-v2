@@ -103,18 +103,22 @@
       panel.hidden = false;
       panel.classList.add('is-interactive');
     }
-    /**
-     * 关闭面板。
-     * 默认连结果一起清掉 —— 否则点别处关掉、再点回输入框时旧结果会又冒出来。
-     * 想保留结果就传 false（目前没用上，留着备用）。
-     */
-    function hide(clear) {
+    /** 只收起面板，保留结果 —— 再次聚焦时还要用 */
+    function hide() {
       panel.hidden = true;
       panel.classList.remove('is-interactive');
       hits = [];
       active = -1;
       pendingOpen = false;
-      if (clear !== false) out.innerHTML = '';
+    }
+
+    /** 重新展开上次的结果（点回输入框时用） */
+    function resume() {
+      if (!input.value.trim() || !out.innerHTML) return;
+      panel.hidden = false;
+      panel.classList.add('is-interactive');
+      hits = [].slice.call(out.querySelectorAll('.search-hit'));
+      active = -1;
     }
 
     /* 键盘选择：上下键在结果间移动，并把选中项滚进可视区 */
@@ -150,10 +154,36 @@
          "精确短语"           引号包起来当一个整体
          其余的词            走全文检索
        --------------------------------------------------------------- */
+    /**
+     * 区间值支持三种写法：
+     *   words:500..2000   闭区间
+     *   words:<2000       小于
+     *   words:>=800       大于等于
+     */
     function parseRange(v) {
-      var m = /^(-?\d[\d-]*)(?:\.\.(-?\d[\d-]*))?$/.exec(v);
+      var m = /^(<=|>=|<|>)?(-?\d[\d-]*)(?:\.\.(-?\d[\d-]*))?$/.exec(v);
       if (!m) return null;
-      return { lo: m[1], hi: m[2] === undefined ? m[1] : m[2] };
+      if (m[1]) return { raw: v, op: m[1], n: m[2] };
+      return { raw: v, lo: m[2], hi: m[3] === undefined ? m[2] : m[3] };
+    }
+
+    /** numeric=true 按数字比，false 按字符串比（ISO 日期字符串直接比就对） */
+    function inRange(r, value, numeric) {
+      if (!r) return true;
+      if (r.op) {
+        var t = numeric ? Number(r.n) : r.n;
+        var x = numeric ? Number(value) : String(value);
+        if (r.op === '<') return x < t;
+        if (r.op === '>') return x > t;
+        if (r.op === '<=') return x <= t;
+        return x >= t;
+      }
+      if (numeric) {
+        var n = Number(value);
+        return n >= Number(r.lo) && n <= Number(r.hi);
+      }
+      var s = String(value);
+      return s >= r.lo && s <= r.hi;
     }
 
     function parseQuery(raw) {
@@ -206,18 +236,9 @@
       if (q.tag && String(meta.tags || '').toLowerCase().indexOf(q.tag.toLowerCase()) < 0) return false;
       if (q.cat && String(meta.category || '') !== q.cat) return false;
       var r = q.ranges;
-      if (r.date) {
-        var d = String(meta.date || '');
-        if (!d || d < r.date.lo || d > r.date.hi) return false;
-      }
-      if (r.words) {
-        var w = Number(meta.words || 0);
-        if (w < Number(r.words.lo) || w > Number(r.words.hi)) return false;
-      }
-      if (r.min) {
-        var mn = Number(meta.minutes || 0);
-        if (mn < Number(r.min.lo) || mn > Number(r.min.hi)) return false;
-      }
+      if (r.date && !inRange(r.date, meta.date || '', false)) return false;
+      if (r.words && !inRange(r.words, meta.words || 0, true)) return false;
+      if (r.min && !inRange(r.min, meta.minutes || 0, true)) return false;
       return true;
     }
 
@@ -228,8 +249,7 @@
       if (q.tag) bits.push('tag:' + q.tag);
       if (q.cat) bits.push('category:' + q.cat);
       ['date', 'words', 'min'].forEach(function (k) {
-        var r = q.ranges[k];
-        if (r) bits.push(k + ':' + r.lo + '..' + r.hi);
+        if (q.ranges[k]) bits.push(k + ':' + q.ranges[k].raw);
       });
       return bits;
     }
@@ -321,11 +341,11 @@
     /* 点面板里的结果时不要先失焦，否则聚光会闪一下 */
     panel.addEventListener('mousedown', function (e) { e.preventDefault(); });
 
-    /* 聚焦只做预加载 + 聚光，不主动弹出结果 —— 必须有输入才展示 */
+    /* 聚焦：预加载 + 聚光，并把上次的结果重新摊开 */
     input.addEventListener('focus', function () {
       load();
       setSpotlight(true);
-      if (!input.value.trim()) hide();
+      resume();
     });
     input.addEventListener('blur', function () { setSpotlight(false); });
     input.addEventListener('input', function () {

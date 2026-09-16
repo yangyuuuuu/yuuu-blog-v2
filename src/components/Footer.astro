@@ -5,6 +5,7 @@ const year = new Date().getFullYear();
 const LINKS = [
   { href: '/archive/', label: '归档' },
   { href: '/tags/', label: '标签' },
+  { href: '/search-guide/', label: '搜索语法' },
   { href: '/changelog/', label: '更新历史' },
   { href: '/rss.xml', label: 'RSS' },
   { href: '/about/', label: '关于' },
@@ -13,11 +14,11 @@ const LINKS = [
 
 <footer class="relative z-1 mt-10 border-t border-line pt-14 pb-12 text-center" style="background: var(--footer-bg)">
   <div class="mx-auto w-full max-w-[1140px] px-5">
-    <div class="mx-auto mb-3.5 h-11 w-11 opacity-85">
+    <div class="no-select mx-auto mb-3.5 h-11 w-11 opacity-85">
       <img src="/emblem.webp" alt="" width="256" height="256" class="h-full w-full object-contain" loading="lazy" decoding="async" />
     </div>
 
-    <p class="mb-2 font-title tracking-[0.1em] text-ink">yuuu</p>
+    <p class="no-select mb-2 font-title tracking-[0.1em] text-ink">yuuu</p>
     <p class="mb-3 text-[13px] text-muted">
       Astro + Tailwind + Pagefind · 部署在 Cloudflare Pages
     </p>
@@ -33,7 +34,7 @@ const LINKS = [
       }
     </p>
 
-    <p class="text-xs text-muted/75">
+    <p class="no-select text-xs text-muted/75">
       © {year} yuuu · 个人学习与非商业用途，与原游戏官方无关
     </p>
   </div>

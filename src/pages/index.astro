@@ -159,7 +159,9 @@ const hasMore = posts.length > PAGE_SIZE;
       var filter = '';
       var loadedAll = !next;
 
+      /* 新追加的卡片交给全局观察器，由它决定何时淡入 */
       function revealNew(nodes) {
+        if (window.__yuuuReveal) { window.__yuuuReveal(nodes); return; }
         requestAnimationFrame(function () {
           nodes.forEach(function (el) { el.classList.add('is-in'); });
         });
