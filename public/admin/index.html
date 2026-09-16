@@ -16,41 +16,56 @@
     <!--
       Sveltia CMS（Decap/Netlify CMS 的现代替代品，配置格式兼容）。配置在同目录 config.yml。
 
-      ⚠️ 为什么从 CDN 加载，而不是自托管（别再改回去）：
+      ⚠️ 为什么从 CDN 加载而不是自托管（别再改回去）：
         自托管 = 浏览器要从本站下一个 1.9 MB 的文件。在「挂代理 / 跨境」的网络上，
         这个大文件经常被中途掐断（实测 curl 报 schannel: server closed abruptly），
-        浏览器拿到半截 JS 就解析失败 → 后台整页白屏，而且不给任何提示。
-        同一个文件从 unpkg 加载从没出过这个问题（CDN 对大文件分发专门优化过）。
+        浏览器拿到半截 JS 就解析失败 → 后台整页白屏，且没有任何提示。
+        同一个文件从 CDN 加载从没出过这个问题（CDN 对大文件分发专门优化过）。
       版本锁死 0.213.2：CDN 上永远拿同一个文件，不会被新版悄悄改坏配置。
       升级：把下面两处版本号一起改，并在浏览器里验一次。
+      验证「加载成功」的标记：<html> 上会出现 data-auto-theming 属性。
     -->
-    <div id="cmsFallback">
-      <b>后台正在加载…</b>
-      <p>如果这里一直停着不动，说明脚本没能下载下来 —— 多半是网络/代理不稳，刷新一次通常就好。</p>
-    </div>
+    <noscript>这个后台需要 JavaScript。</noscript>
 
-    <script
-      type="module"
-      src="https://unpkg.com/@sveltia/cms@0.213.2/dist/sveltia-cms.mjs"
-      onerror="window.__cmsFallback && window.__cmsFallback()"
-    ></script>
     <script>
       /*
-       * 兜底：只有主 CDN **明确加载失败**（onerror）时才换 jsDelivr。
-       * 不去猜「CMS 有没有启动」—— 它启动要几秒，猜早了会重复注入第二个 CMS。
+       * 两个 CDN 同时竞速，谁先下来谁生效。
+       * 不用「先 A 失败再换 B」—— 那样只要 A 慢/被墙，用户就要干等十几秒。
+       * Sveltia 重复执行是幂等的（第二次会自行退出），所以两个都跑没有副作用。
+       * 两个都失败才显示提示 —— 不留白屏。
        */
-      window.__cmsFallback = function () {
-        if (window.__cmsTried) return;
-        window.__cmsTried = true;
-        var s = document.createElement('script');
-        s.type = 'module';
-        s.src = 'https://cdn.jsdelivr.net/npm/@sveltia/cms@0.213.2/dist/sveltia-cms.mjs';
-        s.onerror = function () {
-          var box = document.getElementById('cmsFallback');
-          if (box) box.innerHTML = '<b>后台加载失败。</b><p>两个 CDN 都没连上，检查网络或代理后刷新。</p>';
+      (function () {
+        var sources = [
+          'https://cdn.jsdelivr.net/npm/@sveltia/cms@0.213.2/dist/sveltia-cms.mjs',
+          'https://unpkg.com/@sveltia/cms@0.213.2/dist/sveltia-cms.mjs',
+        ];
+        /* CMS 一启动就会往 <html> 上写 data-auto-theming —— 用它判断「到底起没起来」 */
+        var booted = function () {
+          return document.documentElement.hasAttribute('data-auto-theming');
         };
-        document.body.appendChild(s);
-      };
+        var failed = 0;
+        var shown = false;
+        var showError = function () {
+          if (shown) return;
+          shown = true;
+          var box = document.createElement('div');
+          box.id = 'cmsFallback';
+          box.style.cssText = 'max-width:620px;margin:80px auto;padding:0 20px;font:14px/1.8 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:#556';
+          box.innerHTML = '<b style="color:#223">后台加载失败。</b><p>两个 CDN 都没连上 —— 多半是网络或代理问题，检查后刷新一次。</p>';
+          document.body.appendChild(box);
+        };
+        sources.forEach(function (src) {
+          var s = document.createElement('script');
+          s.type = 'module';
+          s.src = src;
+          s.onerror = function () {
+            failed++;
+            /* 两个都报错、并且确实没启动，才认为是真失败（避免一个慢一个快时误报） */
+            if (failed >= sources.length && !booted()) setTimeout(function () { if (!booted()) showError(); }, 4000);
+          };
+          document.body.appendChild(s);
+        });
+      })();
     </script>
   </body>
 </html>
