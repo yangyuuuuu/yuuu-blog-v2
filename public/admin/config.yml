@@ -1,5 +1,5 @@
 # ==========================================================================
-#  Sveltia CMS 配置（格式与 Decap / Netlify CMS 兼容）
+#  内容后台配置（Decap CMS，格式与 Netlify CMS / Sveltia 兼容）
 #  repo / base_url / site_url 三处已按真实站点填好，换域名时记得一起改。
 # ==========================================================================
 
@@ -30,7 +30,7 @@ collections:
   - name: posts
     label: 文章
     label_singular: 一篇文章
-    description: 保存后会提交到 GitHub，Cloudflare Pages 自动重建
+    description: "保存后会提交到 GitHub，Cloudflare 自动重建（约 1 分钟上线）。媒体库里只会显示 public/uploads 下你上传过的图；站点自带的封面池（/mascot/*.webp）不在媒体库里，见下面「封面图」的选项。"
     folder: src/content/posts
     create: true
     delete: true
@@ -51,7 +51,7 @@ collections:
     fields:
       - { name: title, label: 标题, widget: string }
       - { name: date, label: 创建时间, widget: datetime, date_format: "YYYY-MM-DD", time_format: false, picker_utc: true }
-      - { name: updated, label: 最后修改, widget: datetime, date_format: "YYYY-MM-DD", time_format: false, required: false, hint: "留空就别填 —— 后台清空它会写成空字符串（schema 已容错）" }
+      - { name: updated, label: 最后修改, widget: datetime, date_format: "YYYY-MM-DD", time_format: false, required: false, hint: "留空就别填" }
       - name: category
         label: 分类
         widget: select
@@ -60,13 +60,33 @@ collections:
         hint: "选「日记」会自动隐藏：不进首页/标签/搜索/RSS/sitemap，但链接仍可访问"
       - { name: tags, label: 标签, widget: list, default: [], hint: "回车添加一个标签" }
       - { name: summary, label: 摘要, widget: text, required: false, hint: "留空则自动截取正文开头" }
-      - { name: cover, label: 封面图, widget: image, required: false, choose_url: true, hint: "留空则使用 CSS 渐变封面" }
-      - name: coverStyle
-        label: 封面样式
+
+      # 封面：一个下拉搞定。列表里的前 8 项是站点自带的表情包封面池
+      # （在 src/lib/covers.ts 登记，图片在 public/mascot/）。
+      # 选「自定义…」时界面会给出输入框，可以填 /uploads/xxx.jpg（媒体库上传的图）或 https:// 外链。
+      - name: cover
+        label: 封面图
         widget: select
         required: false
-        hint: "留空则按分类自动挑选"
+        default: ''
         options:
+          - { label: "留空 · 按文件名从封面池自动挑", value: "" }
+          - { label: "站立 · 精神饱满", value: stand }
+          - { label: "持剑 · 装备齐全", value: sword }
+          - { label: "害羞 · 捂嘴", value: shy }
+          - { label: "蛋糕 · 深夜加餐", value: cake }
+          - { label: "抱枕 · 躺平", value: pillow }
+          - { label: "鸡腿 · 啃点干货", value: snack }
+          - { label: "哭泣 · 读到头秃", value: cry }
+        hint: "站点自带的封面池（这些不在媒体库里）。想用自己的图，选「自定义…」后粘 /uploads/xxx.jpg 或外链。"
+
+      - name: coverStyle
+        label: 封面样式（纯 CSS 渐变，零图片请求）
+        widget: select
+        required: false
+        hint: "只在不指定「封面图」时生效。样式缩略一览见 /search-guide/ 同级的封面说明，或直接试：wave 潮汐 · nebula 星云 · crown 王冠 · opera 歌剧院 · aurora 极光 · starry 星海 · bubble 气泡 · grid 方格"
+        options:
+          - { label: "不指定 · 按分类自动挑", value: "" }
           - { label: "潮汐 wave", value: wave }
           - { label: "星云 nebula", value: nebula }
           - { label: "王冠 crown", value: crown }
@@ -76,9 +96,10 @@ collections:
           - { label: "气泡 bubble", value: bubble }
           - { label: "方格 grid", value: grid }
           - { label: "自定义图片 image", value: image }
+
       - { name: coverHue, label: 封面色相 (0-359), widget: number, required: false, min: 0, max: 359, value_type: int, hint: "202 水蓝 / 38 暖金 / 266 紫罗兰 / 150 薄荷绿" }
       - { name: pinned, label: 置顶, widget: boolean, default: false }
-      - { name: draft, label: 草稿, widget: boolean, default: false, hint: "打开后构建时不输出这一篇" }
+      - { name: draft, label: 草稿, widget: boolean, default: false, hint: "打开后构建时不输出这一篇（隐藏文章清单里也不会出现）" }
       - name: private
         label: 隐藏
         widget: boolean

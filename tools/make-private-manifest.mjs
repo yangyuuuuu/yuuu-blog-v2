@@ -29,6 +29,14 @@ function readKeys(file) {
     const m = new RegExp('^' + key + ':\\s*(.+?)\\s*$', 'm').exec(yaml);
     return m ? m[1].replace(/^["']|["']$/g, '') : undefined;
   };
+  /* tags 有两种写法：行内 [a, b] 或 YAML 列表（后台保存出来是多行） */
+  const tags = (() => {
+    const inline = /^tags:\s*\[([^\]]*)\]\s*$/m.exec(yaml);
+    if (inline) return inline[1].split(',').map((s) => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+    const block = /^tags:\s*\n((?:\s+-\s*.+\n?)+)/m.exec(yaml);
+    if (block) return block[1].split('\n').map((l) => l.replace(/^\s+-\s*/, '').trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+    return [];
+  })();
   return {
     slug: file.replace(/\.md$/, ''),
     private: one('private') === 'true',
@@ -37,6 +45,7 @@ function readKeys(file) {
     title: one('title') || file,
     date: one('date') || '',
     summary: one('summary') || '',
+    tags,
   };
 }
 
@@ -59,6 +68,7 @@ writeFileSync(
         date: p.date,
         category: p.category,
         summary: p.summary,
+        tags: p.tags,
       })),
     },
     null,
