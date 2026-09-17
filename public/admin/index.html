@@ -8,6 +8,117 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <style>
       body { margin: 0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+
+      /*
+       * ===== 后台皮肤 =====
+       * Decap 的样式是运行时生成的，类名不稳定，所以这里用两招：
+       *   1. 覆盖它的主题 CSS 变量（主色 / 文字 / 边框）
+       *   2. 对常见标签和 role 属性加 !important 兜底
+       * 取色自站点 src/styles/theme.css：水蓝 #7ec8e3 / 金色 #e8c87a /
+       * 深色墨蓝 #0d1b2a（本站 --ink 在浅色底上的变体）/ 冷白 #f7fbfe
+       */
+
+      :root, body {
+        --netlify-cms-primary: #2f7f9e;
+        --netlify-cms-primary-hover: #256a85;
+        --netlify-cms-primary-active: #1d5570;
+        --netlify-cms-secondary: #e8c87a;
+        --netlify-cms-text: #1b3346;
+        --netlify-cms-text-light: #4a6076;
+        --netlify-cms-background: #f7fbfe;
+        --netlify-cms-border: #cfe3ee;
+        --netlify-cms-border-light: #e6f1f8;
+        --netlify-cms-control: #ffffff;
+        --netlify-cms-control-hover: #eaf5fb;
+        --netlify-cms-focus: #2f7f9e;
+        --decap-cms-primary: #2f7f9e;
+        --decap-cms-primary-hover: #256a85;
+        --decap-cms-text: #1b3346;
+        --decap-cms-background: #f7fbfe;
+        --decap-cms-border: #cfe3ee;
+
+        /* 中文字体栈：原来那套西文优先的字体，中文会掉到默认字体，显得很糊 */
+        --cms-font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+          "Hiragino Sans GB", "Source Han Sans SC", "Noto Sans CJK SC", "Segoe UI", sans-serif;
+      }
+
+      body, input, textarea, select, button {
+        font-family: var(--cms-font-family) !important;
+      }
+      body { background: #f7fbfe !important; color: #1b3346 !important; }
+
+      /* 主色：链接 / 按钮 / 焦点环 */
+      a { color: #2f7f9e; }
+      button, [role="button"], input[type="submit"] {
+        border-radius: 10px !important;
+      }
+      button[class*="primary"], [role="button"][class*="primary"] {
+        background-color: #2f7f9e !important;
+        border-color: #2f7f9e !important;
+        color: #fff !important;
+      }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+        outline: 2px solid #7ec8e3 !important;
+        outline-offset: 1px;
+      }
+      input, select, textarea {
+        border-color: #cfe3ee !important;
+        border-radius: 8px !important;
+      }
+      input:focus, select:focus, textarea:focus {
+        border-color: #7ec8e3 !important;
+        box-shadow: 0 0 0 3px rgba(126, 200, 227, 0.25) !important;
+      }
+
+      /* 顶部 / 侧边栏：浅淡的水蓝底，把主色收一点，不要整片深色 */
+      header, nav, [class*="Toolbar"], [class*="Sidebar"] {
+        border-color: #e6f1f8 !important;
+      }
+
+      /* 登录页 */
+      [class*="Login"] [class*="Logo"], [class*="login"] img { max-width: 220px; }
+
+      /*
+       * 深色模式：Decap 会跟随系统偏好。上面那套是浅色皮肤，
+       * 如果系统是深色，必须换成深色配色，否则深色文字压在浅色底上会糊成一片。
+       * 这里用站点自己的深色令牌（--bg #0d1b2a / --ink #e0f0ff）。
+       */
+      @media (prefers-color-scheme: dark) {
+        :root, body {
+          --netlify-cms-primary: #7ec8e3;
+          --netlify-cms-primary-hover: #9ad6ea;
+          --netlify-cms-primary-active: #5fb3d1;
+          --netlify-cms-secondary: #e8c87a;
+          --netlify-cms-text: #e0f0ff;
+          --netlify-cms-text-light: #b3cde3;
+          --netlify-cms-background: #0d1b2a;
+          --netlify-cms-border: rgba(126, 200, 227, 0.22);
+          --netlify-cms-border-light: rgba(126, 200, 227, 0.12);
+          --netlify-cms-control: #122436;
+          --netlify-cms-control-hover: #17304a;
+          --netlify-cms-focus: #7ec8e3;
+
+          --decap-cms-primary: #7ec8e3;
+          --decap-cms-text: #e0f0ff;
+          --decap-cms-background: #0d1b2a;
+          --decap-cms-border: rgba(126, 200, 227, 0.22);
+        }
+        body { background: #0d1b2a !important; color: #e0f0ff !important; }
+        a { color: #7ec8e3; }
+        button[class*="primary"], [role="button"][class*="primary"] {
+          background-color: #7ec8e3 !important;
+          border-color: #7ec8e3 !important;
+          color: #0d1b2a !important;
+        }
+        input, select, textarea {
+          background: #122436 !important;
+          color: #e0f0ff !important;
+          border-color: rgba(126, 200, 227, 0.22) !important;
+        }
+        header, nav, [class*="Toolbar"], [class*="Sidebar"] {
+          border-color: rgba(126, 200, 227, 0.12) !important;
+        }
+      }
     </style>
   </head>
   <body>
@@ -17,8 +128,8 @@
 
       为什么从 Sveltia 换过来：
         Sveltia 的脚本能下载、能执行（<html> 上会出现它写的 data-* 属性），
-        但界面就是不挂载，且在 Chrome 145 / 无头 Chrome 上都能复现，
-        排查了很久没有定位到原因。Decap 是同类里最成熟的一个，先换上保证能用。
+        但界面在用户电脑和手机上都不挂载，排查很久没定位到原因。
+        Decap 是同类里最成熟的一个，同一环境下本地实测能正常出登录页。
 
       版本锁在 3.8.4：CDN 上永远拿同一个文件，不会被新版悄悄改坏。
       升级：改下面的版本号，然后打开 /admin 确认能进后台、能发文。

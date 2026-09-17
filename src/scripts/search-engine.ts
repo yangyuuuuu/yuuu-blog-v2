@@ -316,6 +316,12 @@ export function init() {
     raw = (raw || '').trim();
     if (!raw) { hide(); return; }
 
+    /* 彩蛋：输 hide 直接去私人角落（口令校验在 Worker 上，见 src/pages/private.astro） */
+    if (/^hide$/i.test(raw)) {
+      location.href = '/private/?from=search';
+      return;
+    }
+
     var q = parseQuery(raw);
     var plain = q.text.join(' ').trim();
     /* 短语检索：把词用引号包起来，逼 Pagefind 只匹配连续出现的整串。

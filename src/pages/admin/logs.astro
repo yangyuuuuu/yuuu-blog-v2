@@ -1,0 +1,164 @@
+---
+/**
+ * 访问日志查看 —— yuuu.love/admin/logs/
+ *
+ * 口令（LOGS_TOKEN）存在 Worker 密钥里，**不在这页里**；这页只是把口令发给
+ * Worker 换日志回来。所以：扒源码看不到口令，也没法绕过校验。
+ */
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="访问日志" description="私人角落的访问记录" noindex>
+  <div class="lg-wrap">
+    <h1 class="lg-title">私人角落 · 访问日志</h1>
+    <p class="lg-desc">
+      数据来自 Cloudflare KV，保留 90 天。口令就是你在 Worker 上设的 <code>LOGS_TOKEN</code>。
+    </p>
+
+    <form id="lgForm" autocomplete="off">
+      <input id="lgToken" type="password" placeholder="日志口令（LOGS_TOKEN）" aria-label="日志口令" />
+      <button type="submit" id="lgGo">查看</button>
+    </form>
+    <p class="lg-msg" id="lgMsg" role="status" aria-live="polite"></p>
+
+    <div id="lgStat" hidden>
+      <p class="lg-stat" id="lgCount"></p>
+      <button type="button" class="lg-btn" id="lgCsv">导出 CSV</button>
+      <button type="button" class="lg-btn" id="lgRefresh">刷新</button>
+    </div>
+    <div class="lg-tablewrap" id="lgTableWrap" hidden>
+      <table class="lg-table" id="lgTable">
+        <thead>
+          <tr>
+            <th>时刻 (+08:00)</th><th>结果</th><th>IP</th><th>地区</th>
+            <th>设备</th><th>来源</th><th>停留</th><th>备注</th>
+          </tr>
+        </thead>
+        <tbody id="lgBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <style>
+    .lg-wrap { max-width: 1080px; margin: 0 auto; padding: 46px 20px 80px; }
+    .lg-title { margin: 0 0 8px; font-size: clamp(20px, 2.6vw, 26px); color: var(--ink); }
+    .lg-desc { margin: 0 0 20px; font-size: 13.5px; line-height: 1.8; color: var(--ink-2); }
+    .lg-desc code { padding: 1px 6px; border-radius: 5px; background: var(--hover); color: var(--accent); }
+    #lgForm { display: flex; gap: 10px; flex-wrap: wrap; max-width: 560px; }
+    #lgToken {
+      flex: 1 1 220px; height: 42px; padding: 0 13px; border-radius: 10px;
+      border: 1px solid var(--line); background: var(--bg-soft); color: var(--ink); outline: none;
+    }
+    #lgToken:focus { border-color: var(--accent); }
+    #lgGo {
+      height: 42px; padding: 0 20px; border: 0; border-radius: 10px;
+      background: var(--accent); color: #0d1b2a; font-weight: 600; cursor: pointer;
+    }
+    .lg-msg { margin: 12px 0 0; min-height: 20px; font-size: 13px; color: var(--gold); }
+    .lg-msg.is-error { color: #ff9a9a; }
+    .lg-stat { margin: 18px 0 8px; font-size: 13.5px; color: var(--ink-2); }
+    .lg-btn {
+      margin: 0 8px 12px 0; padding: 7px 14px; border-radius: 9px; cursor: pointer;
+      border: 1px solid var(--line); background: transparent; color: var(--ink-2); font-size: 12.5px;
+    }
+    .lg-btn:hover { border-color: var(--gold); color: var(--gold); }
+    .lg-tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+    .lg-table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+    .lg-table th, .lg-table td { padding: 8px 10px; text-align: left; white-space: nowrap; }
+    .lg-table thead th { background: var(--hover); color: var(--ink); font-weight: 600; }
+    .lg-table tbody tr { border-top: 1px solid var(--line); color: var(--ink-2); }
+    .lg-ok { color: #7ee0a8; }
+    .lg-no { color: #ff9a9a; }
+  </style>
+
+  <script>
+    const API = 'https://oauth.yuuu.love';
+    const form = document.getElementById('lgForm');
+    const tokenEl = document.getElementById('lgToken');
+    const msg = document.getElementById('lgMsg');
+    const stat = document.getElementById('lgStat');
+    const tableWrap = document.getElementById('lgTableWrap');
+    const body = document.getElementById('lgBody');
+    const countEl = document.getElementById('lgCount');
+    let rows = [];
+    let token = '';
+
+    const say = (t, isErr) => { msg.textContent = t || ''; msg.classList.toggle('is-error', !!isErr); };
+
+    async function load(tk) {
+      say('正在取日志…');
+      const res = await fetch(API + '/hidden/logs', { headers: { Authorization: 'Bearer ' + tk } });
+      if (res.status === 401) { say('口令不对', true); return false; }
+      if (!res.ok) { say('服务端出错（HTTP ' + res.status + '）', true); return false; }
+      const data = await res.json();
+      rows = data.logs || [];
+      render();
+      say('');
+      return true;
+    }
+
+    function fmtSec(s) {
+      if (s === null || s === undefined) return '—';
+      const n = Number(s);
+      if (!n) return '0 秒';
+      if (n < 60) return n + ' 秒';
+      return Math.floor(n / 60) + ' 分 ' + (n % 60) + ' 秒';
+    }
+
+    function render() {
+      countEl.textContent = '共 ' + rows.length + ' 条记录';
+      body.innerHTML = '';
+      for (const r of rows) {
+        const tr = document.createElement('tr');
+        const cells = [
+          r.atLocal || r.at,
+          r.ok ? '通过' : '失败',
+          r.ip,
+          r.country || '',
+          r.device,
+          r.from === 'search' ? '搜索 hide' : '直接打开',
+          fmtSec(r.seconds),
+          r.note || '',
+        ];
+        cells.forEach((v, i) => {
+          const td = document.createElement('td');
+          td.textContent = v == null ? '' : String(v);
+          if (i === 1) td.className = r.ok ? 'lg-ok' : 'lg-no';
+          tr.appendChild(td);
+        });
+        body.appendChild(tr);
+      }
+      stat.hidden = false;
+      tableWrap.hidden = rows.length === 0;
+      if (!rows.length) say('还没有记录 —— 有人（或你）访问过 /private/ 就会有了');
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      token = tokenEl.value.trim();
+      if (!token) { say('先输口令', true); return; }
+      try { await load(token); } catch (err) { say('连不上服务器', true); }
+    });
+
+    document.getElementById('lgRefresh').addEventListener('click', async () => {
+      if (!token) return;
+      try { await load(token); } catch (err) { say('刷新失败', true); }
+    });
+
+    document.getElementById('lgCsv').addEventListener('click', () => {
+      const head = ['时刻', '结果', 'IP', '地区', '设备', '来源', '停留秒数', '备注', 'User-Agent'];
+      const lines = [head.join(',')];
+      for (const r of rows) {
+        const cells = [r.atLocal || r.at, r.ok ? '通过' : '失败', r.ip, r.country || '', r.device,
+          r.from, r.seconds ?? '', r.note || '', r.ua || ''];
+        lines.push(cells.map((v) => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(','));
+      }
+      const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'yuuu-private-logs.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+  </script>
+</BaseLayout>

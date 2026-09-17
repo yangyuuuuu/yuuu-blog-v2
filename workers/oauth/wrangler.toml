@@ -2,8 +2,7 @@ name = "yuuu-oauth"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
-# 自定义域：部署后 Worker 就挂在 https://oauth.yuuu.love
-# （DNS 记录由 Cloudflare 自动创建，不需要手动加）
+# 自定义域：Worker 挂在 https://oauth.yuuu.love
 routes = [
   { pattern = "oauth.yuuu.love", custom_domain = true }
 ]
@@ -12,6 +11,13 @@ routes = [
 # 只允许博客自己的页面来调这个 Worker
 ALLOWED_ORIGIN = "https://yuuu.love"
 
+# 访问日志 + 失败计数
+[[kv_namespaces]]
+binding = "LOGS"
+id = "9b0823ed57e94672aa0357e07b8d568f"
+
 # 密钥不要写在这里，用命令写入：
-#   wrangler secret put GITHUB_CLIENT_ID
-#   wrangler secret put GITHUB_CLIENT_SECRET
+#   wrangler secret put GITHUB_CLIENT_ID      （已有）
+#   wrangler secret put GITHUB_CLIENT_SECRET  （已有）
+#   wrangler secret put HIDDEN_PASSWORD       （私人角落的口令）
+#   wrangler secret put LOGS_TOKEN            （读日志的口令）

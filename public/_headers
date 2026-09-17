@@ -18,3 +18,9 @@
 
 /admin/*
   X-Robots-Tag: noindex, nofollow
+
+# 隐藏文章清单位于 /private/posts.json：不让搜索引擎收录。
+# 它不是机密 —— 只有标题/日期/摘要，正文不在这里；口令校验在 Worker 上做。
+/private/*
+  X-Robots-Tag: noindex, nofollow
+

@@ -299,9 +299,31 @@ for (const tag of ['<title>', '<link>', '<description>', '<pubDate>']) {
 const sm = read('sitemap-0.xml');
 const urls = (sm.match(/<loc>/g) || []).length;
 /* 404 与 /admin 不该进 sitemap，合理数量是 页面数 - 2 */
-const expected = pages.length - 2;
-if (urls >= expected) ok('Sitemap 收录 ' + urls + ' 个 URL（共 ' + pages.length + ' 个页面，已正确排除 404 与 /admin）');
-else wrn('Sitemap 只有 ' + urls + ' 个 URL，期望至少 ' + expected);
+/*
+ * 期望值要按「实际会被排除的页面」算，别拍脑袋写 -2：
+ * 排除 404、/admin/*、/private/*，以及隐藏文章。
+ */
+const sitemapExcluded = pages.filter((p) => {
+  const norm = '/' + p.replace(/\\/g, '/').replace(/index\.html$/, '').replace(/\.html$/, '');
+  if (norm === '/404') return true;
+  if (/^\/(admin|private)(\/|$)/.test(norm)) return true;
+  const m = /^\/posts\/([^/]+)\/?$/.exec(norm);
+  if (m) {
+    const srcDir = join(ROOT, 'src/content/posts');
+    const file = m[1] + '.md';
+    if (existsSync(join(srcDir, file))) {
+      const raw = readFileSync(join(srcDir, file), 'utf8');
+      if (/^draft:\s*true\s*$/m.test(raw) || isHiddenData(readHiddenKeys(raw))) return true;
+    }
+  }
+  return false;
+});
+const expected = pages.length - sitemapExcluded.length;
+if (urls >= expected) {
+  ok('Sitemap 收录 ' + urls + ' 个 URL（共 ' + pages.length + ' 个页面，已排除 404 / /admin / /private / 隐藏文章等 ' + sitemapExcluded.length + ' 个）');
+} else {
+  wrn('Sitemap 只有 ' + urls + ' 个 URL，期望至少 ' + expected);
+}
 
 /* ---------------------------------------------------------------- 7. 禁止事项（产物层面） */
 head('7. 产物层面的禁止事项');

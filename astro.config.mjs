@@ -61,6 +61,10 @@ export default defineConfig({
        * 列表 / 标签 / 搜索 / RSS 都在别处已经排除了，这里补上最后一个出口。
        */
       filter: (page) => {
+        /* 后台与私人角落不该出现在 sitemap 里 —— 它们本来就带 noindex，
+           没必要再让搜索引擎知道这两个路径存在 */
+        if (/\/(admin|private)(\/|$)/.test(page)) return false;
+        /* 隐藏的文章（private: true 或 category: 日记）也不进 sitemap */
         const m = /\/posts\/(.+?)\/?$/.exec(page);
         return m ? !hiddenSlugs.has(decodeURIComponent(m[1])) : true;
       },
