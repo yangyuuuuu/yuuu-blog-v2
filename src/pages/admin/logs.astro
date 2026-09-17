@@ -12,7 +12,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   <div class="lg-wrap">
     <h1 class="lg-title">私人角落 · 访问日志</h1>
     <p class="lg-desc">
-      数据来自 Cloudflare KV，保留 90 天。口令就是你在 Worker 上设的 <code>LOGS_TOKEN</code>。
+      数据来自 Cloudflare KV。默认显示<b>最近 90 天</b>（读得快）；
+      点「全部历史」会把<b>永久归档</b>（每天一个文件、不过期）一起读出来。
+      口令就是你在 Worker 上设的 <code>LOGS_TOKEN</code>。
     </p>
 
     <form id="lgForm" autocomplete="off">
@@ -24,7 +26,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     <div id="lgStat" hidden>
       <p class="lg-stat" id="lgCount"></p>
       <button type="button" class="lg-btn" id="lgCsv">导出 CSV</button>
-      <button type="button" class="lg-btn" id="lgRefresh">刷新</button>
+      <button type="button" class="lg-btn" id="lgRefresh">刷新最近 90 天</button>
+      <button type="button" class="lg-btn" id="lgAll">全部历史</button>
     </div>
     <div class="lg-tablewrap" id="lgTableWrap" hidden>
       <table class="lg-table" id="lgTable">
@@ -85,13 +88,18 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
     const say = (t, isErr) => { msg.textContent = t || ''; msg.classList.toggle('is-error', !!isErr); };
 
-    async function load(tk) {
-      say('正在取日志…');
-      const res = await fetch(API + '/hidden/logs', { headers: { Authorization: 'Bearer ' + tk } });
+    async function load(tk, all) {
+      say(all ? '正在读永久归档（多等一会儿）…' : '正在取日志…');
+      const res = await fetch(API + '/hidden/logs' + (all ? '?all=1' : ''), {
+        headers: { Authorization: 'Bearer ' + tk },
+      });
       if (res.status === 401) { say('口令不对', true); return false; }
       if (!res.ok) { say('服务端出错（HTTP ' + res.status + '）', true); return false; }
       const data = await res.json();
       rows = data.logs || [];
+      if (all && data.total > rows.length) {
+        say('归档共 ' + data.total + ' 条，页面只显示最近 ' + rows.length + ' 条（导出的 CSV 也只有这些）');
+      }
       render();
       say('');
       return true;
@@ -142,7 +150,12 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
     document.getElementById('lgRefresh').addEventListener('click', async () => {
       if (!token) return;
-      try { await load(token); } catch (err) { say('刷新失败', true); }
+      try { await load(token, false); } catch (err) { say('刷新失败', true); }
+    });
+
+    document.getElementById('lgAll').addEventListener('click', async () => {
+      if (!token) { say('先在上面输口令', true); return; }
+      try { await load(token, true); } catch (err) { say('读取归档失败', true); }
     });
 
     document.getElementById('lgCsv').addEventListener('click', () => {

@@ -3,33 +3,25 @@
  * 隐藏文章入口 —— yuuu.love/private/
  *
  * 定位（说清楚，免得误以为是保险箱）：
- *   这些文章本来通过具体 URL 就能访问，密码只是挡住「顺手翻到的人」。
- *   所以本页**不做加密**，只做两件事：
- *     1. 不给密码就不显示清单（清单由 Worker 密码校验后代取）
- *     2. 每次访问/尝试都在服务端留一条日志（IP、设备、时刻、停留时长）
+ *   这些文章本来通过具体 URL 就能访问，口令只是挡住「顺手翻到的人」。
+ *   所以本页不做内容加密，只做三件事：
+ *     1. 不给口令就不显示清单（清单由 Worker 口令校验后代取）
+ *     2. 每条默认盖住，点一下才显示该条，读完可以再盖回去（防肩窥）
+ *     3. 每次访问 / 尝试都在服务端留日志
  *
- * 页面自己的 HTML 里**不含任何隐藏文章的标题或链接** —— 那些只存在于
- * Worker 的响应里。所以「查看源代码」什么也看不到。
+ * 页面静态 HTML 里不含任何隐藏文章的标题或链接 —— 只在服务端响应里。
  */
 import BaseLayout from '../layouts/BaseLayout.astro';
-
 ---
 
-<BaseLayout title="私人角落" description="需要密码" noindex>
+<BaseLayout title="私人角落" description="需要口令" noindex>
   <div class="pv-wrap">
     <section class="pv-card" id="pvLogin">
       <p class="pv-kicker">PRIVATE</p>
       <h1 class="pv-title">私人角落</h1>
       <p class="pv-desc">这里放的是不想被翻到的文章。输入口令即可进入。</p>
       <form id="pvForm" autocomplete="off">
-        <input
-          id="pvPwd"
-          type="password"
-          inputmode="text"
-          placeholder="口令"
-          autocomplete="current-password"
-          aria-label="口令"
-        />
+        <input id="pvPwd" type="password" placeholder="口令" autocomplete="current-password" aria-label="口令" />
         <button type="submit" id="pvGo">进入</button>
       </form>
       <p class="pv-msg" id="pvMsg" role="status" aria-live="polite"></p>
@@ -38,10 +30,15 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     <section class="pv-card" id="pvList" hidden>
       <p class="pv-kicker">UNLOCKED</p>
       <h1 class="pv-title">私人角落</h1>
+      <div class="pv-bar">
+        <input id="pvSearch" type="search" placeholder="在这个角落里搜…" autocomplete="off" aria-label="搜索私人文章" />
+        <button type="button" class="pv-ghost" id="pvHideAll">全部盖住</button>
+      </div>
       <p class="pv-desc" id="pvCount"></p>
       <ul class="pv-items" id="pvItems"></ul>
+      <p class="pv-empty" id="pvEmpty" hidden>没搜到。</p>
       <p class="pv-note">
-        内容首次展开会先模糊一下（防肩窥），碰一下或按 Esc 收起。
+        每条默认是盖住的：点标题那行显示内容，再点一下又盖回去。
         本页每次访问都会记录：时刻、IP、设备、停留时长。
       </p>
       <button type="button" class="pv-again" id="pvAgain">换口令 / 离开</button>
@@ -56,69 +53,72 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     .pv-card {
       border: 1px solid var(--line, rgba(126,200,227,.2));
       background: var(--surface, rgba(255,255,255,.04));
-      border-radius: 18px;
-      padding: 28px;
+      border-radius: 18px; padding: 28px;
     }
     .pv-kicker { margin: 0 0 10px; font-size: 11px; letter-spacing: .34em; color: var(--accent, #7ec8e3); }
-    .pv-title { margin: 0 0 10px; font-size: clamp(22px, 3.2vw, 30px); color: var(--ink, #e0f0ff); font-weight: 600; }
-    .pv-desc { margin: 0 0 22px; font-size: 14px; line-height: 1.8; color: var(--ink-2, #b3cde3); }
-    #pvForm { display: flex; gap: 10px; flex-wrap: wrap; }
-    #pvPwd {
-      flex: 1 1 200px; min-width: 0;
-      height: 44px; padding: 0 14px;
+    .pv-title { margin: 0 0 14px; font-size: clamp(22px, 3.2vw, 30px); color: var(--ink, #e0f0ff); font-weight: 600; }
+    .pv-desc { margin: 0 0 20px; font-size: 14px; line-height: 1.8; color: var(--ink-2, #b3cde3); }
+
+    #pvForm, .pv-bar { display: flex; gap: 10px; flex-wrap: wrap; }
+    .pv-bar { margin-bottom: 14px; }
+    #pvPwd, #pvSearch {
+      flex: 1 1 200px; min-width: 0; height: 44px; padding: 0 14px;
       border-radius: 11px;
       border: 1px solid var(--line, rgba(126,200,227,.25));
       background: var(--bg-soft, rgba(255,255,255,.05));
-      color: var(--ink, #e0f0ff);
-      font-size: 15px;
-      outline: none;
+      color: var(--ink, #e0f0ff); font-size: 15px; outline: none;
     }
-    #pvPwd:focus { border-color: var(--accent, #7ec8e3); box-shadow: 0 0 0 3px rgba(126,200,227,.2); }
+    #pvPwd:focus, #pvSearch:focus { border-color: var(--accent, #7ec8e3); box-shadow: 0 0 0 3px rgba(126,200,227,.2); }
     #pvGo {
-      height: 44px; padding: 0 22px;
-      border: 0; border-radius: 11px;
-      background: var(--accent, #7ec8e3);
-      color: #0d1b2a; font-size: 15px; font-weight: 600;
-      cursor: pointer;
+      height: 44px; padding: 0 22px; border: 0; border-radius: 11px;
+      background: var(--accent, #7ec8e3); color: #0d1b2a; font-size: 15px; font-weight: 600; cursor: pointer;
     }
-    #pvGo:hover { filter: brightness(1.06); }
     #pvGo[disabled] { opacity: .55; cursor: default; }
+    .pv-ghost {
+      height: 44px; padding: 0 16px; border-radius: 11px; cursor: pointer;
+      border: 1px solid var(--line, rgba(126,200,227,.25));
+      background: transparent; color: var(--ink-2, #b3cde3); font-size: 13px;
+    }
+    .pv-ghost:hover { border-color: var(--gold, #e8c87a); color: var(--gold, #e8c87a); }
     .pv-msg { margin: 14px 0 0; min-height: 20px; font-size: 13px; color: var(--gold, #e8c87a); }
     .pv-msg.is-error { color: #ff9a9a; }
+    .pv-empty { margin: 14px 0 0; font-size: 13.5px; color: var(--muted, #7997b3); }
 
     .pv-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
     .pv-item {
-      display: block; padding: 14px 16px;
       border: 1px solid var(--line, rgba(126,200,227,.18));
-      border-radius: 13px;
-      text-decoration: none;
-      transition: border-color .18s, background .18s;
+      border-radius: 13px; overflow: hidden;
     }
-    .pv-item:hover { border-color: var(--accent, #7ec8e3); background: var(--hover, rgba(126,200,227,.07)); }
-    .pv-item-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-    .pv-item-top b { font-size: 15px; color: var(--ink, #e0f0ff); font-weight: 600; }
-    .pv-item-top i { font-style: normal; font-size: 11.5px; color: var(--muted, #7f9ab0); flex-shrink: 0; }
-    .pv-item-x { display: block; margin-top: 5px; font-size: 12.5px; line-height: 1.7; color: var(--ink-2, #b3cde3); }
+    .pv-head {
+      width: 100%; display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+      padding: 14px 16px; border: 0; background: transparent; cursor: pointer; text-align: left;
+    }
+    .pv-head:hover { background: var(--hover, rgba(126,200,227,.07)); }
+    .pv-head b { font-size: 15px; color: var(--ink, #e0f0ff); font-weight: 600; }
+    .pv-head i { font-style: normal; font-size: 11.5px; color: var(--muted, #7997b3); flex-shrink: 0; }
+    .pv-body { padding: 0 16px 15px; }
+    .pv-x { display: block; font-size: 12.5px; line-height: 1.75; color: var(--ink-2, #b3cde3); margin-bottom: 10px; }
+    .pv-open { font-size: 13px; color: var(--accent, #7ec8e3); text-decoration: none; border-bottom: 1px dashed var(--line-strong, rgba(126,200,227,.35)); }
+    .pv-open:hover { color: var(--gold, #e8c87a); }
 
-    .pv-blur { filter: blur(9px); transition: filter .28s ease; cursor: pointer; }
-    .pv-blur.is-open { filter: none; cursor: auto; }
-    .pv-note { margin: 22px 0 0; font-size: 12px; line-height: 1.8; color: var(--muted, #7f9ab0); }
+    /* 盖住状态：内容整段打码，连标题都看不清 */
+    .pv-item:not(.is-open) .pv-body { display: none; }
+    .pv-item:not(.is-open) .pv-head b { filter: blur(7px); user-select: none; }
+    .pv-item:not(.is-open) .pv-head i { filter: blur(5px); user-select: none; }
+
+    .pv-note { margin: 22px 0 0; font-size: 12px; line-height: 1.8; color: var(--muted, #7997b3); }
     .pv-again {
-      margin-top: 16px; padding: 9px 16px;
+      margin-top: 16px; padding: 9px 16px; border-radius: 10px; cursor: pointer;
       border: 1px solid var(--line, rgba(126,200,227,.25));
-      border-radius: 10px; background: transparent;
-      color: var(--ink-2, #b3cde3); font-size: 13px; cursor: pointer;
+      background: transparent; color: var(--ink-2, #b3cde3); font-size: 13px;
     }
     .pv-again:hover { border-color: var(--gold, #e8c87a); color: var(--gold, #e8c87a); }
   </style>
 
   <script>
     /*
-     * 口令校验在 Worker 上做（服务端），所以：
-     *   · 密码不在这页里，扒源码看不到
-     *   · 能限流（试太多次会被锁）
-     *   · 每次尝试都在服务端留日志
-     * 页面静态 HTML 里也没有任何隐藏文章的信息 —— 清单是服务端返回的。
+     * 口令校验在 Worker 上（服务端）：密码不在这页里、能限流、每次尝试都留日志。
+     * 清单也只存在于服务端响应里 —— 页面 HTML 里没有任何隐藏文章的信息。
      */
     const API = 'https://oauth.yuuu.love';
     const login = document.getElementById('pvLogin');
@@ -127,29 +127,29 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     const pwd = document.getElementById('pvPwd');
     const go = document.getElementById('pvGo');
     const msg = document.getElementById('pvMsg');
-    const items = document.getElementById('pvItems');
+    const itemsEl = document.getElementById('pvItems');
+    const emptyEl = document.getElementById('pvEmpty');
     const countEl = document.getElementById('pvCount');
+    const searchEl = document.getElementById('pvSearch');
+    const hideAllBtn = document.getElementById('pvHideAll');
     const again = document.getElementById('pvAgain');
 
-    /* 停留时长：离开/切后台时用 sendBeacon 补报一次，服务端会补写进那条日志。
-       浏览器被强杀时可能报不上，属于可接受误差。 */
-    let ticket = null;
+    let all = [];      // 服务端返回的全部条目
+    let shown = [];    // 当前搜索过滤后展示的
+    let ticket = null; // 停留时长上报用
     let enteredAt = 0;
+
+    /* 停留时长：离开或切后台时用 sendBeacon 补报一次。强杀浏览器可能报不上，属可接受误差。 */
     const flush = () => {
       if (!ticket) return;
       const secs = Math.round((Date.now() - enteredAt) / 1000);
-      try {
-        navigator.sendBeacon(API + '/hidden/leave', JSON.stringify({ ticket, seconds: secs }));
-      } catch (e) { /* 上报失败无所谓 */ }
+      try { navigator.sendBeacon(API + '/hidden/leave', JSON.stringify({ ticket, seconds: secs })); } catch (e) {}
       ticket = null;
     };
     window.addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
 
-    const say = (text, isError) => {
-      msg.textContent = text || '';
-      msg.classList.toggle('is-error', !!isError);
-    };
+    const say = (t, isErr) => { msg.textContent = t || ''; msg.classList.toggle('is-error', !!isErr); };
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -173,11 +173,13 @@ import BaseLayout from '../layouts/BaseLayout.astro';
         const data = await res.json();
         ticket = data.ticket || null;
         enteredAt = Date.now();
-        render(data.posts || []);
+        all = data.posts || [];
+        pwd.value = '';
         say('');
         login.hidden = true;
         listBox.hidden = false;
-        pwd.value = '';
+        if (searchEl) searchEl.value = '';
+        filter('');
       } catch (err) {
         say('连不上服务器，检查网络后重试', true);
       } finally {
@@ -185,37 +187,84 @@ import BaseLayout from '../layouts/BaseLayout.astro';
       }
     });
 
-    function render(posts) {
-      countEl.textContent = posts.length ? '共 ' + posts.length + ' 篇 —— 点开即读，注意别被旁边的人看到。' : '还没有隐藏的文章。';
-      items.innerHTML = '';
-      for (const p of posts) {
+    /* 搜索：只在这个角落里过滤（标题 / 摘要 / 分类 / 日期） */
+    if (searchEl) searchEl.addEventListener('input', () => filter(searchEl.value));
+
+    function filter(kw) {
+      const q = (kw || '').trim().toLowerCase();
+      shown = !q
+        ? all.slice()
+        : all.filter((p) =>
+            [p.title, p.summary, p.category, p.date].some((v) => String(v || '').toLowerCase().includes(q)),
+          );
+      render();
+    }
+
+    function render() {
+      const total = all.length;
+      countEl.textContent = shown.length === total
+        ? '共 ' + total + ' 篇 —— 点标题那行显示内容，再点一下盖回去。'
+        : '匹配 ' + shown.length + ' / ' + total + ' 篇。';
+      emptyEl.hidden = shown.length !== 0;
+      itemsEl.innerHTML = '';
+      for (const p of shown) {
         const li = document.createElement('li');
-        const a = document.createElement('a');
-        a.className = 'pv-item';
-        a.href = p.url;
-        const d = p.date ? ' · ' + p.date : '';
-        a.innerHTML =
-          '<span class="pv-item-top"><b></b><i></i></span><span class="pv-item-x"></span>';
-        a.querySelector('b').textContent = p.title;
-        a.querySelector('i').textContent = (p.category || '') + d;
-        a.querySelector('.pv-item-x').textContent = p.summary || '';
-        li.appendChild(a);
-        items.appendChild(li);
+        li.className = 'pv-item';
+
+        const head = document.createElement('button');
+        head.type = 'button';
+        head.className = 'pv-head';
+        const b = document.createElement('b');
+        b.textContent = p.title || p.url;
+        const i = document.createElement('i');
+        i.textContent = (p.category || '') + (p.date ? ' · ' + p.date : '');
+        head.append(b, i);
+
+        const body = document.createElement('div');
+        body.className = 'pv-body';
+        const x = document.createElement('span');
+        x.className = 'pv-x';
+        x.textContent = p.summary || '';
+        const link = document.createElement('a');
+        link.className = 'pv-open';
+        link.href = p.url;
+        link.textContent = '打开这篇文章 →';
+        body.append(x, link);
+
+        head.addEventListener('click', () => li.classList.toggle('is-open'));
+        li.append(head, body);
+        itemsEl.appendChild(li);
       }
     }
 
-    /* 防肩窥：清单整体先模糊，碰一下（或 Esc）才展开 */
-    listBox.addEventListener('mouseenter', () => listBox.classList.add('pv-blur'), { once: true });
-    document.addEventListener('click', () => items.classList.add('is-open'));
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') items.classList.remove('is-open'); });
+    if (hideAllBtn) hideAllBtn.addEventListener('click', () => {
+      itemsEl.querySelectorAll('.pv-item').forEach((el) => el.classList.remove('is-open'));
+    });
 
     again.addEventListener('click', () => {
       flush();
       listBox.hidden = true;
       login.hidden = false;
-      items.classList.remove('is-open');
+      all = []; shown = [];
+      itemsEl.innerHTML = '';
       say('');
       pwd.focus();
+    });
+
+    /*
+     * 从文章页按返回键时，浏览器会用 bfcache 恢复本页的 DOM 快照 ——
+     * 恢复出来的可能是「列表已展开、但状态变量丢了」的样子，于是卡在半截。
+     * 这里在 pageshow 时强制回到干净状态，用户只需重新输一次口令。
+     */
+    window.addEventListener('pageshow', (e) => {
+      if (!e.persisted) return;
+      all = []; shown = []; ticket = null;
+      if (itemsEl) itemsEl.innerHTML = '';
+      if (listBox) listBox.hidden = true;
+      if (login) login.hidden = false;
+      if (pwd) pwd.value = '';
+      say('页面已刷新，请重新输入口令');
+      if (pwd) pwd.focus();
     });
 
     pwd.focus();
