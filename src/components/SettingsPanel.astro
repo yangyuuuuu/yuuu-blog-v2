@@ -4,6 +4,14 @@
  * 面板内部逻辑放在 src/scripts/settings-panel.ts，首次点开才动态加载，
  * 这样首屏不用为「可能不会被打开的面板」付出 JS 体积。
  */
+/* 卡片风格，和 settings-panel.ts 里的 CARD_STYLES 对应 */
+const CARD_STYLES = [
+  { id: 'glass', name: '毛玻璃', desc: '默认样式' },
+  { id: 'line', name: '极简线', desc: '没有底色，只有细线' },
+  { id: 'paper', name: '纸张', desc: '浅底厚圆角' },
+  { id: 'float', name: '悬浮', desc: '无边框强阴影' },
+];
+
 const SKINS = [
   { id: 'fontaine', name: '枫丹', swatch: '#7ec8e3' },
   { id: 'opera', name: '歌剧院', swatch: '#e8a0b4' },
@@ -38,6 +46,20 @@ const SKINS = [
     <p class="theme-menu-label">主页列数</p>
     <div class="theme-cols">
       {[2, 3, 4, 5, 6].map((n) => <button type="button" data-cols={n}>{n}</button>)}
+    </div>
+
+    <!--
+      卡片风格：只换卡片的呈现方式，配色 / 列数 / 动画都不受影响。
+      「毛玻璃」就是建站以来的默认样式，保留在第一位。
+    -->
+    <p class="theme-menu-label">卡片风格</p>
+    <div class="theme-styles" id="cardStyles">
+      {CARD_STYLES.map((s) => (
+        <button type="button" data-card={s.id} title={s.desc}>
+          <i class={'cs-preview cs-' + s.id} aria-hidden="true"></i>
+          <span>{s.name}</span>
+        </button>
+      ))}
     </div>
 
     <p class="theme-menu-label">显示</p>

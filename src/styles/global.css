@@ -306,6 +306,84 @@ html.js:not(.fx-reveal) .reveal {
 /* --------------------------------------------------------------------------
    文章正文排版
    -------------------------------------------------------------------------- */
+
+
+/* 卡片风格选择器：每个按钮里放一个小预览块，直观看出区别 */
+.theme-styles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin-bottom: 15px; }
+.theme-styles button {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 9px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--hover);
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.25s ease, border-color 0.25s ease, background-color 0.25s ease;
+}
+.theme-styles button:hover { color: var(--ink-2); border-color: var(--line-strong); }
+.theme-styles button.is-on {
+  border-color: var(--accent);
+  background: var(--hover-strong);
+  color: var(--ink);
+}
+.theme-styles button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 预览块：四种风格各自的样子 */
+.cs-preview {
+  flex-shrink: 0;
+  width: 26px; height: 18px;
+  border-radius: 5px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.cs-preview.cs-line { background: transparent; border-color: var(--line-strong); }
+.cs-preview.cs-paper { background: var(--panel-solid); border-color: transparent; border-radius: 8px; }
+.cs-preview.cs-float {
+  border-color: transparent;
+  box-shadow: 0 6px 12px -5px rgb(var(--a) / 0.6); background: var(--panel-solid);
+}
+
+/* --------------------------------------------------------------------------
+   卡片风格（设置面板里切换；通过 <html data-card="…"> 生效）
+   glass 是默认样式，不改动任何现有规则 —— 下面只覆盖其他三种。
+   只动「外观」，不碰布局、动画、配色令牌。
+   -------------------------------------------------------------------------- */
+html[data-card='line'] .card {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-color: var(--line) !important;
+  box-shadow: none !important;
+}
+html[data-card='line'] .card:hover {
+  border-color: var(--accent) !important;
+  background: var(--hover) !important;
+}
+
+html[data-card='paper'] .card {
+  background: var(--panel-solid) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-color: transparent !important;
+  border-radius: 22px !important;
+  box-shadow: var(--shadow) !important;
+}
+html[data-card='paper'] .card:hover { transform: translateY(-3px); }
+
+html[data-card='float'] .card {
+  border-color: transparent !important;
+  box-shadow:
+    0 26px 60px -30px rgb(var(--a) / 0.55),
+    0 8px 22px -14px rgb(0 0 0 / 0.28) !important;
+}
+html[data-card='float'] .card:hover {
+  transform: translateY(-4px);
+  box-shadow:
+    0 34px 74px -30px rgb(var(--a) / 0.7),
+    0 10px 26px -14px rgb(0 0 0 / 0.32) !important;
+}
+
 .prose-yuuu {
   font-size: 16.2px;
   line-height: 1.95;
@@ -581,17 +659,23 @@ mark.find-hit::after {
 .search-veil {
   position: fixed;
   inset: 0;
+  /* 在正文之上、顶栏（z-70）之下 —— 顶栏用不透明底，所以搜索框不会被压暗 */
   z-index: 50;
   pointer-events: none; /* ⚠️ 绝不能删：删了整站点不动 */
   opacity: 0;
   transition: opacity 0.42s cubic-bezier(0.22, 1, 0.36, 1);
-  background: color-mix(in srgb, var(--bg) 58%, transparent);
+  /* 两种主题下都是压暗：深色用深蓝、浅色用墨蓝（见 theme.css 的 --veil） */
+  background: var(--veil);
   backdrop-filter: blur(7px) saturate(85%);
   -webkit-backdrop-filter: blur(7px) saturate(85%);
 }
 .search-veil.is-on { opacity: 1; }
 
-/* 搜索框本身发亮 */
+/* 搜索面板要浮在暗幕之上（暗幕在 header 里是 -1，面板在 body 下必须 > 50） */
+.search-panel { z-index: 90; }
+
+/* 搜索框本身发亮：相对定位 + z-index，确保它在这个层叠层级里浮在暗幕之上 */
+#searchRoot { position: relative; z-index: 1; }
 .search-box {
   transition:
     transform 0.4s cubic-bezier(0.22, 1, 0.36, 1),

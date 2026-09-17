@@ -37,8 +37,11 @@ const GITHUB_TOKEN = 'https://github.com/login/oauth/access_token';
  * 加时间戳参数是为了绕开 CF 的缓存：否则刚部署完还拿到旧清单（表现是「少了一篇」）。
  */
 function manifestUrl(request: Request): string {
-  const origin = request.headers.get('Origin') || 'https://yuuu.love';
-  return origin.replace(/\/+$/, '') + '/private/posts.json?t=' + Date.now();
+  const prod = 'https://yuuu.love';
+  const origin = request.headers.get('Origin') || '';
+  /* 本地预览时浏览器在 localhost，但 Worker 访问不到它 —— 一律从线上取清单 */
+  const base = /^https?:\/\/(localhost|127\.0\.0\.1)/.test(origin) ? prod : origin || prod;
+  return base.replace(/\/+$/, '') + '/private/posts.json?t=' + Date.now();
 }
 
 /** 限流：窗口内允许的失败次数与锁定时长 */
@@ -53,19 +56,32 @@ const LOCK_SEC = 15 * 60;
  */
 const LOG_TTL_SEC = 90 * 24 * 60 * 60;
 
-function cors(env: Env): Record<string, string> {
+/**
+ * 允许的来源：线上域名 + 本地预览（方便在本机调私人角落）。
+ * 回显请求里的 Origin，不放开通配符 —— 免得别人的站点也能调这个 Worker。
+ */
+function allowedOrigin(request: Request, env: Env): string {
+  const origin = request.headers.get('Origin') || '';
+  const prod = env.ALLOWED_ORIGIN || 'https://yuuu.love';
+  if (origin === prod) return origin;
+  if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return origin;
+  return prod;
+}
+
+function cors(request: Request, env: Env): Record<string, string> {
   return {
-    'Access-Control-Allow-Origin': env.ALLOWED_ORIGIN || '*',
+    'Access-Control-Allow-Origin': allowedOrigin(request, env),
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Accept, Authorization',
     'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
   };
 }
 
-const json = (data: unknown, status: number, env: Env, extra: Record<string, string> = {}) =>
+const json = (data: unknown, status: number, request: Request, env: Env, extra: Record<string, string> = {}) =>
   new Response(JSON.stringify(data), {
     status,
-    headers: { ...cors(env), 'Content-Type': 'application/json; charset=utf-8', ...extra },
+    headers: { ...cors(request, env), 'Content-Type': 'application/json; charset=utf-8', ...extra },
   });
 
 /** 从 User-Agent 里粗略拆出设备 / 系统 / 浏览器 —— 只是给自己看，不求精确 */
@@ -137,7 +153,7 @@ async function handleHidden(request: Request, env: Env): Promise<Response> {
   const from = (body.from || 'direct').slice(0, 40);
 
   if (!env.HIDDEN_PASSWORD) {
-    return json({ message: '服务端还没设置口令（HIDDEN_PASSWORD）' }, 500, env);
+    return json({ message: '服务端还没设置口令（HIDDEN_PASSWORD）' }, 500, request, env);
   }
 
   /* 限流：同一 IP 短时间内失败太多就锁一会儿 */
@@ -145,7 +161,7 @@ async function handleHidden(request: Request, env: Env): Promise<Response> {
   const fails = Number((await env.LOGS?.get(failKey)) || 0);
   if (fails >= MAX_FAILS) {
     await logVisit(env, { ip, ua: request.headers.get('User-Agent') || '', country: request.headers.get('CF-IPCountry') || '', tz: request.headers.get('CF-Timezone') || '', from, ok: false, note: '已锁定，仍在尝试' });
-    return json({ message: '试得太频繁了，等 15 分钟再来' }, 429, env);
+    return json({ message: '试得太频繁了，等 15 分钟再来' }, 429, request, env);
   }
 
   const ok = pass.length > 0 && pass === env.HIDDEN_PASSWORD;
@@ -153,7 +169,7 @@ async function handleHidden(request: Request, env: Env): Promise<Response> {
   if (!ok) {
     await env.LOGS?.put(failKey, String(fails + 1), { expirationTtl: FAIL_WINDOW_SEC });
     await logVisit(env, { ip, ua: request.headers.get('User-Agent') || '', country: request.headers.get('CF-IPCountry') || '', tz: request.headers.get('CF-Timezone') || '', from, ok: false, note: '口令错误' });
-    return json({ message: '口令不对' }, 401, env);
+    return json({ message: '口令不对' }, 401, request, env);
   }
 
   await env.LOGS?.delete(failKey);
@@ -179,7 +195,7 @@ async function handleHidden(request: Request, env: Env): Promise<Response> {
     ticket,
   });
 
-  return json({ posts, ticket, logId, now: localTime(now) }, 200, env);
+  return json({ posts, ticket, logId, now: localTime(now) }, 200, request, env);
 }
 
 /** 写一条访问日志，返回它的 id（ticket → logId 的映射也要存，离开时才能补时长） */
@@ -231,10 +247,10 @@ async function handleLeave(request: Request, env: Env): Promise<Response> {
   const ticket = body.ticket || '';
   const seconds = Math.max(0, Math.min(60 * 60 * 8, Math.round(Number(body.seconds) || 0)));
   const kv = env.LOGS;
-  if (!ticket || !kv) return json({ ok: true }, 200, env);
+  if (!ticket || !kv) return json({ ok: true }, 200, request, env);
 
   const id = await kv.get('ticket:' + ticket);
-  if (!id) return json({ ok: true }, 200, env);
+  if (!id) return json({ ok: true }, 200, request, env);
 
   const logKey = 'log:' + id;
   const raw = await kv.get(logKey);
@@ -260,7 +276,7 @@ async function handleLeave(request: Request, env: Env): Promise<Response> {
   } catch { /* 忽略 */ }
 
   await kv.delete('ticket:' + ticket);
-  return json({ ok: true }, 200, env);
+  return json({ ok: true }, 200, request, env);
 }
 
 /**
@@ -271,10 +287,10 @@ async function handleLeave(request: Request, env: Env): Promise<Response> {
 async function handleLogs(request: Request, env: Env): Promise<Response> {
   const auth = request.headers.get('Authorization') || '';
   const token = auth.replace(/^Bearer\s+/i, '').trim();
-  if (!env.LOGS_TOKEN) return json({ message: '服务端还没设置日志口令（LOGS_TOKEN）' }, 500, env);
-  if (token !== env.LOGS_TOKEN) return json({ message: '口令不对' }, 401, env);
+  if (!env.LOGS_TOKEN) return json({ message: '服务端还没设置日志口令（LOGS_TOKEN）' }, 500, request, env);
+  if (token !== env.LOGS_TOKEN) return json({ message: '口令不对' }, 401, request, env);
   const kv = env.LOGS;
-  if (!kv) return json({ message: '没有绑定 KV（LOGS）' }, 500, env);
+  if (!kv) return json({ message: '没有绑定 KV（LOGS）' }, 500, request, env);
 
   const url = new URL(request.url);
 
@@ -289,7 +305,7 @@ async function handleLogs(request: Request, env: Env): Promise<Response> {
     logs.sort((a, b) => String((a as { at: string }).at).localeCompare(String((b as { at: string }).at)));
     /* 按天归档可能很大，这里最多回最近 3000 条 */
     const trimmed = logs.slice(-3000);
-    return json({ count: trimmed.length, total: logs.length, scope: 'all', logs: trimmed }, 200, env);
+    return json({ count: trimmed.length, total: logs.length, scope: 'all', logs: trimmed }, 200, request, env);
   }
 
   const list = await kv.list({ prefix: 'log:', limit: 300 });
@@ -300,7 +316,7 @@ async function handleLogs(request: Request, env: Env): Promise<Response> {
     }),
   );
   const logs = items.filter(Boolean).reverse();
-  return json({ count: logs.length, scope: 'recent', logs }, 200, env);
+  return json({ count: logs.length, scope: 'recent', logs }, 200, request, env);
 }
 
 /* ------------------------------------------------------------------ 入口 */
@@ -308,7 +324,7 @@ async function handleLogs(request: Request, env: Env): Promise<Response> {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    const headers = cors(env);
+    const headers = cors(request, env);
 
     if (request.method === 'OPTIONS') return new Response(null, { headers });
 

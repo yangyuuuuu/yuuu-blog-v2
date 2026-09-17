@@ -1,6 +1,6 @@
 ---
 import CoverStyle from './CoverStyle.astro';
-import { formatDate, formatShort } from '../lib/format';
+import { formatDate, formatShort, formatISO } from '../lib/format';
 import {
   coverStyleOf, coverHueOf, coverLetterOf, coverSrcOf, summaryOf, readingOf, urlOf, type Post,
 } from '../lib/posts';
@@ -14,9 +14,14 @@ const href = urlOf(post);
 const isNew = Date.now() - d.date.getTime() < 1000 * 60 * 60 * 24 * 14;
 ---
 
-<!-- data-category 是首页分类筛选按钮的判据，缺了它点任何分类都会显示 0 篇 -->
+<!--
+  data-category 是首页分类筛选按钮的判据，缺了它点任何分类都会显示 0 篇。
+  data-date / data-updated 给「按发布 / 修改时间排序」用（首页的排序控件读这两个值）。
+-->
 <article
   data-category={d.category}
+  data-date={formatISO(d.date)}
+  data-updated={formatISO(d.updated ?? d.date)}
   class="card reveal group relative flex flex-col overflow-hidden rounded-card border border-line
          bg-surface t-surface t-backdrop backdrop-blur-md shadow-[var(--shadow-soft)]"
 >

@@ -51,7 +51,7 @@ collections:
     fields:
       - { name: title, label: 标题, widget: string }
       - { name: date, label: 创建时间, widget: datetime, date_format: "YYYY-MM-DD", time_format: false, picker_utc: true }
-      - { name: updated, label: 最后修改, widget: datetime, date_format: "YYYY-MM-DD", time_format: false, required: false, hint: "留空就别填" }
+      - { name: updated, label: 最后修改（保存时自动写今天）, widget: datetime, date_format: "YYYY-MM-DD", time_format: false, required: false, hint: "不用手填 —— 在后台点保存时会自动写成当天日期。留空表示「从没改过」。" }
       - name: category
         label: 分类
         widget: select

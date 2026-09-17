@@ -2,12 +2,8 @@
 /**
  * 隐藏文章入口 —— yuuu.love/private/
  *
- * 定位（说清楚，免得误以为是保险箱）：
- *   这些文章本来通过具体 URL 就能访问，口令只是挡住「顺手翻到的人」。
- *   所以本页不做内容加密，只做三件事：
- *     1. 不给口令就不显示清单（清单由 Worker 口令校验后代取）
- *     2. 每条只露标题和日期，摘要默认盖住；点标题直接去文章，点「摘要」展开
- *     3. 每次访问 / 尝试都在服务端留日志
+ * 定位：这些文章本来通过具体 URL 就能访问，口令只是挡住「顺手翻到的人」。
+ * 不做内容加密，只做三件事：不给口令不显示清单、摘要默认盖住、每次访问留日志。
  *
  * 页面静态 HTML 里不含任何隐藏文章的标题或链接 —— 只在服务端响应里。
  */
@@ -30,16 +26,22 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     <section class="pv-card" id="pvList" hidden>
       <p class="pv-kicker">UNLOCKED</p>
       <h1 class="pv-title">私人角落</h1>
-      <div class="pv-bar">
-        <input id="pvSearch" type="search" placeholder="在这个角落里搜…（标题 / 摘要 / 分类）" autocomplete="off" aria-label="搜索私人文章" />
-        <button type="button" class="pv-ghost" id="pvHideAll">全部收起</button>
+
+      <div class="pv-controls">
+        <input id="pvSearch" type="search" placeholder="搜索标题 / 摘要 / 正文 / 标签…" autocomplete="off" aria-label="搜索私人文章" />
+        <select id="pvSort" aria-label="排序方式">
+          <option value="date-desc">最新发布</option>
+          <option value="date-asc">最早发布</option>
+          <option value="updated-desc">最近修改</option>
+        </select>
       </div>
-      <p class="pv-desc" id="pvCount"></p>
-      <ul class="pv-items" id="pvItems"></ul>
+      <p class="pv-count" id="pvCount"></p>
+
+      <ul class="pv-list" id="pvItems"></ul>
       <p class="pv-empty" id="pvEmpty" hidden>没搜到。</p>
+
       <p class="pv-note">
-        点标题直接打开文章（新标签页，回来还在这一页）；
-        点标题右边的「摘要」展开摘要，再点收起。
+        点标题打开文章（新标签页，回来还在这一页）；点「展开摘要」看摘要。
         本页每次访问都会记录：时刻、IP、设备、停留时长。
       </p>
       <button type="button" class="pv-again" id="pvAgain">换口令 / 离开</button>
@@ -49,99 +51,113 @@ import BaseLayout from '../layouts/BaseLayout.astro';
   <style>
     * { box-sizing: border-box; }
     .pv-wrap {
-      max-width: 720px; margin: 0 auto; padding: 52px 20px 84px;
+      max-width: 700px; margin: 0 auto; padding: 54px 20px 90px;
       font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
     }
     .pv-card {
       border: 1px solid var(--line, rgba(126,200,227,.2));
       background: var(--surface, rgba(255,255,255,.04));
-      border-radius: 18px; padding: 28px;
+      border-radius: 20px; padding: 30px;
     }
     .pv-kicker { margin: 0 0 10px; font-size: 11px; letter-spacing: .34em; color: var(--accent, #7ec8e3); }
-    .pv-title { margin: 0 0 14px; font-size: clamp(22px, 3.2vw, 30px); color: var(--ink, #e0f0ff); font-weight: 600; }
-    .pv-desc { margin: 0 0 18px; font-size: 14px; line-height: 1.8; color: var(--ink-2, #b3cde3); }
+    .pv-title { margin: 0 0 18px; font-size: clamp(23px, 3.2vw, 31px); color: var(--ink, #e0f0ff); font-weight: 600; letter-spacing: .01em; }
+    .pv-desc { margin: 0 0 18px; font-size: 14px; line-height: 1.85; color: var(--ink-2, #b3cde3); }
 
-    #pvForm, .pv-bar { display: flex; gap: 10px; flex-wrap: wrap; }
-    .pv-bar { margin-bottom: 14px; }
-    #pvPwd, #pvSearch {
-      flex: 1 1 200px; min-width: 0; width: 100%; height: 44px; padding: 0 14px;
-      border-radius: 11px;
+    #pvForm { display: flex; gap: 10px; flex-wrap: wrap; }
+    .pv-controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    #pvPwd, #pvSearch, #pvSort {
+      height: 44px; padding: 0 14px; border-radius: 12px;
       border: 1px solid var(--line, rgba(126,200,227,.25));
       background: var(--bg-soft, rgba(255,255,255,.05));
-      color: var(--ink, #e0f0ff); font-size: 15px; outline: none;
-      /* 手机上 search 类型自带圆角/内边距，统一掉 */
+      color: var(--ink, #e0f0ff); font-size: 14.5px; outline: none;
       -webkit-appearance: none; appearance: none;
     }
-    #pvPwd:focus, #pvSearch:focus { border-color: var(--accent, #7ec8e3); box-shadow: 0 0 0 3px rgba(126,200,227,.2); }
+    #pvPwd, #pvSearch { flex: 1 1 220px; min-width: 0; }
+    #pvSort { flex: 0 0 auto; min-width: 132px; cursor: pointer; }
+    #pvPwd:focus, #pvSearch:focus, #pvSort:focus {
+      border-color: var(--accent, #7ec8e3);
+      box-shadow: 0 0 0 3px rgba(126,200,227,.2);
+    }
     #pvGo {
-      height: 44px; padding: 0 22px; border: 0; border-radius: 11px;
-      background: var(--accent, #7ec8e3); color: #0d1b2a; font-size: 15px; font-weight: 600; cursor: pointer;
+      height: 44px; padding: 0 24px; border: 0; border-radius: 12px;
+      background: var(--accent, #7ec8e3); color: #0d1b2a;
+      font-size: 15px; font-weight: 600; cursor: pointer;
     }
     #pvGo[disabled] { opacity: .55; cursor: default; }
-    .pv-ghost {
-      height: 44px; padding: 0 16px; border-radius: 11px; cursor: pointer;
-      border: 1px solid var(--line, rgba(126,200,227,.25));
-      background: transparent; color: var(--ink-2, #b3cde3); font-size: 13px;
-    }
-    .pv-ghost:hover { border-color: var(--gold, #e8c87a); color: var(--gold, #e8c87a); }
     .pv-msg { margin: 14px 0 0; min-height: 20px; font-size: 13px; color: var(--gold, #e8c87a); }
     .pv-msg.is-error { color: #ff9a9a; }
+    .pv-count { margin: 0 0 16px; font-size: 12.5px; color: var(--muted, #7997b3); }
     .pv-empty { margin: 14px 0 0; font-size: 13.5px; color: var(--muted, #7997b3); }
 
-    .pv-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+    /* 卡片列表：和站点首页的手记卡片同一套语言 */
+    .pv-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
     .pv-item {
+      position: relative;
+      padding: 18px 20px;
       border: 1px solid var(--line, rgba(126,200,227,.18));
-      border-radius: 13px; padding: 13px 15px;
+      border-radius: 16px;
+      background: var(--panel, rgba(255,255,255,.03));
+      transition: border-color .2s, transform .2s, box-shadow .2s;
     }
-    .pv-item:hover { border-color: var(--accent, #7ec8e3); background: var(--hover, rgba(126,200,227,.06)); }
-    .pv-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+    .pv-item:hover {
+      border-color: var(--accent, #7ec8e3);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-soft, 0 10px 26px -18px rgba(27,58,92,.34));
+    }
+    /* 标题一行、日期分类单独一行并留出呼吸感 —— 挤在一行看着很局促 */
     .pv-link {
-      font-size: 15px; font-weight: 600; color: var(--ink, #e0f0ff);
-      text-decoration: none; min-width: 0; word-break: break-word;
+      display: block;
+      font-size: 17.5px; font-weight: 600; color: var(--ink, #e0f0ff);
+      text-decoration: none; letter-spacing: .012em; line-height: 1.5;
+      word-break: break-word;
+      transition: color .2s;
     }
     .pv-link:hover { color: var(--accent, #7ec8e3); }
-    .pv-meta { display: flex; align-items: baseline; gap: 10px; flex-shrink: 0; }
-    .pv-date { font-size: 11.5px; color: var(--muted, #7997b3); white-space: nowrap; }
-    .pv-toggle {
-      border: 1px solid var(--line, rgba(126,200,227,.25)); border-radius: 8px;
-      background: transparent; color: var(--ink-2, #b3cde3);
-      font-size: 11.5px; padding: 3px 8px; cursor: pointer; white-space: nowrap;
+    .pv-date {
+      display: block; margin-top: 9px;
+      font-size: 11.5px; letter-spacing: .06em; color: var(--muted, #7997b3);
     }
-    .pv-toggle:hover { border-color: var(--gold, #e8c87a); color: var(--gold, #e8c87a); }
+    .pv-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 13px; }
+    .pv-tag {
+      font-size: 11px; padding: 2px 8px; border-radius: 999px;
+      background: var(--hover, rgba(126,200,227,.08));
+      color: var(--accent, #7ec8e3);
+    }
     .pv-x {
-      display: block; margin-top: 9px; font-size: 12.5px; line-height: 1.75;
-      color: var(--ink-2, #b3cde3);
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden; font-size: 13px; line-height: 1.8; color: var(--ink-2, #b3cde3);
     }
-    .pv-x[hidden] { display: none; }
-    /* 摘要收起时打码，既知道有内容、又不至于一眼看全 */
+    .pv-x.is-expanded { -webkit-line-clamp: unset; }
+    .pv-mask {
+      margin: 8px 0 0; padding: 0; border: 0; background: none; cursor: pointer;
+      font-size: 12px; color: var(--gold, #e8c87a); text-align: left;
+    }
+    .pv-mask:hover { text-decoration: underline; }
+    /* 盖住时摘要打码：能看出「有内容」，但读不出字 */
     .pv-x.is-masked { filter: blur(6px); user-select: none; pointer-events: none; }
 
-    .pv-note { margin: 22px 0 0; font-size: 12px; line-height: 1.8; color: var(--muted, #7997b3); }
+    .pv-note { margin: 24px 0 0; font-size: 12px; line-height: 1.85; color: var(--muted, #7997b3); }
     .pv-again {
-      margin-top: 16px; padding: 9px 16px; border-radius: 10px; cursor: pointer;
+      margin-top: 16px; padding: 9px 16px; border-radius: 11px; cursor: pointer;
       border: 1px solid var(--line, rgba(126,200,227,.25));
       background: transparent; color: var(--ink-2, #b3cde3); font-size: 13px;
     }
     .pv-again:hover { border-color: var(--gold, #e8c87a); color: var(--gold, #e8c87a); }
 
-    @media (max-width: 520px) {
-      .pv-wrap { padding: 30px 14px 64px; }
-      .pv-card { padding: 20px 16px; }
-      .pv-bar { flex-direction: column; }
-      .pv-bar button { width: 100%; }
-      /* 结果行在窄屏改成上下两行，避免标题把日期/按钮挤出屏幕 */
-      .pv-row { flex-direction: column; align-items: stretch; gap: 6px; }
-      .pv-meta { justify-content: space-between; }
+    @media (max-width: 560px) {
+      .pv-wrap { padding: 28px 14px 64px; }
+      .pv-card { padding: 22px 17px; border-radius: 16px; }
+      .pv-controls { flex-direction: column; }
+      #pvSort { width: 100%; }
+      .pv-item { padding: 15px 16px; }
+      .pv-link { font-size: 16px; }
+      .pv-top { flex-direction: column; gap: 6px; }
     }
   </style>
 
   <script>
-    /*
-     * 口令校验在 Worker 上（服务端）：密码不在这页里、能限流、每次尝试都留日志。
-     * 清单也只存在于服务端响应里 —— 页面 HTML 里没有任何隐藏文章的信息。
-     */
     const API = 'https://oauth.yuuu.love';
-    const KEY = 'yuuu-private';           // sessionStorage：这样「返回」不用重新输口令
+    const KEY = 'yuuu-private';
     const login = document.getElementById('pvLogin');
     const listBox = document.getElementById('pvList');
     const form = document.getElementById('pvForm');
@@ -152,11 +168,10 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     const emptyEl = document.getElementById('pvEmpty');
     const countEl = document.getElementById('pvCount');
     const searchEl = document.getElementById('pvSearch');
-    const hideAllBtn = document.getElementById('pvHideAll');
+    const sortEl = document.getElementById('pvSort');
     const again = document.getElementById('pvAgain');
 
-    let all = [];
-    let shown = [];
+    let all = [];        // 服务端返回的全部条目
     let ticket = null;
     let enteredAt = 0;
 
@@ -171,17 +186,10 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 
     const say = (t, isErr) => { msg.textContent = t || ''; msg.classList.toggle('is-error', !!isErr); };
 
-    /* 把「口令 + 清单」缓存在 sessionStorage：同一标签页内返回/刷新都不用重输。
-       关掉标签页就没了；而且只存会话，不落盘。 */
-    function saveSession(pass, posts) {
-      try { sessionStorage.setItem(KEY, JSON.stringify({ pass, posts })); } catch (e) {}
-    }
-    function readSession() {
-      try { return JSON.parse(sessionStorage.getItem(KEY) || 'null'); } catch (e) { return null; }
-    }
-    function clearSession() {
-      try { sessionStorage.removeItem(KEY); } catch (e) {}
-    }
+    /* 口令+清单存 sessionStorage：返回/刷新不用重输；关标签页即失效 */
+    const saveSession = (pass, posts) => { try { sessionStorage.setItem(KEY, JSON.stringify({ pass, posts })); } catch (e) {} };
+    const readSession = () => { try { return JSON.parse(sessionStorage.getItem(KEY) || 'null'); } catch (e) { return null; } };
+    const clearSession = () => { try { sessionStorage.removeItem(KEY); } catch (e) {} };
 
     function enter(posts) {
       all = posts || [];
@@ -189,7 +197,8 @@ import BaseLayout from '../layouts/BaseLayout.astro';
       listBox.hidden = false;
       say('');
       if (searchEl) searchEl.value = '';
-      filter('');
+      if (sortEl) sortEl.value = 'date-desc';
+      render();
     }
 
     async function verify(pass, from) {
@@ -228,102 +237,92 @@ import BaseLayout from '../layouts/BaseLayout.astro';
       }
     });
 
-    if (searchEl) searchEl.addEventListener('input', () => filter(searchEl.value));
+    if (searchEl) searchEl.addEventListener('input', render);
+    if (sortEl) sortEl.addEventListener('change', render);
 
-    function filter(kw) {
-      const q = (kw || '').trim().toLowerCase();
-      shown = !q
-        ? all.slice()
-        : all.filter((p) =>
-            [p.title, p.summary, p.category, p.date, (p.tags || []).join(' ')]
-              .some((v) => String(v || '').toLowerCase().includes(q)),
-            /* tags 是数组，join 后一起匹配 */
-          );
-      render();
+    /** 排序：发布用 date；「最近修改」用 updated（没写就退回 date） */
+    function sortPosts(list, mode) {
+      const d = (p) => p.date || '';
+      const u = (p) => p.updated || p.date || '';
+      const arr = list.slice();
+      if (mode === 'date-asc') arr.sort((a, b) => d(a).localeCompare(d(b)));
+      else if (mode === 'updated-desc') arr.sort((a, b) => u(b).localeCompare(u(a)) || d(b).localeCompare(d(a)));
+      else arr.sort((a, b) => d(b).localeCompare(d(a)));
+      return arr;
     }
 
     function render() {
+      const q = (searchEl ? searchEl.value : '').trim().toLowerCase();
+      /* 全文搜索：标题 / 摘要 / 正文 / 标签 / 分类 / 日期 */
+      const matched = !q
+        ? all.slice()
+        : all.filter((p) =>
+            [p.title, p.summary, p.text, (p.tags || []).join(' '), p.category, p.date]
+              .some((v) => String(v || '').toLowerCase().includes(q)),
+          );
+      const shown = sortPosts(matched, sortEl ? sortEl.value : 'date-desc');
+
       const total = all.length;
       countEl.textContent = shown.length === total
-        ? '共 ' + total + ' 篇。点标题直接打开文章；点「摘要」展开摘要。'
-        : '匹配 ' + shown.length + ' / ' + total + ' 篇。';
+        ? '共 ' + total + ' 篇'
+        : '匹配 ' + shown.length + ' / ' + total + ' 篇';
       emptyEl.hidden = shown.length !== 0;
       itemsEl.innerHTML = '';
+
       for (const p of shown) {
         const li = document.createElement('li');
         li.className = 'pv-item';
 
-        const row = document.createElement('div');
-        row.className = 'pv-row';
-
         const a = document.createElement('a');
         a.className = 'pv-link';
         a.href = p.url;
-        a.target = '_blank';       // 新标签打开：返回时本页还在，不用重输口令
+        a.target = '_blank';
         a.rel = 'noopener';
         a.textContent = p.title || p.url;
 
-        const meta = document.createElement('div');
-        meta.className = 'pv-meta';
-        const d = document.createElement('span');
-        d.className = 'pv-date';
-        d.textContent = (p.category ? p.category + ' · ' : '') + (p.date || '');
-        const t = document.createElement('button');
-        t.type = 'button';
-        t.className = 'pv-toggle';
-        t.textContent = '摘要';
-        meta.append(d, t);
+        const date = document.createElement('span');
+        date.className = 'pv-date';
+        date.textContent = (p.date || '') + (p.category ? ' · ' + p.category : '');
 
-        row.append(a, meta);
+        li.append(a, date);
 
-        const x = document.createElement('span');
-        x.className = 'pv-x is-masked';
-        x.textContent = p.summary || '（这篇没写摘要）';
-        x.hidden = true;
+        if (p.tags && p.tags.length) {
+          const tags = document.createElement('div');
+          tags.className = 'pv-tags';
+          for (const t of p.tags) {
+            const s = document.createElement('span');
+            s.className = 'pv-tag';
+            s.textContent = t;
+            tags.appendChild(s);
+          }
+          li.appendChild(tags);
+        }
 
-        t.addEventListener('click', () => {
-          const open = !x.hidden;
-          x.hidden = open;
-          x.classList.toggle('is-masked', open);
-          t.textContent = open ? '摘要' : '收起';
-        });
-
-        li.append(row, x);
+        /* 不在列表里展开摘要了（用户反馈显示效果差）：只有标题 + 日期/分类 + 标签，
+           想看内容就点标题进文章。要临时瞄一眼摘要可以按住卡片看 title 提示。 */
+        li.title = p.summary || '';
         itemsEl.appendChild(li);
       }
     }
-
-    if (hideAllBtn) hideAllBtn.addEventListener('click', () => {
-      itemsEl.querySelectorAll('.pv-item').forEach((li) => {
-        const x = li.querySelector('.pv-x');
-        const t = li.querySelector('.pv-toggle');
-        if (x) { x.hidden = true; x.classList.add('is-masked'); }
-        if (t) t.textContent = '摘要';
-      });
-    });
 
     again.addEventListener('click', () => {
       flush();
       clearSession();
       listBox.hidden = true;
       login.hidden = false;
-      all = []; shown = [];
+      all = [];
       itemsEl.innerHTML = '';
       say('');
       pwd.value = '';
       pwd.focus();
     });
 
-    /* 刷新/返回时用会话里的口令重新校验一次（校验要通过服务端，所以每次都会记日志） */
+    /* 刷新/返回时用会话里的口令自动重新校验（会经过服务端，所以也记一条日志） */
     (async function restore() {
       const s = readSession();
       if (!s || !s.pass) return;
-      try {
-        const posts = await verify(s.pass, 'restore');
-        enter(posts);
-      } catch (e) {
-        clearSession();   // 口令改了或过期了，就让用户重新输
-      }
+      try { enter(await verify(s.pass, 'restore')); }
+      catch (e) { clearSession(); }
     })();
 
     pwd.focus();

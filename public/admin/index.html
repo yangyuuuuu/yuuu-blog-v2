@@ -135,5 +135,43 @@
       升级：改下面的版本号，然后打开 /admin 确认能进后台、能发文。
     -->
     <script src="https://unpkg.com/decap-cms@3.8.4/dist/decap-cms.js"></script>
-  </body>
+  
+    <script>
+      /*
+       * 保存时自动写「最后修改」= 今天。
+       *
+       * 用的是 Decap 官方事件（https://decapcms.org/docs/registering-events/）：
+       *   CMS.registerEventListener({ name: 'preSave', handler: ({ entry }) =>
+       *     entry.get('data').set('updated', 'YYYY-MM-DD') })
+       * 只在**点保存**时触发，单纯点进去看不会改任何东西。
+       *
+       * 写法说明：CMS 是 CDN 上的打包文件，加载完才会挂到 window 上，
+       * 所以这里轮询等它就绪再注册，最多等 20 秒。老版本没有 preSave 就退回 postSave
+       *（效果一样，只是发生在保存动作之后）。
+       */
+      (function () {
+        var tries = 0;
+        var t = setInterval(function () {
+          tries++;
+          if (!window.CMS || !CMS.registerEventListener) {
+            if (tries > 200) clearInterval(t);
+            return;
+          }
+          clearInterval(t);
+          var today = function () { return new Date().toISOString().slice(0, 10); };
+          var events = (CMS.events && CMS.events.preSave) ? ['preSave'] : ['postSave'];
+          events.forEach(function (name) {
+            try {
+              CMS.registerEventListener({
+                name: name,
+                handler: function (e) {
+                  try { e.entry.get('data').set('updated', today()); } catch (err) { /* 忽略 */ }
+                },
+              });
+            } catch (err) { /* 忽略：注册失败也不影响发文 */ }
+          });
+        }, 100);
+      })();
+    </script>
+</body>
 </html>

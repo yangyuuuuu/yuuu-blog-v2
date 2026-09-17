@@ -49,7 +49,20 @@ const hasMore = posts.length > PAGE_SIZE;
           最新手记 <span class="ml-2 text-[12.5px] font-normal text-muted" id="resultCount">共 {posts.length} 篇</span>
         </h2>
       </div>
-      <a href="/archive/" class="text-[13.5px] tracking-wide text-muted transition-colors hover:text-gold">全部归档 →</a>
+      <div class="flex items-center gap-3">
+        <label class="flex items-center gap-1.5 text-[12.5px] text-muted">
+          <span class="tracking-[0.2em] uppercase">排序</span>
+          <select
+            id="sortSelect"
+            class="rounded-full border border-line bg-surface px-3 py-1.5 text-[13px] text-ink-2 outline-none transition-colors hover:border-line-strong focus:border-accent"
+          >
+            <option value="date-desc">最新发布</option>
+            <option value="date-asc">最早发布</option>
+            <option value="updated-desc">最近修改</option>
+          </select>
+        </label>
+        <a href="/archive/" class="text-[13.5px] tracking-wide text-muted transition-colors hover:text-gold">全部归档 →</a>
+      </div>
     </header>
 
     <div
@@ -197,6 +210,27 @@ const hasMore = posts.length > PAGE_SIZE;
         loadedAll = true;
         if (btn) btn.hidden = true;
       }
+
+      /* 排序：只重排已加载的卡片，不改服务端默认顺序。
+         想排全部文章时，去 /archive/ 或先点几次「加载更多」。 */
+      var sortEl = document.getElementById('sortSelect');
+      function sortGrid() {
+        if (!sortEl) return;
+        var mode = sortEl.value;
+        var cards = [].slice.call(grid.children);
+        var val = function (el, attr) { return el.dataset[attr] || ''; };
+        cards.sort(function (a, b) {
+          if (mode === 'date-asc') return val(a, 'date').localeCompare(val(b, 'date'));
+          if (mode === 'updated-desc') {
+            return val(b, 'updated').localeCompare(val(a, 'updated')) ||
+                   val(b, 'date').localeCompare(val(a, 'date'));
+          }
+          return val(b, 'date').localeCompare(val(a, 'date'));
+        });
+        cards.forEach(function (el) { grid.appendChild(el); });   // appendChild 会移动节点，等于重排
+        applyFilter();
+      }
+      if (sortEl) sortEl.addEventListener('change', sortGrid);
 
       chips.forEach(function (chip) {
         chip.addEventListener('click', function () {

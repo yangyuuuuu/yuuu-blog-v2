@@ -14,10 +14,15 @@ const path = Astro.url.pathname;
 const isActive = (href: string) => (href === '/' ? path === '/' : path.startsWith(href));
 ---
 
+<!--
+  顶栏 z-index 用 70，压过搜索聚光遮罩（z-index 50）——
+  这样聚焦搜索时，整页压暗、但顶栏（含搜索框）保持明亮。
+  为了不让暗幕从顶栏的透明底色里透出来，这里用不透明的 header-solid 底。
+-->
 <header
   id="siteHeader"
-  class="sticky top-0 z-60 border-b border-line backdrop-blur-xl backdrop-saturate-150 t-backdrop"
-  style="background: var(--header-bg)"
+  class="sticky top-0 z-[70] border-b border-line"
+  style="background: var(--header-solid)"
 >
   <!--
     手机：两栏 [logo | 搜索+按钮]，全在一行

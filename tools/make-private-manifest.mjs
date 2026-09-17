@@ -22,9 +22,28 @@ const OUT_DIR = join(ROOT, 'dist/private');
 const OUT = join(OUT_DIR, 'posts.json');
 
 /** 只取需要的几个键，不引 YAML 解析器（它是 astro 的传递依赖，见 HANDOFF 的幽灵依赖一节） */
+/** 把正文压成纯文本，供私人角落做全文搜索（去掉代码块、标记、链接语法） */
+function plainText(md) {
+  return md
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`[^`]*`/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s{0,3}>\s?/gm, '')
+    .replace(/^\s{0,3}[-*+]\s+/gm, '')
+    .replace(/^\s{0,3}\d+\.\s+/gm, '')
+    .replace(/[*_~]{1,3}/g, '')
+    .replace(/\|/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function readKeys(file) {
   const raw = readFileSync(join(POSTS, file), 'utf8');
-  const yaml = (/^---\r?\n([\s\S]*?)\r?\n---/.exec(raw) || [])[1] || '';
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(raw);
+  const yaml = (fm || [])[1] || '';
+  const body = fm ? raw.slice(fm[0].length) : raw;
   const one = (key) => {
     const m = new RegExp('^' + key + ':\\s*(.+?)\\s*$', 'm').exec(yaml);
     return m ? m[1].replace(/^["']|["']$/g, '') : undefined;
@@ -46,6 +65,8 @@ function readKeys(file) {
     date: one('date') || '',
     summary: one('summary') || '',
     tags,
+    /* 全文：私人角落的搜索要用它。只留前 2000 字，够搜就行 */
+    text: plainText(body).slice(0, 2000),
   };
 }
 
@@ -69,6 +90,7 @@ writeFileSync(
         category: p.category,
         summary: p.summary,
         tags: p.tags,
+        text: p.text,
       })),
     },
     null,

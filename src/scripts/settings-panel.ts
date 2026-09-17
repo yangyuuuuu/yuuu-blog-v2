@@ -8,6 +8,8 @@
  */
 const FX = ['reveal', 'sink', 'glass', 'scrollBlur'];
 const SKINS = ['fontaine', 'opera', 'abyss'];
+/* 卡片风格：glass 是默认（建站以来的毛玻璃），其余为可选外观 */
+const CARD_STYLES = ['glass', 'line', 'paper', 'float'];
 
 function read(key: string, fb: string): string {
   try { return localStorage.getItem(key) || fb; } catch { return fb; }
@@ -36,11 +38,18 @@ export function init(): void {
     q('[data-cols]').forEach((b) => b.classList.toggle('is-on', Number(b.dataset.cols) === cols));
     const s = read('yuuu-skin', 'fontaine');
     q('[data-skin]').forEach((b) => b.classList.toggle('is-on', b.dataset.skin === s));
+    const cs = read('yuuu-card', 'glass');
+    q('[data-card]').forEach((b) => b.classList.toggle('is-on', b.dataset.card === cs));
     const fx = readFx();
     q('[data-fx]').forEach((cb) => {
       (cb as HTMLInputElement).checked = fx[cb.dataset.fx as string] !== false;
     });
   }
+
+  /* 卡片风格要在页面绘制时就生效（否则会闪一下默认样式）—— 引导脚本负责首屏，
+     这里只处理「已经加载过设置面板」的情况，重复设置也不会有副作用。 */
+  const savedCard = read('yuuu-card', 'glass');
+  if (CARD_STYLES.includes(savedCard)) html.setAttribute('data-card', savedCard);
 
   menu.addEventListener('click', (e) => {
     const b = (e.target as HTMLElement)?.closest?.('button');
@@ -59,6 +68,13 @@ export function init(): void {
       html.setAttribute('data-skin', el.dataset.skin);
       try { localStorage.setItem('yuuu-skin', el.dataset.skin); } catch { /* 忽略 */ }
       window.setTimeout(() => html.classList.remove('theme-switching'), 560);
+      paint();
+      return;
+    }
+    /* 卡片风格：挂到 <html data-card> 上，样式由 global.css 里的一组规则接管 */
+    if (el.dataset.card && CARD_STYLES.includes(el.dataset.card)) {
+      html.setAttribute('data-card', el.dataset.card);
+      try { localStorage.setItem('yuuu-card', el.dataset.card); } catch { /* 忽略 */ }
       paint();
     }
   });

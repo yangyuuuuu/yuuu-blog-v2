@@ -32,6 +32,10 @@
   --panel-2: rgb(16 35 56 / 0.94);
   --panel-solid: #10233a;
   --search-focus-bg: #17304a;
+  /* 搜索聚光的遮罩：必须是「压暗」，所以用深色而不是 --bg */
+  --veil: rgb(4 12 22 / 0.52);
+  /* 顶栏实底：搜索聚光时顶栏要浮在暗幕之上，不能是半透明的 */
+  --header-solid: #0d1b2a;
   --ink: #e0f0ff;
   --ink-2: #b3cde3;
   --muted: #7997b3;
@@ -81,6 +85,9 @@ html[data-theme='light'] {
   --panel-2: rgb(255 255 255 / 0.96);
   --panel-solid: #ffffff;
   --search-focus-bg: #dceaf7;
+  /* 浅色底上也要「压暗」才行 —— 之前用 --bg（近白）混出来等于糊了一层白，越聚越亮 */
+  --veil: rgb(27 58 92 / 0.30);
+  --header-solid: #f5faff;
   --ink: #1b3a5c;
   --ink-2: #35597f;
   --muted: #64839f;

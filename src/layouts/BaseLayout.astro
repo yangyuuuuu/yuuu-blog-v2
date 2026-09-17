@@ -105,7 +105,7 @@ const ogImage = new URL(image, site).href;
     <!--
       搜索聚光遮罩。⚠️ pointer-events: none 是硬性要求 ——
       全屏 fixed 层一旦能接收事件，整站按钮就全点不动了（旧版踩过这个坑）。
-      z-index 50：在正文（z-10）之上、吸顶导航（z-60）之下。
+      z-index 50：在正文之上、顶栏（z-70）之下；顶栏用不透明底，所以不会透出暗幕。
     -->
     <div class="search-veil" id="searchVeil" aria-hidden="true"></div>
 
