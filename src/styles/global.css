@@ -25,7 +25,13 @@
   --radius-card: 18px;
   --radius-soft: 12px;
 
-  --font-title: 'Songti SC', 'STSong', Georgia, 'Times New Roman', serif;
+  /*
+   * 标题字体（衬线）：中文必须有中文字形的衬线字体才好看。
+   * 'Songti SC'/'STSong' 是 macOS 的宋体，Windows 上都没有 —— 只写 Georgia 的话
+   * 中文字会掉回默认黑体，看起来「字体没变」。这里补齐 Windows 的宋体与思源宋体。
+   */
+  --font-title: 'Songti SC', 'STSong', 'Source Han Serif SC', 'Noto Serif CJK SC',
+    'SimSun', 'NSimSun', Georgia, 'Times New Roman', serif;
   --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
     'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
   --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, 'SFMono-Regular', Menlo, monospace;
@@ -699,13 +705,18 @@ mark.find-hit::after {
     0 26px 60px -16px color-mix(in srgb, var(--accent) 100%, transparent);
 }
 
-/* 框内文字与占位符一起提亮（浅色主题下 --ink 是深蓝，放白底上刚好更清晰） */
+/* 框内文字与占位符一起提亮；深色主题再叠一层同色光晕，让字「发亮」 */
 #searchRoot:focus-within .search-input {
-  color: var(--ink);
-  font-weight: 500;
+  color: var(--search-focus-ink, var(--ink));
+  font-weight: 600;
   caret-color: var(--accent);
+  text-shadow: 0 0 12px color-mix(in srgb, var(--search-focus-ink, var(--ink)) 55%, transparent);
 }
-#searchRoot:focus-within .search-input::placeholder { color: var(--muted); }
+#searchRoot:focus-within .search-input::placeholder {
+  color: var(--muted);
+  text-shadow: none;
+  font-weight: 400;
+}
 
 /* 搜索框内的「/」徽标与清空按钮也跟着提亮一点 */
 #searchRoot:focus-within .search-kbd {
@@ -1091,17 +1102,19 @@ html[data-theme='light'] .g-sun { opacity: 1; transform: rotate(0deg) scale(1); 
   background: var(--hover-strong);
   color: var(--accent);
 }
-.theme-skins { display: flex; flex-direction: column; gap: 5px; }
+/* 7 套配色，单列会把面板撑得很高 —— 改成双列，按钮再紧凑一点 */
+.theme-skins { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
 .theme-skins button {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 7px 9px;
+  gap: 8px;
+  padding: 7px 8px;
   border-radius: 10px;
   border: 1px solid transparent;
   background: transparent;
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--muted);
+  min-width: 0;
   cursor: pointer;
   transition: color 0.3s ease, border-color 0.3s ease, background-color 0.3s ease;
 }

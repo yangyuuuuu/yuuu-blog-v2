@@ -32,7 +32,9 @@
   --panel-2: rgb(16 35 56 / 0.94);
   --panel-solid: #10233a;
   /* 聚焦搜索时搜索框自己的底色：必须比周围更亮，才叫「高亮」 */
-  --search-focus-bg: #21415f;
+  --search-focus-bg: #24466a;
+  /* 聚焦时输入文字的加亮色（深色主题用近白 + 光晕） */
+  --search-focus-ink: #ffffff;
   /* 搜索聚光的遮罩：必须是「压暗」，所以用深色而不是 --bg */
   --veil: rgb(4 12 22 / 0.52);
   /* 顶栏实底：搜索聚光时顶栏要浮在暗幕之上，不能是半透明的 */
@@ -87,6 +89,7 @@ html[data-theme='light'] {
   --panel-solid: #ffffff;
   /* 浅色主题下也要「提亮」：纯白比压暗后的周围更跳 */
   --search-focus-bg: #ffffff;
+  --search-focus-ink: #12283f;
   /* 浅色底上也要「压暗」才行 —— 之前用 --bg（近白）混出来等于糊了一层白，越聚越亮 */
   --veil: rgb(27 58 92 / 0.30);
   --header-solid: #f5faff;

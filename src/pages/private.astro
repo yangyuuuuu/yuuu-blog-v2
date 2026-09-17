@@ -29,11 +29,30 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 
       <div class="pv-controls">
         <input id="pvSearch" type="search" placeholder="搜索标题 / 摘要 / 正文 / 标签…" autocomplete="off" aria-label="搜索私人文章" />
-        <select id="pvSort" aria-label="排序方式">
-          <option value="date-desc">最新发布</option>
-          <option value="date-asc">最早发布</option>
-          <option value="updated-desc">最近修改</option>
-        </select>
+        <!--
+          排序：自己画一个列表，不用原生 <select>。
+          原生下拉的选项框是浏览器画的，改不了圆角、也没法做 hover 反馈（反馈过太丑）。
+          <select> 仍然保留在 DOM 里做取值与键盘可达性，只是被 .pv-sortbtn 盖住。
+        -->
+        <div class="pv-sort">
+          <select id="pvSort" aria-label="排序方式" tabindex="-1" aria-hidden="true">
+            <option value="date-desc">最新发布</option>
+            <option value="date-asc">最早发布</option>
+            <option value="updated-desc">最近修改</option>
+          </select>
+          <button type="button" class="pv-sortbtn" id="pvSortBtn" aria-haspopup="listbox" aria-expanded="false">
+            <span id="pvSortLabel">最新发布</span>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+                 stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          <ul class="pv-sortlist" id="pvSortList" role="listbox" hidden>
+            <li role="option" data-value="date-desc">最新发布</li>
+            <li role="option" data-value="date-asc">最早发布</li>
+            <li role="option" data-value="updated-desc">最近修改</li>
+          </ul>
+        </div>
       </div>
       <p class="pv-count" id="pvCount"></p>
 
@@ -65,7 +84,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 
     #pvForm { display: flex; gap: 10px; flex-wrap: wrap; }
     .pv-controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
-    #pvPwd, #pvSearch, #pvSort {
+    #pvPwd, #pvSearch {
       height: 44px; padding: 0 14px; border-radius: 12px;
       border: 1px solid var(--line, rgba(126,200,227,.25));
       background: var(--bg-soft, rgba(255,255,255,.05));
@@ -73,29 +92,54 @@ import BaseLayout from '../layouts/BaseLayout.astro';
       -webkit-appearance: none; appearance: none;
     }
     #pvPwd, #pvSearch { flex: 1 1 220px; min-width: 0; }
-    /* 排序下拉：圆角、自定义箭头、hover 有反馈（原来那个方框太丑且没反馈） */
-    #pvSort {
-      flex: 0 0 auto; min-width: 140px; cursor: pointer;
+    /* 排序：自定义下拉。原生 <select> 的选项框是浏览器画的，改不了圆角也没 hover，
+       所以按钮和列表都自己画；<select> 只是留在 DOM 里存值。 */
+    .pv-sort { position: relative; flex: 0 0 auto; }
+    .pv-sort > select {
+      position: absolute; inset: 0; opacity: 0; pointer-events: none;
+    }
+    .pv-sortbtn {
+      display: flex; align-items: center; gap: 8px;
+      height: 44px; padding: 0 15px;
       border-radius: 999px;
-      padding-right: 38px;
-      background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237ec8e3' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 13px center;
-      background-size: 14px 14px;
-      transition: border-color .2s, background-color .2s, transform .18s, box-shadow .2s;
+      border: 1px solid var(--line, rgba(126,200,227,.25));
+      background: var(--bg-soft, rgba(255,255,255,.05));
+      color: var(--ink-2, #b3cde3);
+      font-size: 14.5px; cursor: pointer; white-space: nowrap;
+      transition: border-color .2s, background-color .2s, transform .18s, box-shadow .2s, color .2s;
     }
-    #pvSort:hover {
+    .pv-sortbtn svg { color: var(--accent, #7ec8e3); transition: transform .25s; }
+    .pv-sortbtn:hover {
       border-color: var(--accent, #7ec8e3);
-      background-color: var(--hover-strong, rgba(126,200,227,.14));
-      transform: scale(1.035);
-      box-shadow: 0 6px 18px -10px rgb(var(--a, 126 200 227) / 0.7);
-    }
-    #pvSort option {
-      background: var(--panel-solid, #10233a);
+      background-color: var(--hover-strong, rgba(126,200,227,.16));
       color: var(--ink, #e0f0ff);
-      font-size: 14px;
+      transform: scale(1.045);
+      box-shadow: 0 8px 22px -12px rgb(var(--a, 126 200 227) / 0.85);
     }
-    #pvPwd:focus, #pvSearch:focus, #pvSort:focus {
+    .pv-sortbtn[aria-expanded='true'] { border-color: var(--accent, #7ec8e3); color: var(--ink, #e0f0ff); }
+    .pv-sortbtn[aria-expanded='true'] svg { transform: rotate(180deg); }
+
+    .pv-sortlist {
+      position: absolute; right: 0; top: calc(100% + 8px);
+      z-index: 20; min-width: 150px; margin: 0; padding: 6px;
+      list-style: none;
+      border-radius: 14px;
+      border: 1px solid var(--line-strong, rgba(126,200,227,.35));
+      background: var(--panel-solid, #10233a);
+      box-shadow: var(--shadow, 0 22px 44px -26px rgb(0 0 0 / .5));
+    }
+    .pv-sortlist li {
+      padding: 9px 12px; border-radius: 10px;
+      font-size: 14px; color: var(--ink-2, #b3cde3); cursor: pointer;
+      transition: background-color .16s, color .16s, transform .16s;
+    }
+    .pv-sortlist li:hover {
+      background: var(--hover-strong, rgba(126,200,227,.18));
+      color: var(--ink, #e0f0ff);
+      transform: scale(1.03);
+    }
+    .pv-sortlist li[aria-selected='true'] { color: var(--accent, #7ec8e3); font-weight: 600; }
+    #pvPwd:focus, #pvSearch:focus {
       border-color: var(--accent, #7ec8e3);
       box-shadow: 0 0 0 3px rgba(126,200,227,.2);
     }
@@ -172,7 +216,8 @@ import BaseLayout from '../layouts/BaseLayout.astro';
       .pv-wrap { padding: 28px 14px 64px; }
       .pv-card { padding: 22px 17px; border-radius: 16px; }
       .pv-controls { flex-direction: column; }
-      #pvSort { width: 100%; }
+      .pv-sort, .pv-sortbtn { width: 100%; }
+      .pv-sortlist { left: 0; right: auto; width: 100%; }
       .pv-item { padding: 15px 16px; }
       .pv-link { font-size: 16px; }
       .pv-top { flex-direction: column; gap: 6px; }
@@ -192,7 +237,10 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     const emptyEl = document.getElementById('pvEmpty');
     const countEl = document.getElementById('pvCount');
     const searchEl = document.getElementById('pvSearch');
-    const sortEl = document.getElementById('pvSort');
+    const sortEl = document.getElementById('pvSort');          // 隐藏的 <select>，只存值
+    const sortBtn = document.getElementById('pvSortBtn');
+    const sortList = document.getElementById('pvSortList');
+    const sortLabel = document.getElementById('pvSortLabel');
     const again = document.getElementById('pvAgain');
 
     let all = [];        // 服务端返回的全部条目
@@ -222,6 +270,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
       say('');
       if (searchEl) searchEl.value = '';
       if (sortEl) sortEl.value = 'date-desc';
+      if (typeof syncSortUI === 'function') syncSortUI();
       render();
     }
 
@@ -262,7 +311,50 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     });
 
     if (searchEl) searchEl.addEventListener('input', render);
-    if (sortEl) sortEl.addEventListener('change', render);
+
+    /* 自定义排序下拉：按钮开合、点选生效、外部点击/Esc 关闭 */
+    const SORT_LABELS = { 'date-desc': '最新发布', 'date-asc': '最早发布', 'updated-desc': '最近修改' };
+
+    function syncSortUI() {
+      const v = sortEl ? sortEl.value : 'date-desc';
+      if (sortLabel) sortLabel.textContent = SORT_LABELS[v] || '排序';
+      if (sortList) {
+        sortList.querySelectorAll('li').forEach((li) => {
+          li.setAttribute('aria-selected', li.dataset.value === v ? 'true' : 'false');
+        });
+      }
+    }
+
+    function closeSort() {
+      if (!sortList) return;
+      sortList.hidden = true;
+      if (sortBtn) sortBtn.setAttribute('aria-expanded', 'false');
+    }
+
+    if (sortBtn && sortList && sortEl) {
+      sortBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const open = !sortList.hidden;
+        sortList.hidden = open;
+        sortBtn.setAttribute('aria-expanded', open ? 'false' : 'true');
+      });
+
+      sortList.addEventListener('click', (e) => {
+        const li = e.target && e.target.closest ? e.target.closest('li') : null;
+        if (!li || !li.dataset.value) return;
+        sortEl.value = li.dataset.value;
+        syncSortUI();
+        closeSort();
+        render();
+      });
+
+      /* 点别处 / Esc 都关掉 —— 原生下拉会自动关，自制的必须自己处理 */
+      document.addEventListener('click', (e) => {
+        if (!sortList.hidden && !sortList.contains(e.target) && e.target !== sortBtn) closeSort();
+      });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSort(); });
+      syncSortUI();
+    }
 
     /** 排序：发布用 date；「最近修改」用 updated（没写就退回 date） */
     function sortPosts(list, mode) {
