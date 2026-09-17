@@ -16,6 +16,10 @@ const SKINS = [
   { id: 'fontaine', name: '枫丹', swatch: '#7ec8e3' },
   { id: 'opera', name: '歌剧院', swatch: '#e8a0b4' },
   { id: 'abyss', name: '深海', swatch: '#9b8ce8' },
+  { id: 'mint', name: '晨雾', swatch: '#7ed8be' },
+  { id: 'amber', name: '落日', swatch: '#e8a870' },
+  { id: 'jade', name: '墨玉', swatch: '#7ace9e' },
+  { id: 'indigo', name: '霜夜', swatch: '#80a8f0' },
 ];
 ---
 
@@ -65,7 +69,9 @@ const SKINS = [
     <p class="theme-menu-label">显示</p>
     <div class="theme-fx">
       <label><input type="checkbox" data-fx="reveal" /><span>文章进出动画</span></label>
-      <label><input type="checkbox" data-fx="sink" /><span>首屏下沉动画</span></label>
+      <label title="首屏下方「最新手记」那块滚进视口时的浮现动画（不是首屏本身）">
+        <input type="checkbox" data-fx="sink" /><span>内容浮现动画</span>
+      </label>
       <label><input type="checkbox" data-fx="glass" /><span>卡片毛玻璃</span></label>
       <label><input type="checkbox" data-fx="scrollBlur" /><span>快速滑动模糊</span></label>
     </div>

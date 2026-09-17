@@ -73,7 +73,28 @@ import BaseLayout from '../layouts/BaseLayout.astro';
       -webkit-appearance: none; appearance: none;
     }
     #pvPwd, #pvSearch { flex: 1 1 220px; min-width: 0; }
-    #pvSort { flex: 0 0 auto; min-width: 132px; cursor: pointer; }
+    /* 排序下拉：圆角、自定义箭头、hover 有反馈（原来那个方框太丑且没反馈） */
+    #pvSort {
+      flex: 0 0 auto; min-width: 140px; cursor: pointer;
+      border-radius: 999px;
+      padding-right: 38px;
+      background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237ec8e3' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 13px center;
+      background-size: 14px 14px;
+      transition: border-color .2s, background-color .2s, transform .18s, box-shadow .2s;
+    }
+    #pvSort:hover {
+      border-color: var(--accent, #7ec8e3);
+      background-color: var(--hover-strong, rgba(126,200,227,.14));
+      transform: scale(1.035);
+      box-shadow: 0 6px 18px -10px rgb(var(--a, 126 200 227) / 0.7);
+    }
+    #pvSort option {
+      background: var(--panel-solid, #10233a);
+      color: var(--ink, #e0f0ff);
+      font-size: 14px;
+    }
     #pvPwd:focus, #pvSearch:focus, #pvSort:focus {
       border-color: var(--accent, #7ec8e3);
       box-shadow: 0 0 0 3px rgba(126,200,227,.2);
@@ -104,20 +125,23 @@ import BaseLayout from '../layouts/BaseLayout.astro';
       transform: translateY(-1px);
       box-shadow: var(--shadow-soft, 0 10px 26px -18px rgba(27,58,92,.34));
     }
-    /* 标题一行、日期分类单独一行并留出呼吸感 —— 挤在一行看着很局促 */
+    /* 标题：和主站卡片标题同一套衬线字体（--font-title），字号也放大一档 */
     .pv-link {
       display: block;
-      font-size: 17.5px; font-weight: 600; color: var(--ink, #e0f0ff);
-      text-decoration: none; letter-spacing: .012em; line-height: 1.5;
+      font-family: var(--font-title, 'Songti SC', 'STSong', Georgia, serif);
+      font-size: 21px; font-weight: 600; color: var(--ink, #e0f0ff);
+      text-decoration: none; letter-spacing: .02em; line-height: 1.45;
       word-break: break-word;
       transition: color .2s;
     }
     .pv-link:hover { color: var(--accent, #7ec8e3); }
+    /* 时间 / 分类：紧贴标题下方，小一号并压暗 */
     .pv-date {
-      display: block; margin-top: 9px;
-      font-size: 11.5px; letter-spacing: .06em; color: var(--muted, #7997b3);
+      display: block; margin-top: 7px;
+      font-size: 11.5px; letter-spacing: .07em;
+      color: var(--muted, #7997b3); opacity: .78;
     }
-    .pv-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 13px; }
+    .pv-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
     .pv-tag {
       font-size: 11px; padding: 2px 8px; border-radius: 999px;
       background: var(--hover, rgba(126,200,227,.08));

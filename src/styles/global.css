@@ -685,15 +685,32 @@ mark.find-hit::after {
 }
 #searchRoot:focus-within .search-box {
   border-color: var(--accent);
-  /* 深色底提亮、浅色底压暗 —— 都是「与背景拉开距离」，而不是一律变白 */
+  /*
+   * 聚焦时搜索框整体「提亮」：底色换成更亮的 --search-focus-bg（两套主题都是提亮），
+   * 边框换成主色，再叠光环 + 外发光。注意别用 backdrop-filter 之类的暗化效果 ——
+   * 那会把框内文字也压暗（之前踩过）。
+   */
   background: var(--search-focus-bg);
-  transform: scale(1.035);
-  /* 双层光环 + 外发光，聚焦时一眼就能看到 */
+  transform: scale(1.045);
   box-shadow:
-    0 0 0 2px var(--bg),
-    0 0 0 5px color-mix(in srgb, var(--accent) 55%, transparent),
-    0 0 0 10px color-mix(in srgb, var(--accent) 16%, transparent),
-    0 24px 56px -18px color-mix(in srgb, var(--accent) 95%, transparent);
+    0 0 0 2px var(--search-focus-bg),
+    0 0 0 5px color-mix(in srgb, var(--accent) 62%, transparent),
+    0 0 0 11px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 26px 60px -16px color-mix(in srgb, var(--accent) 100%, transparent);
+}
+
+/* 框内文字与占位符一起提亮（浅色主题下 --ink 是深蓝，放白底上刚好更清晰） */
+#searchRoot:focus-within .search-input {
+  color: var(--ink);
+  font-weight: 500;
+  caret-color: var(--accent);
+}
+#searchRoot:focus-within .search-input::placeholder { color: var(--muted); }
+
+/* 搜索框内的「/」徽标与清空按钮也跟着提亮一点 */
+#searchRoot:focus-within .search-kbd {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .search-box { transform-origin: 50% 50%; }
 

@@ -7,7 +7,7 @@
  * 注意：开合面板本身由引导脚本负责，这里只接管面板内部的交互。
  */
 const FX = ['reveal', 'sink', 'glass', 'scrollBlur'];
-const SKINS = ['fontaine', 'opera', 'abyss'];
+const SKINS = ['fontaine', 'opera', 'abyss', 'mint', 'amber', 'jade', 'indigo'];
 /* 卡片风格：glass 是默认（建站以来的毛玻璃），其余为可选外观 */
 const CARD_STYLES = ['glass', 'line', 'paper', 'float'];
 

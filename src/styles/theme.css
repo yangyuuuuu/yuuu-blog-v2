@@ -31,7 +31,8 @@
   --panel: rgb(23 48 74 / 0.55);
   --panel-2: rgb(16 35 56 / 0.94);
   --panel-solid: #10233a;
-  --search-focus-bg: #17304a;
+  /* 聚焦搜索时搜索框自己的底色：必须比周围更亮，才叫「高亮」 */
+  --search-focus-bg: #21415f;
   /* 搜索聚光的遮罩：必须是「压暗」，所以用深色而不是 --bg */
   --veil: rgb(4 12 22 / 0.52);
   /* 顶栏实底：搜索聚光时顶栏要浮在暗幕之上，不能是半透明的 */
@@ -84,7 +85,8 @@ html[data-theme='light'] {
   --panel: rgb(255 255 255 / 0.82);
   --panel-2: rgb(255 255 255 / 0.96);
   --panel-solid: #ffffff;
-  --search-focus-bg: #dceaf7;
+  /* 浅色主题下也要「提亮」：纯白比压暗后的周围更跳 */
+  --search-focus-bg: #ffffff;
   /* 浅色底上也要「压暗」才行 —— 之前用 --bg（近白）混出来等于糊了一层白，越聚越亮 */
   --veil: rgb(27 58 92 / 0.30);
   --header-solid: #f5faff;
@@ -126,6 +128,34 @@ html[data-skin='abyss'] {
   --accent-solid: #9b8ce8;
   --gold-solid: #8fd4c8;
 }
+/* 晨雾 · 薄荷 */
+html[data-skin='mint'] {
+  --a: 126 216 190;
+  --g: 236 208 140;
+  --accent-solid: #7ed8be;
+  --gold-solid: #ecd08c;
+}
+/* 落日 · 琥珀 */
+html[data-skin='amber'] {
+  --a: 232 168 112;
+  --g: 240 216 140;
+  --accent-solid: #e8a870;
+  --gold-solid: #f0d88c;
+}
+/* 墨玉 · 翡翠 */
+html[data-skin='jade'] {
+  --a: 122 206 158;
+  --g: 226 208 168;
+  --accent-solid: #7ace9e;
+  --gold-solid: #e2d0a8;
+}
+/* 霜夜 · 靛蓝 */
+html[data-skin='indigo'] {
+  --a: 128 168 240;
+  --g: 232 192 150;
+  --accent-solid: #80a8f0;
+  --gold-solid: #e8c096;
+}
 
 /* 浅色底的皮肤要单独压暗（选择器权重更高，写在后面） */
 html[data-theme='light'][data-skin='opera'] {
@@ -139,6 +169,30 @@ html[data-theme='light'][data-skin='abyss'] {
   --g: 52 150 136;
   --accent-solid: #7463c7;
   --gold-solid: #349688;
+}
+html[data-theme='light'][data-skin='mint'] {
+  --a: 44 158 130;
+  --g: 176 142 48;
+  --accent-solid: #2c9e82;
+  --gold-solid: #b08e30;
+}
+html[data-theme='light'][data-skin='amber'] {
+  --a: 197 122 58;
+  --g: 176 142 48;
+  --accent-solid: #c57a3a;
+  --gold-solid: #b08e30;
+}
+html[data-theme='light'][data-skin='jade'] {
+  --a: 46 150 96;
+  --g: 150 126 72;
+  --accent-solid: #2e9660;
+  --gold-solid: #967e48;
+}
+html[data-theme='light'][data-skin='indigo'] {
+  --a: 66 112 199;
+  --g: 170 126 62;
+  --accent-solid: #4270c7;
+  --gold-solid: #aa7e3e;
 }
 
 /* 想让渐变也平滑过渡，就得把颜色注册成可插值的自定义属性 */
