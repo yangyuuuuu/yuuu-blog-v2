@@ -211,6 +211,12 @@ const hasMore = posts.length > PAGE_SIZE;
         var cards = [].slice.call(grid.children);
         var val = function (el, attr) { return el.dataset[attr] || ''; };
         cards.sort(function (a, b) {
+          /* 置顶始终在最前：先比 pinned，再按所选方式排。
+             否则用户一切换排序，置顶文章就会被日期挤下去（置顶就白设了）。 */
+          var pa = a.dataset.pinned === '1' ? 1 : 0;
+          var pb = b.dataset.pinned === '1' ? 1 : 0;
+          if (pa !== pb) return pb - pa;
+
           if (mode === 'date-asc') return val(a, 'date').localeCompare(val(b, 'date'));
           if (mode === 'updated-desc') {
             return val(b, 'updated').localeCompare(val(a, 'updated')) ||

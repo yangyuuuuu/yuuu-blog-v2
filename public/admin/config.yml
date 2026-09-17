@@ -98,7 +98,11 @@ collections:
           - { label: "自定义图片 image", value: image }
 
       - { name: coverHue, label: 封面色相 (0-359), widget: number, required: false, min: 0, max: 359, value_type: int, hint: "202 水蓝 / 38 暖金 / 266 紫罗兰 / 150 薄荷绿" }
-      - { name: pinned, label: 置顶, widget: boolean, default: false }
+      - name: pinned
+        label: 置顶
+        widget: boolean
+        default: false
+        hint: "打开后这篇文章始终排在首页/归档最前面（无论按发布还是按修改排序），卡片上会带金色「置顶」标记。"
       - { name: draft, label: 草稿, widget: boolean, default: false, hint: "打开后构建时不输出这一篇（隐藏文章清单里也不会出现）" }
       - name: private
         label: 隐藏

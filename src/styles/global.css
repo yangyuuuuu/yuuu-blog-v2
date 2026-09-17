@@ -352,6 +352,22 @@ html.js:not(.fx-reveal) .reveal {
 
 
 /* --------------------------------------------------------------------------
+   置顶卡片：左侧一条金色竖线 + 稍强的边框，扫一眼就能认出来
+   -------------------------------------------------------------------------- */
+.card[data-pinned='1'] {
+  border-color: color-mix(in srgb, var(--gold) 45%, var(--line));
+}
+.card[data-pinned='1']::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: linear-gradient(to bottom, var(--gold), color-mix(in srgb, var(--gold) 35%, transparent));
+  pointer-events: none;
+}
+.card-pin { letter-spacing: .04em; }
+
+/* --------------------------------------------------------------------------
    排序下拉（components/SortSelect.astro，主页与私人角落共用）
    原生 <select> 的选项列表由浏览器绘制，改不了圆角也没有 hover 反馈，
    所以按钮与列表都自己画；<select> 只是留在 DOM 里存值。
