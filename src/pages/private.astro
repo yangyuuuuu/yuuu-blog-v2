@@ -8,6 +8,7 @@
  * 页面静态 HTML 里不含任何隐藏文章的标题或链接 —— 只在服务端响应里。
  */
 import BaseLayout from '../layouts/BaseLayout.astro';
+import SortSelect from '../components/SortSelect.astro';
 ---
 
 <BaseLayout title="私人角落" description="需要口令" noindex>
@@ -29,30 +30,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 
       <div class="pv-controls">
         <input id="pvSearch" type="search" placeholder="搜索标题 / 摘要 / 正文 / 标签…" autocomplete="off" aria-label="搜索私人文章" />
-        <!--
-          排序：自己画一个列表，不用原生 <select>。
-          原生下拉的选项框是浏览器画的，改不了圆角、也没法做 hover 反馈（反馈过太丑）。
-          <select> 仍然保留在 DOM 里做取值与键盘可达性，只是被 .pv-sortbtn 盖住。
-        -->
-        <div class="pv-sort">
-          <select id="pvSort" aria-label="排序方式" tabindex="-1" aria-hidden="true">
-            <option value="date-desc">最新发布</option>
-            <option value="date-asc">最早发布</option>
-            <option value="updated-desc">最近修改</option>
-          </select>
-          <button type="button" class="pv-sortbtn" id="pvSortBtn" aria-haspopup="listbox" aria-expanded="false">
-            <span id="pvSortLabel">最新发布</span>
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
-                 stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </button>
-          <ul class="pv-sortlist" id="pvSortList" role="listbox" hidden>
-            <li role="option" data-value="date-desc">最新发布</li>
-            <li role="option" data-value="date-asc">最早发布</li>
-            <li role="option" data-value="updated-desc">最近修改</li>
-          </ul>
-        </div>
+        <SortSelect id="pvSort" size="md" label="" />
       </div>
       <p class="pv-count" id="pvCount"></p>
 
@@ -92,53 +70,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
       -webkit-appearance: none; appearance: none;
     }
     #pvPwd, #pvSearch { flex: 1 1 220px; min-width: 0; }
-    /* 排序：自定义下拉。原生 <select> 的选项框是浏览器画的，改不了圆角也没 hover，
-       所以按钮和列表都自己画；<select> 只是留在 DOM 里存值。 */
-    .pv-sort { position: relative; flex: 0 0 auto; }
-    .pv-sort > select {
-      position: absolute; inset: 0; opacity: 0; pointer-events: none;
-    }
-    .pv-sortbtn {
-      display: flex; align-items: center; gap: 8px;
-      height: 44px; padding: 0 15px;
-      border-radius: 999px;
-      border: 1px solid var(--line, rgba(126,200,227,.25));
-      background: var(--bg-soft, rgba(255,255,255,.05));
-      color: var(--ink-2, #b3cde3);
-      font-size: 14.5px; cursor: pointer; white-space: nowrap;
-      transition: border-color .2s, background-color .2s, transform .18s, box-shadow .2s, color .2s;
-    }
-    .pv-sortbtn svg { color: var(--accent, #7ec8e3); transition: transform .25s; }
-    .pv-sortbtn:hover {
-      border-color: var(--accent, #7ec8e3);
-      background-color: var(--hover-strong, rgba(126,200,227,.16));
-      color: var(--ink, #e0f0ff);
-      transform: scale(1.045);
-      box-shadow: 0 8px 22px -12px rgb(var(--a, 126 200 227) / 0.85);
-    }
-    .pv-sortbtn[aria-expanded='true'] { border-color: var(--accent, #7ec8e3); color: var(--ink, #e0f0ff); }
-    .pv-sortbtn[aria-expanded='true'] svg { transform: rotate(180deg); }
 
-    .pv-sortlist {
-      position: absolute; right: 0; top: calc(100% + 8px);
-      z-index: 20; min-width: 150px; margin: 0; padding: 6px;
-      list-style: none;
-      border-radius: 14px;
-      border: 1px solid var(--line-strong, rgba(126,200,227,.35));
-      background: var(--panel-solid, #10233a);
-      box-shadow: var(--shadow, 0 22px 44px -26px rgb(0 0 0 / .5));
-    }
-    .pv-sortlist li {
-      padding: 9px 12px; border-radius: 10px;
-      font-size: 14px; color: var(--ink-2, #b3cde3); cursor: pointer;
-      transition: background-color .16s, color .16s, transform .16s;
-    }
-    .pv-sortlist li:hover {
-      background: var(--hover-strong, rgba(126,200,227,.18));
-      color: var(--ink, #e0f0ff);
-      transform: scale(1.03);
-    }
-    .pv-sortlist li[aria-selected='true'] { color: var(--accent, #7ec8e3); font-weight: 600; }
     #pvPwd:focus, #pvSearch:focus {
       border-color: var(--accent, #7ec8e3);
       box-shadow: 0 0 0 3px rgba(126,200,227,.2);
@@ -216,8 +148,6 @@ import BaseLayout from '../layouts/BaseLayout.astro';
       .pv-wrap { padding: 28px 14px 64px; }
       .pv-card { padding: 22px 17px; border-radius: 16px; }
       .pv-controls { flex-direction: column; }
-      .pv-sort, .pv-sortbtn { width: 100%; }
-      .pv-sortlist { left: 0; right: auto; width: 100%; }
       .pv-item { padding: 15px 16px; }
       .pv-link { font-size: 16px; }
       .pv-top { flex-direction: column; gap: 6px; }
@@ -237,11 +167,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     const emptyEl = document.getElementById('pvEmpty');
     const countEl = document.getElementById('pvCount');
     const searchEl = document.getElementById('pvSearch');
-    const sortEl = document.getElementById('pvSort');          // 隐藏的 <select>，只存值
-    const sortBtn = document.getElementById('pvSortBtn');
-    const sortList = document.getElementById('pvSortList');
-    const sortLabel = document.getElementById('pvSortLabel');
-    const again = document.getElementById('pvAgain');
+    const sortEl = document.getElementById('pvSort');          // 隐藏的 <select>，只存值    const again = document.getElementById('pvAgain');
 
     let all = [];        // 服务端返回的全部条目
     let ticket = null;
@@ -270,7 +196,6 @@ import BaseLayout from '../layouts/BaseLayout.astro';
       say('');
       if (searchEl) searchEl.value = '';
       if (sortEl) sortEl.value = 'date-desc';
-      if (typeof syncSortUI === 'function') syncSortUI();
       render();
     }
 
@@ -312,49 +237,8 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 
     if (searchEl) searchEl.addEventListener('input', render);
 
-    /* 自定义排序下拉：按钮开合、点选生效、外部点击/Esc 关闭 */
-    const SORT_LABELS = { 'date-desc': '最新发布', 'date-asc': '最早发布', 'updated-desc': '最近修改' };
+    /* 排序交互由 SortSelect 组件自己处理：选中后写回隐藏 <select> 并派发 change */
 
-    function syncSortUI() {
-      const v = sortEl ? sortEl.value : 'date-desc';
-      if (sortLabel) sortLabel.textContent = SORT_LABELS[v] || '排序';
-      if (sortList) {
-        sortList.querySelectorAll('li').forEach((li) => {
-          li.setAttribute('aria-selected', li.dataset.value === v ? 'true' : 'false');
-        });
-      }
-    }
-
-    function closeSort() {
-      if (!sortList) return;
-      sortList.hidden = true;
-      if (sortBtn) sortBtn.setAttribute('aria-expanded', 'false');
-    }
-
-    if (sortBtn && sortList && sortEl) {
-      sortBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const open = !sortList.hidden;
-        sortList.hidden = open;
-        sortBtn.setAttribute('aria-expanded', open ? 'false' : 'true');
-      });
-
-      sortList.addEventListener('click', (e) => {
-        const li = e.target && e.target.closest ? e.target.closest('li') : null;
-        if (!li || !li.dataset.value) return;
-        sortEl.value = li.dataset.value;
-        syncSortUI();
-        closeSort();
-        render();
-      });
-
-      /* 点别处 / Esc 都关掉 —— 原生下拉会自动关，自制的必须自己处理 */
-      document.addEventListener('click', (e) => {
-        if (!sortList.hidden && !sortList.contains(e.target) && e.target !== sortBtn) closeSort();
-      });
-      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSort(); });
-      syncSortUI();
-    }
 
     /** 排序：发布用 date；「最近修改」用 updated（没写就退回 date） */
     function sortPosts(list, mode) {

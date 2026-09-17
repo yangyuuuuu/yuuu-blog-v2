@@ -3,6 +3,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import PostCard from '../components/PostCard.astro';
 import TagCloud from '../components/TagCloud.astro';
 import { getPosts, collectTags, collectCategories, PAGE_SIZE } from '../lib/posts';
+import SortSelect from '../components/SortSelect.astro';
 
 const posts = await getPosts();
 const tags = collectTags(posts);
@@ -50,17 +51,7 @@ const hasMore = posts.length > PAGE_SIZE;
         </h2>
       </div>
       <div class="flex items-center gap-3">
-        <label class="flex items-center gap-1.5 text-[12.5px] text-muted">
-          <span class="tracking-[0.2em] uppercase">排序</span>
-          <select
-            id="sortSelect"
-            class="rounded-full border border-line bg-surface px-3 py-1.5 text-[13px] text-ink-2 outline-none transition-colors hover:border-line-strong focus:border-accent"
-          >
-            <option value="date-desc">最新发布</option>
-            <option value="date-asc">最早发布</option>
-            <option value="updated-desc">最近修改</option>
-          </select>
-        </label>
+        <SortSelect id="sortSelect" size="sm" label="排序" />
         <a href="/archive/" class="text-[13.5px] tracking-wide text-muted transition-colors hover:text-gold">全部归档 →</a>
       </div>
     </header>

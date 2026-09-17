@@ -1,0 +1,112 @@
+---
+/**
+ * 排序下拉 —— 主页与私人角落共用。
+ *
+ * 为什么不用原生 <select>：它的展开列表由浏览器绘制，改不了圆角、也没有 hover 反馈，
+ * 所以按钮和选项列表都自己画。真正的 <select> 仍留在 DOM 里存值（保持表单语义与可达性）。
+ *
+ * 用法：
+ *   <SortSelect id="homeSort" size="sm" class="..." />
+ *   <SortSelect id="pvSort" size="md" />
+ * 脚本侧照旧用 document.getElementById(id) 读 .value 并监听 change —— 组件会把
+ * 选项点击写回那个隐藏的 <select> 并派发 change 事件。
+ */
+interface Props {
+  /** 隐藏 <select> 的 id；按钮/列表的 id 由此派生（<id>Btn / <id>List / <id>Label） */
+  id: string;
+  /** 尺寸：sm 用在主页顶栏一角，md 用在私人角落 */
+  size?: 'sm' | 'md';
+  label?: string;
+  class?: string;
+}
+
+const { id, size = 'md', label = '排序', class: cls = '' } = Astro.props;
+const OPTIONS = [
+  { value: 'date-desc', text: '最新发布' },
+  { value: 'date-asc', text: '最早发布' },
+  { value: 'updated-desc', text: '最近修改' },
+];
+---
+
+<div class={'sortsel sortsel-' + size + ' ' + cls} id={id + 'Root'}>
+  {label && <span class="sortsel-label">{label}</span>}
+  <div class="sortsel-inner">
+    <select id={id} aria-label={label || '排序方式'} tabindex="-1" aria-hidden="true">
+      {OPTIONS.map((o) => <option value={o.value}>{o.text}</option>)}
+    </select>
+    <button type="button" class="sortsel-btn" id={id + 'Btn'} aria-haspopup="listbox" aria-expanded="false">
+      <span id={id + 'Label'}>{OPTIONS[0].text}</span>
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+           stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 9l6 6 6-6" />
+      </svg>
+    </button>
+    <ul class="sortsel-list" id={id + 'List'} role="listbox" hidden>
+      {OPTIONS.map((o) => <li role="option" data-value={o.value}>{o.text}</li>)}
+    </ul>
+  </div>
+</div>
+
+<script>
+  /*
+   * 组件脚本对每个实例跑一次。用 data-bound 标记避免重复绑定。
+   * 选中后：写回隐藏 <select> 的 value + 派发 change（页面自己的逻辑照旧工作）。
+   */
+  document.querySelectorAll('.sortsel').forEach((root) => {
+    if (root.dataset.bound === '1') return;
+    root.dataset.bound = '1';
+
+    const sel = root.querySelector('select');
+    const btn = root.querySelector('.sortsel-btn');
+    const list = root.querySelector('.sortsel-list');
+    const label = root.querySelector('.sortsel-btn > span');
+    if (!sel || !btn || !list) return;
+
+    const LABELS: Record<string, string> = {};
+    list.querySelectorAll('li').forEach((li) => {
+      if (li.dataset.value) LABELS[li.dataset.value] = li.textContent || '';
+    });
+
+    const sync = (): void => {
+      const v = (sel as HTMLSelectElement).value;
+      if (label) label.textContent = LABELS[v] || '排序';
+      list.querySelectorAll('li').forEach((li) => {
+        li.setAttribute('aria-selected', (li as HTMLElement).dataset.value === v ? 'true' : 'false');
+      });
+    };
+    const close = (): void => {
+      (list as HTMLElement).hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+    };
+
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = !(list as HTMLElement).hidden;
+      (list as HTMLElement).hidden = open;
+      btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+    });
+
+    list.addEventListener('click', (e) => {
+      const t = e.target as HTMLElement;
+      const li = t && t.closest ? (t.closest('li') as HTMLElement | null) : null;
+      if (!li || !li.dataset.value) return;
+      (sel as HTMLSelectElement).value = li.dataset.value;
+      sync();
+      close();
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    /* 原生下拉会自动关，自制的必须自己处理 */
+    document.addEventListener('click', (e) => {
+      const t = e.target as Node;
+      if (!(list as HTMLElement).hidden && !list.contains(t) && !btn.contains(t)) close();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') close();
+    });
+
+    /* 页面自己改了 select.value（例如重置）时，把按钮上的文字同步回来 */
+    sel.addEventListener('change', sync);
+    sync();
+  });
+</script>

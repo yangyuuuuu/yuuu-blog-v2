@@ -350,6 +350,69 @@ html.js:not(.fx-reveal) .reveal {
   box-shadow: 0 6px 12px -5px rgb(var(--a) / 0.6); background: var(--panel-solid);
 }
 
+
+/* --------------------------------------------------------------------------
+   排序下拉（components/SortSelect.astro，主页与私人角落共用）
+   原生 <select> 的选项列表由浏览器绘制，改不了圆角也没有 hover 反馈，
+   所以按钮与列表都自己画；<select> 只是留在 DOM 里存值。
+   -------------------------------------------------------------------------- */
+.sortsel { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.sortsel-label { font-size: 12px; letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
+.sortsel-inner { position: relative; }
+.sortsel-inner > select { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+
+.sortsel-btn {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  color: var(--ink-2);
+  cursor: pointer; white-space: nowrap;
+  transition: border-color .2s, background-color .2s, transform .18s, box-shadow .2s, color .2s;
+}
+.sortsel-sm .sortsel-btn { height: 34px; padding: 0 13px; font-size: 13px; }
+.sortsel-md .sortsel-btn { height: 44px; padding: 0 15px; font-size: 14.5px; }
+
+.sortsel-btn svg { color: var(--accent); transition: transform .25s; flex-shrink: 0; }
+.sortsel-btn:hover {
+  border-color: var(--accent);
+  background-color: var(--hover-strong);
+  color: var(--ink);
+  transform: scale(1.045);
+  box-shadow: 0 8px 22px -12px rgb(var(--a) / 0.85);
+}
+.sortsel-btn[aria-expanded='true'] { border-color: var(--accent); color: var(--ink); }
+.sortsel-btn[aria-expanded='true'] svg { transform: rotate(180deg); }
+
+.sortsel-list {
+  position: absolute; right: 0; top: calc(100% + 8px);
+  z-index: 90; min-width: 150px; margin: 0; padding: 6px;
+  list-style: none;
+  border-radius: 14px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+}
+.sortsel-sm .sortsel-list { min-width: 138px; }
+.sortsel-list li {
+  padding: 9px 12px; border-radius: 10px;
+  font-size: 14px; color: var(--ink-2); cursor: pointer;
+  transition: background-color .16s, color .16s, transform .16s;
+}
+.sortsel-list li:hover {
+  background: var(--hover-strong);
+  color: var(--ink);
+  transform: scale(1.03);
+}
+.sortsel-list li[aria-selected='true'] { color: var(--accent); font-weight: 600; }
+
+@media (max-width: 560px) {
+  .sortsel-sm, .sortsel-md { width: 100%; }
+  .sortsel-inner, .sortsel-btn { width: 100%; }
+  .sortsel-list { left: 0; right: auto; width: 100%; }
+}
+
 /* --------------------------------------------------------------------------
    卡片风格（设置面板里切换；通过 <html data-card="…"> 生效）
    glass 是默认样式，不改动任何现有规则 —— 下面只覆盖其他三种。
