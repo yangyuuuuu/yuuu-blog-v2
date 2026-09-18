@@ -1,0 +1,15 @@
+const get = async (p) => (await fetch('https://yuuu.love' + p + '?t=' + Date.now())).text();
+const idx = await get('/admin/');
+const pjs = await get('/admin/preview.js');
+const local = (await import('node:fs')).readFileSync('public/admin/index.html', 'utf8');
+const norm = (s) => s.replace(/\r\n/g, '\n').replace(/\s+/g, ' ').trim();
+console.log('admin/index.html:');
+console.log('  线上 == 本地现在 ?', norm(idx) === norm(local));
+console.log('  含「只做减法」（我最新版注释）->', idx.includes('只做减法'));
+console.log('  含坏的 SplitPane display:block ->', /\[class\*="SplitPane"\]\s*\{\s*display:\s*block/.test(idx));
+console.log('  含 .Pane 死高度 calc(100dvh ->', /Pane[^}]*height:\s*calc\(100dvh/.test(idx));
+console.log('  含 scroll-padding-bottom ->', idx.includes('scroll-padding-bottom'));
+console.log('  含 min-width: 0 !important ->', idx.includes('min-width: 0 !important'));
+console.log('preview.js:');
+console.log('  含 pv-cover-letter（封面占位）->', pjs.includes('pv-cover-letter'));
+console.log('  字节 ->', pjs.length, '(本地现在', (await import('node:fs')).readFileSync('public/admin/preview.js','utf8').length + ')');

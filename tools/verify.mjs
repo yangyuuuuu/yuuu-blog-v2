@@ -369,27 +369,24 @@ if (/pagefind/.test(read('package.json'))) ok('Pagefind 依赖已安装');
   else bad('后台预览：index.html 没有加载 /admin/preview.js');
   if (idx.indexOf('decap-cms.js') < idx.indexOf('preview.js')) ok('后台预览：preview.js 排在 decap-cms.js 之后（CMS 全局已就绪）');
   else bad('后台预览：preview.js 在 decap-cms.js 之前，registerPreview* 会找不到 CMS');
-  /* 移动端修复必须还在 —— 删掉这几条手机上就会重新炸 */
-  if (/min-width:\s*0\s*!important/.test(idx)) ok('后台移动端：800px 最小宽度已被覆盖');
-  else bad('后台移动端：没有覆盖 min-width:800px，手机后台会横向溢出');
-  if (/background:\s*#f7fbfe\s*!important/.test(idx) && /html\s*\{/.test(idx)) ok('后台移动端：html 也刷了底色（底部白条）');
-  else bad('后台移动端：html 底色没刷，底部可能露白');
-  if (/scroll-padding-bottom/.test(idx)) ok('后台移动端：滚动容器加了 scroll-padding-bottom（输入框滚进可视区）');
-  else bad('后台移动端：缺 scroll-padding-bottom，点输入框会整页上移');
-  if (/viewport-fit=cover/.test(idx)) ok('后台移动端：viewport 带 viewport-fit=cover');
-  else bad('后台移动端：viewport 缺 viewport-fit=cover');
-
   /*
-   * 拦「替 Decap 算布局」。踩过一次：加了
-   *   [class*="SplitPane"] { display: block }  +  .Pane { height: calc(100dvh - 66px) }
-   * 结果 Decap 的 SplitPane（flexDirection:column + 绝对定位 + 百分比高度）直接塌掉，
-   * 手机上进文章只剩一片白板，PC 却正常。见 HANDOFF 9.95。
-   * 后台只允许改「约束 / 皮肤 / 滚动定位」，布局与高度不许碰。
+   * ★ 后台的 <style> 里【只允许改颜色】，不许出现任何布局属性。
+   *
+   * 这是三次返工换来的规矩，别再试探：
+   *   第 1 版：拆 min-width:800px → 手机后台乱掉
+   *   第 2 版：再加 SplitPane{display:block} + .Pane{height:calc(100dvh-66px)}
+   *           → 手机上进文章只剩白板（Decap 的 SplitPane 是 flexDirection:column +
+   *             绝对定位 + 百分比高度，被钉死就塌）
+   *   第 3 版（现在）：全部撤掉，回到 Decap 默认行为
+   * Decap 的界面是按桌面宽度设计的，零散 CSS 覆盖只会越改越坏。
+   * 手机后台要真正好用得换实现方式（见 HANDOFF 9.95 / CHANGELOG）。
    */
-  const mobileBlock = (idx.match(/@media \(max-width: 759px\)\s*\{([\s\S]*?)\n      \}/) || [])[1] || '';
-  if (!mobileBlock) {
-    bad('后台移动端：找不到 @media (max-width:759px) 那段（结构变了就更新这条检查）');
+  const styleBlock = (idx.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || '';
+  if (!styleBlock) {
+    bad('后台：找不到 <style> 块');
   } else {
+    /* 注释里写这些词是允许的（教训就写在注释里），先剥掉注释再查 */
+    const noComments = styleBlock.replace(/\/\*[\s\S]*?\*\//g, '');
     const banned = [
       ['display', /[^-]display\s*:/],
       ['flex-direction', /flex-direction\s*:/],
@@ -397,11 +394,19 @@ if (/pagefind/.test(read('package.json'))) ok('Pagefind 依赖已安装');
       ['max-height', /max-height\s*:/],
       ['position', /(?<![a-z-])position\s*:/],
       ['overflow', /overflow(-[xy])?\s*:/],
+      /*
+       * 不查 width —— 原有的「登录页 logo 最大宽度」是无关的皮肤设置。
+       * 真正搞坏布局的是上面那几个（display / 高度 / position / overflow）。
+       */
     ];
-    const hit = banned.filter(([, re]) => re.test(mobileBlock)).map(([n]) => n);
-    if (hit.length) bad('后台移动端：那段里出现了会破坏 Decap 布局的属性（' + hit.join('、') + '）—— 见 HANDOFF 9.95');
-    else ok('后台移动端：没有覆盖 Decap 的布局属性（只改约束/皮肤/滚动定位）');
+    const hit = banned.filter(([, re]) => re.test(noComments)).map(([n]) => n);
+    if (hit.length) bad('后台样式里出现了布局属性（' + hit.join('、') + '）—— 见 HANDOFF 9.95');
+    else ok('后台样式只改颜色，没有任何布局覆盖（Decap 的布局原封不动）');
   }
+  if (/background:\s*#f7fbfe\s*!important/.test(idx) && /html\s*\{/.test(idx)) ok('后台：html 也刷了底色（防底部露白）');
+  else bad('后台：html 底色没刷，底部可能露白');
+  if (/content="width=device-width, initial-scale=1"/.test(idx)) ok('后台：viewport 用最朴素的写法（不额外加参数）');
+  else bad('后台：viewport 被改成带额外参数了 —— 真机反而更容易出问题');
 }
 
 /* ---------------------------------------------------------------- 结果 */

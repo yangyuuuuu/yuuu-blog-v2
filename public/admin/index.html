@@ -2,7 +2,7 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
     <title>内容管理 · yuuu</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
@@ -121,21 +121,24 @@
       }
 
       /*
-       * ===== 只做减法：拆掉 Decap 硬编码的桌面最小宽度 =====
+       * ===== 手机后台：目前【不做任何布局覆盖】=====
        *
-       * 背景（390×844 无头 Edge 实测）：AppMainContainer / ToolbarContainer /
-       * EditorContainer 上都写着 min-width:800px。手机屏幕没这么宽，于是整页横向溢出
-       * （innerWidth 被撑到 800）、右侧一片空白、底部露出没被画到的白条。
-       * 这里只把那个最小宽度拆掉，让它按屏幕宽排版。
+       * 这是一段带血的教训，请先读完再动手：
        *
-       * ⚠️⚠️ 别再往这里面加「看起来更合理」的布局覆盖了 —— 踩过的坑：
-       *   Decap 的编辑器是 SplitPane，flexDirection:column + 绝对定位 + 百分比高度，
-       *   高度靠 100% 一层层算下来。我上一版加了
-       *     [class*="SplitPane"] { display: block }
-       *     .Pane { height: calc(100dvh - 66px) }
-       *   —— 栏位高度直接被钉死、分栏塌掉，手机上进文章只有一片白板（PC 端正常）。
-       *   同一版还改了 overflow，滚动链被截断，键盘行为反而更糟。
-       *   教训：**布局和高度一概不碰**，只动最小宽度这种「约束」性质的属性。
+       * 1. 我量到 Decap 在这些容器上硬编码了 min-width:800px（手机只有 390），
+       *    于是横向溢出、右侧空白、底部露白条。看起来「只要拆掉最小宽度就好」——
+       *    也确实拆掉了，但接下来手机后台**彻底乱掉 / 进文章只剩白板**（PC 正常）。
+       * 2. 中途我还试过「更合理」的一版：
+       *      [class*="SplitPane"] { display: block }
+       *      .Pane { height: calc(100dvh - 66px) }
+       *    —— 直接白板。因为 Decap 的编辑器是 SplitPane：
+       *    flexDirection:column + 绝对定位 + 百分比高度，高度靠 100% 一层层算下来。
+       * 3. 结论：**这套 UI 是按桌面宽度设计的，靠零散 CSS 覆盖改不好**，
+       *    越改越坏（每一版都比上一版更乱）。所以现在只保留「只改颜色、不碰布局」
+       *    的那两条，其余全部撤掉 —— 回到 Decap 自己的默认行为。
+       *
+       * 手机后台要真正好用，得换路子（见 HANDOFF / CHANGELOG 里的方案讨论），
+       * 不要再往这个文件里加布局覆盖。
        */
       html {
         /* 底色画在 body 上、html 透明，露出的是浏览器画布自己的颜色（通常是白的）——
@@ -146,31 +149,6 @@
       }
       @media (prefers-color-scheme: dark) {
         html { background: #0d1b2a !important; }
-      }
-
-      @media (max-width: 759px) {
-        [class*="AppMain"],
-        [class*="ToolbarContainer"],
-        [class*="EditorContainer"] {
-          min-width: 0 !important;
-          max-width: 100% !important;
-        }
-
-        /* 只影响「聚焦时滚到哪里」，不参与布局：让输入框被滚进可视区，
-           而不是整页被推走（键盘弹起时指针跑到屏幕外就是这个问题）。 */
-        [class*="EditorContainer"] [class*="Pane"],
-        [class*="EditorContainer"] [class*="PreviewPaneContainer"],
-        textarea,
-        [contenteditable="true"] {
-          scroll-padding-bottom: 40dvh !important;
-        }
-        input:focus, textarea:focus { scroll-margin-bottom: 40dvh !important; }
-
-        /* 刘海屏 / 手势条：给顶部工具栏留安全区 */
-        [class*="ToolbarContainer"] {
-          padding-left: env(safe-area-inset-left);
-          padding-right: env(safe-area-inset-right);
-        }
       }
     </style>
   </head>
