@@ -679,7 +679,14 @@ export default {
     }
 
     if (url.pathname === '/') {
-      return new Response(JSON.stringify({ ok: true, service: 'yuuu-blog-v2 oauth + private' }), {
+      /* routes 列在这里，用来一眼确认线上跑的到底是哪一版（排查"部署了但没生效"用） */
+      return new Response(JSON.stringify({
+        ok: true,
+        service: 'yuuu-blog-v2 oauth + private',
+        routes: ['/', '/auth', '/callback', '/hidden', '/hidden/leave', '/hidden/logs',
+                 '/admin/posts', '/admin/file', '/admin/save', '/admin/delete'],
+        build: 'r2',
+      }), {
         headers: { ...headers, 'Content-Type': 'application/json' },
       });
     }
