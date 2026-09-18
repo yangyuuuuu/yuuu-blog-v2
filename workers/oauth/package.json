@@ -2,10 +2,14 @@
   "name": "yuuu-oauth",
   "private": true,
   "version": "1.0.0",
-  "description": "Sveltia CMS 的 GitHub OAuth 代理（Cloudflare Worker）",
+  "description": "yuuu-blog-v2 的 GitHub OAuth 代理 + 私人角落 + 手机写作页接口（Cloudflare Worker）",
   "scripts": {
-    "deploy": "wrangler deploy",
-    "dev": "wrangler dev",
-    "whoami": "wrangler whoami"
+    "deploy": "npx --yes wrangler deploy",
+    "dev": "npx --yes wrangler dev",
+    "whoami": "npx --yes wrangler whoami",
+    "secrets": "npx --yes wrangler secret list",
+    "put-token": "npx --yes wrangler secret put GITHUB_TOKEN",
+    "dry-run": "npx --yes wrangler deploy --dry-run",
+    "logs": "npx --yes wrangler tail"
   }
 }
