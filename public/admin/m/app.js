@@ -77,7 +77,20 @@ export function createApi(base, getTicket) {
       body: JSON.stringify({ ...(payload || {}), ticket: getTicket() }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.message || ('请求失败（HTTP ' + res.status + '）'));
+    if (!res.ok) {
+      /*
+       * 403 是最容易让人摸不着头脑的一种：能读到文章（说明 token 是好的），
+       * 但保存时报 "Resource not accessible by personal access token"。
+       * 原因是 GitHub 对「读」和「写」分开校验 —— 把话说明白，别让用户干瞪眼。
+       */
+      if (res.status === 403 || /not accessible by personal access token/i.test(data.message || '')) {
+        throw new Error(
+          '服务端的 GitHub token 没有写权限。到 GitHub 重新建一个 classic token（勾 repo），' +
+          '然后 cd workers/oauth 执行：npm run put-token && npm run deploy',
+        );
+      }
+      throw new Error(data.message || ('请求失败（HTTP ' + res.status + '）'));
+    }
     return data;
   }
   return {

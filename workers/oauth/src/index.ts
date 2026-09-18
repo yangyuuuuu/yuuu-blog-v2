@@ -477,6 +477,45 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
     );
   }
 
+  /*
+   * 自检：把 GitHub 实际认定的权限摊开给用户看。
+   * 保存报 403「Resource not accessible by personal access token」时，
+   * 十有八九是 token 没写权限（classic 没勾 repo / fine-grained 没给 Contents: Read and write /
+   * 或者 Repositories 没选中这个仓库）。这里直接把 GitHub 的答复原样返回，省得来回猜。
+   *
+   * ⚠️ 这个接口**故意不要 ticket**：它不返回任何秘密（token 不会被打印出来），
+   * 只是「服务端配置对不对」的健康检查 —— 部署完想确认能不能写，直接打它就行，
+   * 不必先登录。它确实暴露了「仓库名 / token 归属账号 / 有没有写权限」，但这些都是
+   * 仓库本身公开可见的信息，不构成泄漏。
+   */
+  if (pathname === '/admin/whoami') {
+    const out: Record<string, unknown> = { repo: repoOf(env), branch: branchOf(env) };
+    try {
+      const u = await fetch(GH_API + '/user', { headers: ghHeaders(env) });
+      const uj = (await u.json()) as { login?: string; message?: string };
+      out.status = u.status;
+      /* token 的权限范围只在 classic token 的响应头里；fine-grained 用别的方式表达 */
+      out.tokenScopes = u.headers.get('x-oauth-scopes');
+      out.acceptedScopes = u.headers.get('x-accepted-oauth-scopes');
+      out.user = uj.login || uj.message || '(未知)';
+    } catch (e) {
+      out.userError = (e as Error).message;
+    }
+    try {
+      const r = await fetch(`${GH_API}/repos/${repoOf(env)}`, { headers: ghHeaders(env) });
+      const rj = (await r.json()) as { permissions?: Record<string, boolean>; message?: string; full_name?: string };
+      out.repoStatus = r.status;
+      out.repoFullName = rj.full_name || rj.message || '';
+      out.permissions = rj.permissions || null;
+      /* 能不能写，就看 push 这一项 —— 保存走的正是 contents 接口 */
+      out.canWrite = !!(rj.permissions && rj.permissions.push);
+    } catch (e) {
+      out.repoError = (e as Error).message;
+    }
+    return json(out, 200, request, env);
+  }
+
+  /* ↓↓↓ 以下接口都需要口令换来的 ticket ↓↓↓ */
   let body: {
     ticket?: string; path?: string; title?: string; body?: string; category?: string;
     tags?: string[]; summary?: string; date?: string; draft?: boolean; private?: boolean;
@@ -629,6 +668,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { headers });
 
     /* ---- 手机写作页（口令换 ticket，写仓库由 Worker 代劳）---- */
+    if (url.pathname === '/admin/whoami' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
     if (url.pathname === '/admin/posts' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
     if (url.pathname === '/admin/file' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
     if (url.pathname === '/admin/save' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
