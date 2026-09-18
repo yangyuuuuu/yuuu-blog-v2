@@ -38,10 +38,32 @@ function readHiddenKeys(file) {
   return { private: pick('private') === 'true', category };
 }
 
+/**
+ * 文件名 → Astro 生成的 slug。
+ *
+ * ⚠️ 必须和 Astro 的规则一致，否则隐藏文章会**泄漏进 sitemap**（被搜索引擎收录）。
+ * 踩过：2026-09-18-SEP.-26.md 的页面在 /posts/2026-09-18-sep-26/，
+ * 而这里直接拿文件名当 slug（大写、带点），集合里是 2026-09-18-SEP.-26，
+ * 跟 sitemap 里的 sep-26 对不上 → 过滤失效 → 泄漏。审计第 8 节逮到的。
+ *
+ * 完整说明见 src/lib/slug.ts。**同一份规则在三个地方**（这里是构建配置，
+ * 另外两处是 tools/make-private-manifest.mjs 与 tools/audit-dist.mjs，
+ * 它们 import 共享模块）。tools/verify.mjs 有一条检查盯着三者是否一致，
+ * 改规则时三处一起改（构建配置不能 import 那个模块，原因见文件头）。
+ */
+function slugify(name) {
+  return String(name)
+    .replace(/\.md$/, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
 const hiddenSlugs = new Set(
   readdirSync(POSTS_DIR)
     .filter((f) => f.endsWith('.md') && isHiddenData(readHiddenKeys(f)))
-    .map((f) => f.replace(/\.md$/, '')),
+    .map(slugify),
 );
 
 export default defineConfig({

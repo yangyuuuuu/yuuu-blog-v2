@@ -356,6 +356,45 @@ if (/@astrojs\/rss/.test(read('package.json'))) ok('RSS 依赖已安装');
 if (/@astrojs\/sitemap/.test(read('package.json'))) ok('Sitemap 依赖已安装');
 if (/pagefind/.test(read('package.json'))) ok('Pagefind 依赖已安装');
 
+/* ------------------------------------------------- slug 规则三处必须一致 */
+{
+  /*
+   * 「文件名 → 页面路径」的规则在三个地方各有一份：
+   *   · src/lib/slug.ts                （共享模块，另外两处 import 它）
+   *   · astro.config.mjs               （构建配置不能 import 它，只能抄）
+   *   · tools/audit-dist.mjs / make-private-manifest.mjs（import 共享模块）
+   * 抄的那份最容易漂移，而漂移的后果很隐蔽：页面是好的，清单链接或 sitemap 过滤失效。
+   * 这里直接比对三份实现的行为，别靠人眼。
+   */
+  const slugMod = await import('../src/lib/slug.ts');
+  const cfg = read('astro.config.mjs');
+  const m = /function slugify\(name\) \{[\s\S]*?\n\}/.exec(cfg);
+  if (!m) {
+    bad('astro.config.mjs 里找不到 slugify —— 结构与检查不符，改完记得更新这条');
+  } else {
+    /* 用几个刁钻的样本跑两份实现，行为一致才算过 */
+    const samples = [
+      '2026-09-18-SEP.-26.md',
+      '2026-09-16-yuuu的第一篇文章.md',
+      '2024-06-02-frontend-env.md',
+      'A  B.md',
+      '-lead-trail-.md',
+    ];
+    const cfgSlugify = new Function(m[0] + '; return slugify;')();
+    const diff = samples.filter((s) => cfgSlugify(s) !== slugMod.slugify(s));
+    if (diff.length) {
+      bad('astro.config.mjs 的 slugify 与 src/lib/slug.ts 不一致：' + diff.map((s) => s + ' → ' + cfgSlugify(s) + ' vs ' + slugMod.slugify(s)).join('；'));
+    } else {
+      ok('slug 规则一致（astro.config.mjs 与 src/lib/slug.ts，' + samples.length + ' 个样本）');
+    }
+  }
+  if (/slugify/.test(read('tools/audit-dist.mjs')) && /slugify/.test(read('tools/make-private-manifest.mjs'))) {
+    ok('其它脚本都用共享的 slugify（没有再各写一份）');
+  } else {
+    bad('有脚本还在自己算 slug —— 应该 import src/lib/slug.ts');
+  }
+}
+
 /* ------------------------------------------------- 手机写作页（/admin/m/） */
 {
   const mHtml = read('public/admin/m/index.html');

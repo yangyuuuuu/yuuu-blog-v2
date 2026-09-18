@@ -16,6 +16,7 @@ import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isHiddenData } from '../src/lib/hidden.ts';
+import { slugify } from '../src/lib/slug.ts';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const POSTS = join(ROOT, 'src/content/posts');
@@ -102,7 +103,15 @@ function readKeys(file) {
     return [];
   })();
   return {
-    slug: file.replace(/\.md$/, ''),
+    /*
+     * ⚠️ slug 必须和 **Astro 实际生成的路径** 一致，不能直接拿文件名。
+     * Astro 会小写、把非字母数字换成 -、并合并连续 - ：
+     *   文件 2026-09-18-SEP.-26.md  →  页面 /posts/2026-09-18-sep-26/
+     * 之前这里直接用文件名，于是清单里的链接是 /posts/2026-09-18-SEP.-26/（404）。
+     * 私人角落和手机写作页点开都会打不开 —— 这种错很隐蔽，因为页面本身是好的。
+     * 改这里时请一起看 tools/check-mobile-app.mjs 里那条「清单 URL 与产物目录对得上」。
+     */
+    slug: slugify(file.replace(/\.md$/, '')),
     private: one('private') === 'true',
     draft: one('draft') === 'true',
     category: one('category'),

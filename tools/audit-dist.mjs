@@ -12,6 +12,7 @@ import { join, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { isHiddenData } from '../src/lib/hidden.ts';
+import { slugify } from '../src/lib/slug.ts';
 /* 私人角落的排序规则：拿真实清单跑，确认三种排序真的给出三种结果 */
 import { orderOf, sortPosts } from '../src/lib/sort-posts.ts';
 
@@ -355,7 +356,8 @@ head('8. 隐藏文章（category: 日记 或 private: true）');
   for (const f of readdirSync(srcDir).filter((n) => n.endsWith('.md'))) {
     const raw = readFileSync(join(srcDir, f), 'utf8');
     if (/^draft:\s*true\s*$/m.test(raw)) continue;
-    const slug = f.replace(/\.md$/, '');
+    /* 用共享的 slug 规则 —— 直接拿文件名会在带点/大写的文件名上出错 */
+    const slug = slugify(f);
     (isHiddenData(readHiddenKeys(raw)) ? hidden : visible).push(slug);
   }
 
@@ -432,6 +434,32 @@ head('8.5 私人角落排序：三种模式必须真的给出三种顺序');
         else if (new Set(got.map((x) => x.url)).size !== posts.length) bad(m + ' 排序后有重复条目');
       }
       ok('三种排序都只是重排，不丢条目、不重复');
+    }
+  }
+}
+
+/* ------------------------------------------- 8.6 清单里的 URL 必须能打开 */
+head('8.6 清单 URL 与产物对照（点开不能 404）');
+{
+  /*
+   * 为什么专测这个：清单里的 url 是**构建脚本自己拼**的，而页面路径是 **Astro 生成**的，
+   * 两套规则一旦不一致（比如文件名里有个点：SEP.-26.md → Astro 出 sep-26，
+   * 脚本拼成 SEP.-26），页面本身是对的、但清单里的链接全是 404 ——
+   * 私人角落和手机写作页点开就打不开，而且很难想到是这个原因。
+   */
+  for (const [name, file] of [['隐藏文章清单', 'private/posts.json'], ['手机写作页清单', 'private/posts-all.json']]) {
+    const abs = join(DIST, file);
+    if (!existsSync(abs)) { bad('缺少 ' + file); continue; }
+    const data = JSON.parse(readFileSync(abs, 'utf8'));
+    const posts = data.posts || [];
+    const broken = posts.filter((p) => {
+      const slug = p.url ? String(p.url).replace(/^\/posts\//, '').replace(/\/$/, '') : p.slug;
+      return !existsSync(join(DIST, 'posts', slug, 'index.html'));
+    });
+    if (broken.length) {
+      broken.slice(0, 5).forEach((p) => bad(name + '里的链接打不开：' + (p.url || p.slug) + '（' + p.title + '）'));
+    } else {
+      ok(name + '：' + posts.length + ' 条的 URL 都能对上产物目录');
     }
   }
 }
