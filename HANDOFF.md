@@ -193,6 +193,33 @@ npm 的扁平化会掩盖，**pnpm 的隔离模式会正确报错**。发现一�
 而旧版 publish 在第 2 步失败时只打一句「自检没过」，**真正的错误行被上一步的输出淹了**，
 用户以为是自己构建失败。现在第 2 步也原样打印 verify 的输出。
 
+### 9.45 ★ Cloudflare Pages 的构建会**卡住不动**，以及怎么救
+
+2026-09-18 遇到：GitHub 上 `main` 已经到 `140c403`，但线上一直停在
+`7226479` 那次构建，中间五个提交**一次构建都没触发**。用户那边看就是
+"CF 一直卡在某个提交"。
+
+排查顺序（都是本地能做的，不用登后台）：
+
+1. `git ls-remote origin refs/heads/main` —— 先确认**远端真的是最新**（排除没推上去）
+2. `npx wrangler pages project list` —— 看项目名（本站是 `yuuu-blog`）、Git 集成状态、
+   "Last Modified"（有时间说明刚有动静）
+3. `npx wrangler pages deployment list --project-name yuuu-blog` —— **关键**：
+   看每个部署对应的提交、环境、时间。这里能看出「最新提交有没有部署」
+4. 拿线上的标记文件跟各提交对比：
+   `curl.exe -s -o NUL -w "%{size_download}" https://yuuu.love/admin/m/app.js`
+   + `git cat-file -s <rev>:public/admin/m/app.js`
+   （**要用字节数，别用 JS 的 `length`** —— 中文一个字符占 3 字节，我因此误判过一轮）
+
+救法：`npx wrangler pages deploy dist --project-name yuuu-blog --branch main --commit-hash=<唯一值>`
+
+⚠️ **最容易踩的坑**：`--commit-hash` 如果跟已有的部署相同，CF 会认为"同一个提交"
+而**复用那个旧部署**，wrangler 会报 `Uploaded 0 files (117 already uploaded)`、
+部署 ID 一直不变 —— 表现就是"部署成功但线上没变"。
+用当前时间戳当 hash（比如 `20260918233000`）就能强制新建部署。
+另外别忘了 **`dist` 必须是刚构建的** —— 我第一次就是拿旧 dist 传上去的，
+线上自然没变（源码 `public/admin/m/app.js` 4974 字节，而 `dist` 里还是 4299）。
+
 ### 9.5 手机后台这件事的最终结论：**别改别人的桌面 UI，另做一个**
 
 Decap 后台在手机上只能"缩放显示"（800px 布局塞进 390px 屏幕，字小到看不清、
