@@ -245,14 +245,27 @@ import SortSelect from '../components/SortSelect.astro';
     if (sortEl) sortEl.addEventListener('change', render);
 
 
-    /** 排序：发布用 date；「最近修改」用 updated（没写就退回 date） */
+    /*
+     * 排序。
+     *  - 发布：用 date
+     *  - 最近修改：用 updated（没写就退回 date）。updated 只到「天」，
+     *    所以同一天被改过的几篇还要用 touches（改过它的提交数）再分先后 ——
+     *    否则一天里改了几篇，这里排出来会和「最新发布」完全一样，
+     *    切换排序看起来就像没反应（这个坑踩过一次）。
+     *
+     * 与 src/lib/sort-posts.ts 是同一套规则（那份给 node 侧的检查用）。
+     * 这里是 is:inline 脚本，不能 import —— 改规则时两边一起改；
+     * npm run audit 会拿真实清单跑共享模块，两边不一致会当场红。
+     */
     function sortPosts(list, mode) {
       const d = (p) => p.date || '';
       const u = (p) => p.updated || p.date || '';
+      const t = (p) => p.touches || 0;
       const arr = list.slice();
       if (mode === 'date-asc') arr.sort((a, b) => d(a).localeCompare(d(b)));
-      else if (mode === 'updated-desc') arr.sort((a, b) => u(b).localeCompare(u(a)) || d(b).localeCompare(d(a)));
-      else arr.sort((a, b) => d(b).localeCompare(d(a)));
+      else if (mode === 'updated-desc') {
+        arr.sort((a, b) => u(b).localeCompare(u(a)) || t(b) - t(a) || d(b).localeCompare(d(a)));
+      } else arr.sort((a, b) => d(b).localeCompare(d(a)));
       return arr;
     }
 

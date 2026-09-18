@@ -48,12 +48,39 @@ function plainText(md) {
  */
 function gitDate(file) {
   try {
-    const out = execFileSync('git', ['log', '-1', '--format=%cs', '--', file], {
+    /*
+     * 取【精确到秒】的提交时刻，而不是只到「天」的 %cs。
+     *
+     * 为什么：%cs 只到天，同一天改过好几篇时它们的日期全一样，
+     * 「最近修改」排出来就和「最新发布」一模一样 —— 用户报的「三种切换没区别」正是这个。
+     * 带上时间后，同一天的不同提交时刻也能分开。
+     * 带 %ct（时间戳）是为了拿到明确时刻，不受运行环境时区影响。
+     */
+    const out = execFileSync('git', ['log', '-1', '--format=%cI', '--', file], {
       cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
     return out || '';
   } catch {
     return '';
+  }
+}
+
+/**
+ * 改过这个文件的提交数 —— 只用来给「同一天被改过」的文章分先后。
+ *
+ * 为什么需要：git 日期只到「天」。一天里改过好几篇时，它们的 updated 会全一样，
+ * 于是「最近修改」排出来和「最新发布」一模一样（用户报的就是这个：三种切换看不出区别）。
+ * 提交数一定是个具体的整数、且各篇基本不同，拿来当同天时的排序依据最省事，
+ * 也不用去猜 git 的提交时刻（Cloudflare 的浅克隆未必给得准）。
+ */
+function gitTouches(file) {
+  try {
+    const out = execFileSync('git', ['log', '--format=%h', '--', file], {
+      cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    return out ? out.split('\n').length : 0;
+  } catch {
+    return 0;
   }
 }
 
@@ -94,9 +121,12 @@ const all = readdirSync(POSTS).filter((f) => f.endsWith('.md')).map(readKeys);
 
 /* 没有 updated 的，用 git 提交日期兜底（注意要比 date 新，否则没有意义） */
 for (const p of all) {
+  const file = 'src/content/posts/' + p.slug + '.md';
+  p.touches = gitTouches(file);
   if (!p.updated) {
-    const g = gitDate('src/content/posts/' + p.slug + '.md');
-    if (g && g > p.date) p.updated = g;
+    const g = gitDate(file);
+    /* 比对只取日期部分：g 是带时区的 ISO（2026-09-16T13:48:29+08:00） */
+    if (g && g.slice(0, 10) > p.date) p.updated = g;
   }
 }
 /* 草稿不算「隐藏文章」—— 草稿连构建都不输出，列出来点了会 404 */
@@ -115,7 +145,10 @@ writeFileSync(
         title: p.title,
         url: '/posts/' + p.slug + '/',
         date: p.date,
+        /* 可能是 ISO 时刻（来自 git）或纯日期（来自 frontmatter）；页面显示与排序都吃得下 */
         updated: p.updated || p.date,
+        /* 同一天被改过时用来分先后的次要依据（见 gitTouches 注释） */
+        touches: p.touches || 0,
         category: p.category,
         summary: p.summary,
         tags: p.tags,

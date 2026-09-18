@@ -12,6 +12,8 @@ import { join, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { isHiddenData } from '../src/lib/hidden.ts';
+/* 私人角落的排序规则：拿真实清单跑，确认三种排序真的给出三种结果 */
+import { orderOf, sortPosts } from '../src/lib/sort-posts.ts';
 
 /*
  * 只用正则取判定需要的两个键 —— 不 import 'yaml'。
@@ -389,6 +391,49 @@ head('8. 隐藏文章（category: 日记 或 private: true）');
     }
   }
   ok('公开文章 ' + visible.length + ' 篇，搜索索引只应包含它们');
+}
+
+/* ------------------------------------------------- 8.5 私人角落的三种排序 */
+head('8.5 私人角落排序：三种模式必须真的给出三种顺序');
+{
+  const manifestPath = join(DIST, 'private', 'posts.json');
+  if (!existsSync(manifestPath)) {
+    bad('没有 dist/private/posts.json（npm run build 最后一步会生成它）');
+  } else {
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    const posts = manifest.posts || [];
+    if (posts.length < 3) {
+      console.log('  只 ' + posts.length + ' 篇隐藏文章，跳过（三种排序至少要 3 篇才谈得上区分）');
+    } else {
+      const modes = ['date-desc', 'date-asc', 'updated-desc'];
+      const orders = {};
+      for (const m of modes) orders[m] = orderOf(posts, m);
+      const uniq = new Set(modes.map((m) => orders[m]));
+      /*
+       * 这条是给「切换排序看起来没反应」兜底的。
+       * 最容易撞车的是「最近修改」和「最新发布」：updated 只到「天」，
+       * 一天里改过好几篇就全一样了 —— 所以清单里还有 touches 做同天时的次要依据。
+       */
+      if (uniq.size === modes.length) {
+        ok('三种排序两两不同（' + posts.length + ' 篇隐藏文章）');
+        for (const m of modes) console.log('      ' + m.padEnd(13) + ' ' + orders[m]);
+      } else {
+        for (const m of modes) console.log('      ' + m.padEnd(13) + ' ' + orders[m]);
+        bad('有排序模式给出了相同顺序（切换会像没反应）—— 看上面对比');
+      }
+      /* 清单里每条都要有 touches，页面同天排序靠它 */
+      const noTouch = posts.filter((x) => typeof x.touches !== 'number');
+      if (noTouch.length) bad('清单里缺 touches 字段：' + noTouch.map((x) => x.title).join('、'));
+      else ok('清单每条都带 touches（同日排序的次要依据）');
+      /* 排序结果必须只是重排，不能丢条目或重复 */
+      for (const m of modes) {
+        const got = sortPosts(posts, m);
+        if (got.length !== posts.length) bad(m + ' 排序后条数变了：' + got.length + ' ≠ ' + posts.length);
+        else if (new Set(got.map((x) => x.url)).size !== posts.length) bad(m + ' 排序后有重复条目');
+      }
+      ok('三种排序都只是重排，不丢条目、不重复');
+    }
+  }
 }
 
 /* ---------------------------------------------------------------- 9. 站点 URL */
