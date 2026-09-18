@@ -167,7 +167,8 @@ import SortSelect from '../components/SortSelect.astro';
     const emptyEl = document.getElementById('pvEmpty');
     const countEl = document.getElementById('pvCount');
     const searchEl = document.getElementById('pvSearch');
-    const sortEl = document.getElementById('pvSort');          // 隐藏的 <select>，只存值    const again = document.getElementById('pvAgain');
+    const sortEl = document.getElementById('pvSort');          // 隐藏的 <select>，只存值
+    const again = document.getElementById('pvAgain');
 
     let all = [];        // 服务端返回的全部条目
     let ticket = null;
@@ -237,7 +238,11 @@ import SortSelect from '../components/SortSelect.astro';
 
     if (searchEl) searchEl.addEventListener('input', render);
 
-    /* 排序交互由 SortSelect 组件自己处理：选中后写回隐藏 <select> 并派发 change */
+    /*
+     * 排序：SortSelect 组件负责画下拉、把选中值写回隐藏 <select> 并派发 change，
+     * 真正重排列表得在这里接住那个 change。
+     */
+    if (sortEl) sortEl.addEventListener('change', render);
 
 
     /** 排序：发布用 date；「最近修改」用 updated（没写就退回 date） */

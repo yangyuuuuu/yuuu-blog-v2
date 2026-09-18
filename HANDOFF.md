@@ -193,6 +193,38 @@ npm 的扁平化会掩盖，**pnpm 的隔离模式会正确报错**。发现一�
 而旧版 publish 在第 2 步失败时只打一句「自检没过」，**真正的错误行被上一步的输出淹了**，
 用户以为是自己构建失败。现在第 2 步也原样打印 verify 的输出。
 
+### 9.6 一个功能拆在「组件」和「页面」两半，中间那根线要单独验
+
+排序下拉就是这个结构：SortSelect 组件负责画下拉、写回隐藏 `<select>`、派发 `change`；
+页面脚本负责接住 `change` 重排列表。私人角落只实现了前一半，
+于是**选项高亮会变、列表纹丝不动** —— 看着像 CSS 坏了，实际是事件没人接。
+
+教训具体到做法上：**「组件派发了事件」和「页面接住了事件」是两件事，要各测一次。**
+上一轮只测了前者就宣布修好，返工一轮。
+
+对应资产：`npm run check:sort`（`tools/check-sort-link.mjs`）。
+它把产物里真实的两段脚本塞进同一个假 DOM，断言全链路
+「点选项 → `select.value` 变 → `change` → 列表重排」，
+并检查三种排序结果两两不同。**写这类测试务必反向验一次**：
+把监听拆掉、重建、确认它真的红，否则等于养了个只会点头的测试（这次验过，会 exit 1）。
+
+写假 DOM 时踩到的三件事，下次直接抄结论：
+- Node 里 `globalThis.navigator` / `window` **是只读或干脆没有**。
+  `window = globalThis` 这种别名会让 `window.addEventListener` 找 Node 全局要，必炸 ——
+  给一个真的带 `addEventListener` 的对象。
+- 选择器匹配要通用（`tagName === sel.toUpperCase()`），别只硬编码 `li` / `button`，
+  否则 `querySelector('select')` 静默返回 `null`，组件直接 `return`，看着像没绑上。
+- 浏览器里**带 id 的元素会自动变成全局变量**，源码里裸写 `again` 在浏览器能跑、在假 DOM 里报
+  undefined。这既是测试要补的 shim，也是源码里该修掉的坏味道。
+
+### 9.7 `check:all` 不构建，改完源码必须单独 `npm run build`
+
+`npm run check:all` = verify + smoke + audit + check:sort，**四步验的都是已经存在的 `dist`**。
+只改 `src/` 不重建就跑去 `check:all`，会拿着旧产物得出「修复无效」的结论 ——
+这次真的这么骗过去一次（源码是对的，`dist` 落后 6 分钟，白查一轮）。
+判断依据很简单：`dist/xxx` 的 mtime 比 `src/xxx` 旧就是没构建。
+改完源码的顺序永远是 **`npm run build` → `npm run check:all`**。
+
 ### 10. 本环境能做的真实验证（比想象的强）
 
 - `npm run build` **能跑通**（约 1.3 s），早先「沙箱跑不了 astro build」的记录已经过时
