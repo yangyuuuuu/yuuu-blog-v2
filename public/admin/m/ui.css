@@ -1,0 +1,472 @@
+/*
+ * 手机写作页的样式（/admin/m/）。
+ *
+ * 设计取向：留白多、层级清楚、动效轻。取色和字体跟站点一致
+ * （src/styles/theme.css 的水蓝 + global.css 的字体栈），这样从博客跳到后台不跳戏。
+ *
+ * 几个手机上的硬要求，写在这里备查：
+ *   · 输入框字号 >= 16px —— 否则 iOS Safari 聚焦时会自动放大整页（体验最差的一种）
+ *   · 高度用 dvh 而不是 vh —— 地址栏收放时 vh 不会跟着变，底部会露一截
+ *   · 滚动容器加 scroll-padding-bottom —— 键盘弹起时输入框才会被滚进可视区
+ *   · 触控目标 >= 44px
+ *   · 动效一律走 transform / opacity，并且尊重 prefers-reduced-motion
+ */
+
+:root {
+  --bg: #f5faff;
+  --surface: #ffffff;
+  --surface-2: #eef6fc;
+  --ink: #1b3a5c;
+  --muted: #5b7a99;
+  --line: #d5e6f5;
+  --accent: #2f7f9e;
+  --accent-ink: #ffffff;
+  --gold: #b9862f;
+  --danger: #c0392b;
+  --shadow: 0 6px 24px rgb(27 58 92 / 0.08);
+  --radius: 14px;
+  --radius-lg: 20px;
+  --font-title: 'Songti SC', 'STSong', 'Source Han Serif SC', 'Noto Serif CJK SC', Georgia, serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', 'Hiragino Sans GB', 'Noto Sans CJK SC', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, Menlo, monospace;
+  --bar-h: 54px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1b2a;
+    --surface: #122436;
+    --surface-2: #17304a;
+    --ink: #e0f0ff;
+    --muted: #9db8d2;
+    --line: rgb(126 200 227 / 0.22);
+    --accent: #7ec8e3;
+    --accent-ink: #0d1b2a;
+    --gold: #e8c87a;
+    --danger: #ff8a7a;
+    --shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+  }
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html {
+  background: var(--bg);
+  /* 地址栏收放 / 键盘弹起时露出来的那圈就是画布自身的颜色 —— 别让它发白 */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  /* 键盘弹起时，聚焦的输入框要滚到键盘之上，而不是让整页被推走 */
+  scroll-padding-bottom: 45dvh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.7;
+  overscroll-behavior-y: none;
+}
+
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+
+/* ───────────────────────── 屏幕切换 ───────────────────────── */
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  animation: screen-in 0.22s ease both;
+}
+.screen[hidden] { display: none; }
+
+@keyframes screen-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ───────────────────────── 登录 ───────────────────────── */
+
+.screen--login { justify-content: center; padding: 24px 20px calc(24px + var(--safe-b)); }
+
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  margin: 0 auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 30px 22px 22px;
+  text-align: center;
+}
+.login-logo { width: 64px; height: 64px; border-radius: 16px; }
+.login-title {
+  font-family: var(--font-title);
+  font-size: 25px;
+  margin: 14px 0 4px;
+  letter-spacing: 0.02em;
+}
+.login-sub { color: var(--muted); font-size: 13.5px; margin: 0 0 20px; }
+
+form { display: flex; flex-direction: column; gap: 10px; }
+
+input[type='password'], input[type='text'], input[type='search'], input[type='date'], textarea {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  outline: none;
+  transition: border-color 0.16s, box-shadow 0.16s, background 0.16s;
+}
+input:focus, textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+::placeholder { color: var(--muted); opacity: 0.85; }
+
+.btn {
+  min-height: 48px;
+  padding: 0 20px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  font-weight: 600;
+  transition: transform 0.12s, background 0.16s, opacity 0.16s;
+}
+.btn:active { transform: scale(0.98); }
+.btn--primary { background: var(--accent); color: var(--accent-ink); }
+.btn--primary:disabled { opacity: 0.55; }
+.btn--ghost { background: transparent; border-color: var(--line); color: var(--ink); }
+
+.msg { min-height: 20px; margin: 12px 0 0; font-size: 13.5px; color: var(--muted); }
+.msg.is-error { color: var(--danger); }
+
+.login-alt { display: inline-block; margin-top: 16px; font-size: 13px; color: var(--muted); text-decoration: none; }
+
+/* ───────────────────────── 顶栏 ───────────────────────── */
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--bar-h);
+  padding: 0 12px 0 16px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(12px) saturate(1.4);
+  border-bottom: 1px solid var(--line);
+}
+.bar-main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
+.bar-title { font-family: var(--font-title); font-size: 19px; margin: 0; }
+.bar-sub { color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.icon-btn {
+  flex: none;
+  width: 44px; height: 44px;
+  display: grid; place-items: center;
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  font-size: 19px;
+  color: var(--muted);
+  transition: background 0.16s, color 0.16s, transform 0.12s;
+}
+.icon-btn:active { transform: scale(0.92); background: var(--surface-2); }
+
+/* ───────────────────────── 搜索 / 筛选 ───────────────────────── */
+
+.search-wrap { padding: 10px 16px 0; }
+.search-wrap input { min-height: 44px; }
+
+.filters {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.filters::-webkit-scrollbar { display: none; }
+.chip {
+  flex: none;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13.5px;
+  transition: all 0.16s;
+}
+.chip.is-on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+
+/* ───────────────────────── 列表 ───────────────────────── */
+
+.list { list-style: none; margin: 0; padding: 8px 12px 0; }
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 12px;
+  margin-bottom: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  transition: transform 0.12s, border-color 0.16s;
+  animation: item-in 0.24s ease both;
+}
+.item:active { transform: scale(0.985); border-color: var(--accent); }
+
+@keyframes item-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.item-mark {
+  flex: none;
+  width: 36px; height: 36px;
+  display: grid; place-items: center;
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-family: var(--font-title);
+  font-size: 17px;
+  color: var(--accent);
+}
+.item-body { flex: 1; min-width: 0; }
+.item-title {
+  display: block;
+  font-size: 15.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.item-meta { display: block; margin-top: 2px; font-size: 12.5px; color: var(--muted); }
+.item-arrow { flex: none; color: var(--muted); opacity: 0.6; }
+
+.empty { text-align: center; color: var(--muted); font-size: 14px; padding: 32px 0; }
+.list-pad { height: calc(88px + var(--safe-b)); }
+
+/* 新建按钮：右下角悬浮，避开手势条 */
+.fab {
+  position: fixed;
+  right: 18px;
+  bottom: calc(18px + var(--safe-b));
+  z-index: 30;
+  width: 58px; height: 58px;
+  display: grid; place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 27px;
+  line-height: 1;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 42%, transparent);
+  transition: transform 0.14s;
+}
+.fab:active { transform: scale(0.92); }
+
+/* ───────────────────────── 写作 ───────────────────────── */
+
+.screen--edit { height: 100dvh; min-height: 0; }
+.bar--edit { padding-left: 6px; }
+
+.edit-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 14px 16px 0;
+  /* 键盘弹起时把聚焦的输入框滚到键盘之上，而不是让整页乱跳 */
+  scroll-padding-bottom: 45dvh;
+}
+.edit-body input, .edit-body textarea { scroll-margin-bottom: 45dvh; }
+
+.f-title {
+  border: none !important;
+  background: transparent !important;
+  padding: 6px 0 !important;
+  font-family: var(--font-title);
+  font-size: 23px !important;
+  font-weight: 600;
+  line-height: 1.4;
+  box-shadow: none !important;
+}
+.f-title::placeholder { font-weight: 400; }
+
+.f-tags-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.tag-pill {
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+  padding: 1px 9px;
+}
+
+.f-body {
+  /*
+   * 正文框的最小高度。手机上留一点余量，让「空白文档」看起来也有地方可写；
+   * 设太大（试过 46dvh / 34dvh）短文章下面会空出一大片，反而显得没写完。
+   */
+  min-height: 30dvh;
+  border: none !important;
+  background: transparent !important;
+  padding: 6px 0 !important;
+  box-shadow: none !important;
+  font-family: var(--font-body);
+  font-size: 16.5px !important;
+  line-height: 1.85;
+  resize: none;
+  field-sizing: content;
+}
+
+.more {
+  margin-top: 18px;
+  border-top: 1px dashed var(--line);
+  padding-top: 12px;
+}
+.more summary {
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--muted);
+  padding: 6px 0;
+  list-style: none;
+}
+.more summary::-webkit-details-marker { display: none; }
+.more summary::after { content: ' ▾'; }
+.more[open] summary::after { content: ' ▴'; }
+.more-inner { display: flex; flex-direction: column; gap: 14px; padding: 10px 0 4px; }
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field-label { font-size: 13px; color: var(--muted); }
+.field textarea, .field input { min-height: 46px; }
+/* iOS 上日期框默认字号偏大，会把内容挤出边框 */
+input[type='date'] { font-size: 16px; min-height: 48px; -webkit-appearance: none; appearance: none; }
+
+.switches { display: flex; flex-direction: column; gap: 10px; }
+.switch { display: flex; align-items: flex-start; gap: 10px; font-size: 15px; }
+.switch input { width: 22px; height: 22px; min-height: 0; flex: none; margin-top: 2px; accent-color: var(--accent); }
+.switch em { display: block; font-style: normal; font-size: 12.5px; color: var(--muted); }
+
+.edit-pad { height: calc(96px + var(--safe-b)); }
+
+/*
+ * 底部：默认只是一行状态文字（安静），**有改动时才浮出保存按钮**。
+ * 常驻一个大按钮会把写作区挤掉一截，也让人误以为随时需要保存。
+ */
+.savebar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  /* 右边留出悬浮保存按钮的位置（约 120px），否则字数会被压在按钮底下 */
+  padding: 12px 132px calc(12px + var(--safe-b)) 16px;
+}
+.savebar-msg { flex: 1; min-width: 0; font-size: 13px; color: var(--muted); }
+.savebar-msg.is-error { color: var(--danger); }
+.savebar-msg.is-ok { color: var(--accent); }
+.savebar .btn { flex: none; min-width: 106px; }
+
+/* 悬浮保存按钮：只在 dirty 时出现 */
+.save-fab {
+  position: fixed;
+  right: 18px;
+  bottom: calc(18px + var(--safe-b));
+  z-index: 30;
+  min-height: 50px;
+  padding: 0 22px;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 16px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 42%, transparent);
+  transition: transform 0.14s;
+}
+.save-fab:active { transform: scale(0.94); }
+.save-fab[hidden] { display: none; }
+body.is-dirty .savebar .btn { display: none; }
+
+/* ───────────────────────── 更多操作面板 ───────────────────────── */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  background: rgb(6 20 34 / 0.42);
+  animation: fade-in 0.16s ease both;
+}
+.sheet[hidden] { display: none; }
+
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.sheet-panel {
+  width: 100%;
+  background: var(--surface);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: 10px 12px calc(12px + var(--safe-b));
+  animation: sheet-up 0.22s cubic-bezier(0.22, 0.68, 0.36, 1) both;
+}
+@keyframes sheet-up { from { transform: translateY(100%); } to { transform: none; } }
+
+.sheet-item {
+  display: block;
+  width: 100%;
+  min-height: 52px;
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  text-align: center;
+  transition: background 0.14s;
+}
+.sheet-item:active { background: var(--surface-2); }
+.sheet-item--danger { color: var(--danger); }
+
+/* ───────────────────────── 浮层提示 ───────────────────────── */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(84px + var(--safe-b));
+  z-index: 50;
+  transform: translateX(-50%);
+  max-width: min(88vw, 420px);
+  padding: 11px 18px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: 14px;
+  box-shadow: var(--shadow);
+  animation: toast-in 0.2s ease both;
+}
+.toast[hidden] { display: none; }
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ───────────────────────── 大屏（电脑上开也不难看）───────────────────────── */
+
+@media (min-width: 720px) {
+  .list, .search-wrap, .filters, .edit-body, .savebar { max-width: 720px; margin-left: auto; margin-right: auto; width: 100%; }
+  .save-fab { right: calc(50% - 360px + 18px); }
+  .bar-main { max-width: 720px; }
+  .fab { right: calc(50% - 360px + 18px); }
+  .screen--login .login-card { max-width: 420px; }
+}
+
+/* 用户要求减少动效时，全部关掉 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}

@@ -111,6 +111,7 @@ function readKeys(file) {
     /* 后台保存时自动写；「最近修改」排序要用它，缺了就只能退回按发布日期排 */
     updated: one('updated') || '',
     summary: one('summary') || '',
+    pinned: one('pinned') === 'true',
     tags,
     /* 全文：私人角落的搜索要用它。只留前 2000 字，够搜就行 */
     text: plainText(body).slice(0, 2000),
@@ -163,3 +164,40 @@ writeFileSync(
 
 console.log('  ✓ 隐藏文章清单：' + hidden.length + ' 篇 → dist/private/posts.json');
 for (const p of hidden) console.log('      · ' + p.date + '  ' + p.title);
+
+/* ------------------------------------------------------------------ 手机写作页的清单
+ *
+ * /admin/m/（手机用的简易编辑器）要列出**所有**文章，草稿也要 —— 否则草稿进去就找不到了。
+ * 这里只放元信息，正文在点开某一篇时由 Worker 现取（那样也能拿到最新的正文）。
+ * 和 private/posts.json 一样是公开文件，所以**不放正文**。
+ */
+const ALL_OUT = join(OUT_DIR, 'posts-all.json');
+const sorted = all.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+mkdirSync(OUT_DIR, { recursive: true });
+writeFileSync(
+  ALL_OUT,
+  JSON.stringify(
+    {
+      generatedAt: new Date().toISOString(),
+      count: sorted.length,
+      posts: sorted.map((p) => ({
+        slug: p.slug,
+        path: 'src/content/posts/' + p.slug + '.md',
+        title: p.title,
+        date: p.date,
+        updated: p.updated || p.date,
+        category: p.category || '',
+        tags: p.tags,
+        summary: p.summary || '',
+        draft: !!p.draft,
+        hidden: isHiddenData(p),
+        pinned: p.pinned === true,
+        words: p.text ? p.text.length : 0,
+      })),
+    },
+    null,
+    2,
+  ) + '\n',
+  'utf8',
+);
+console.log('  ✓ 手机写作页清单：' + sorted.length + ' 篇（含草稿）→ dist/private/posts-all.json');

@@ -26,10 +26,21 @@ interface Env {
   HIDDEN_PASSWORD?: string;
   LOGS_TOKEN?: string;
   LOGS?: KVNamespace;
+  /**
+   * 手机写作页提交文章用。需要 repo 权限的 token（classic PAT 勾 repo 即可）。
+   * ⚠️ 这个 token **只在 Worker 里用**，绝不下发给浏览器 —— 页面只拿 ticket。
+   * 没配置的话 /admin/* 会返回一句清楚的提示，不会静默失败。
+   */
+  GITHUB_TOKEN?: string;
+  /** 仓库地址，默认就是本站；换仓库时改这里或 wrangler.toml 的 [vars] */
+  REPO?: string;
+  BRANCH?: string;
 }
 
 const GITHUB_AUTHORIZE = 'https://github.com/login/oauth/authorize';
-const GITHUB_TOKEN = 'https://github.com/login/oauth/access_token';
+const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token';
+/* ⚠️ 别把 GITHUB_TOKEN（写作页用的 PAT）和 GITHUB_TOKEN_URL 搞混 —— 名字像，用途完全不同 */
+const GH_API = 'https://api.github.com';
 
 /**
  * 清单由构建时生成在 dist/private/posts.json。
@@ -147,10 +158,16 @@ async function handleHidden(request: Request, env: Env): Promise<Response> {
   const ip = request.headers.get('CF-Connecting-IP') || '未知';
   const now = new Date();
 
-  let body: { password?: string; from?: string } = {};
+  let body: { password?: string; from?: string; want?: string; site?: string } = {};
   try { body = await request.json(); } catch { /* 空 body 就当没给口令 */ }
   const pass = (body.password || '').trim();
   const from = (body.from || 'direct').slice(0, 40);
+  /*
+   * want=all 是给手机写作页（/admin/m/）用的：它要的是**全部**文章（含草稿）来列清单，
+   * 而不是私人角落那份「隐藏文章」清单。同一道口令，只是要的东西不同。
+   * site 允许手机页指定去哪个域名取清单（本地预览时要指向线上）。
+   */
+  const wantAll = body.want === 'all';
 
   if (!env.HIDDEN_PASSWORD) {
     return json({ message: '服务端还没设置口令（HIDDEN_PASSWORD）' }, 500, request, env);
@@ -177,7 +194,13 @@ async function handleHidden(request: Request, env: Env): Promise<Response> {
   /* 校验通过：取清单（构建时生成的静态文件，Worker 自己读，不经过浏览器） */
   let posts: unknown[] = [];
   try {
-    const r = await fetch(manifestUrl(request), { cf: { cacheTtl: 0, cacheEverything: false } } as RequestInit);
+    let url = manifestUrl(request);
+    if (wantAll) {
+      /* 手机页可以指定站点（本地预览时浏览器在 localhost，Worker 取不到它） */
+      const site = /^https?:\/\/[\w.-]+(?::\d+)?$/.test(body.site || '') ? body.site! : 'https://yuuu.love';
+      url = site.replace(/\/+$/, '') + '/private/posts-all.json?t=' + Date.now();
+    }
+    const r = await fetch(url, { cf: { cacheTtl: 0, cacheEverything: false } } as RequestInit);
     if (r.ok) {
       const data = (await r.json()) as { posts?: unknown[] };
       posts = data.posts || [];
@@ -319,6 +342,283 @@ async function handleLogs(request: Request, env: Env): Promise<Response> {
   return json({ count: logs.length, scope: 'recent', logs }, 200, request, env);
 }
 
+/* ------------------------------------------------------- 手机写作页（/admin/m/）
+
+/**
+ * 手机写作页的接口。设计原则：
+ *
+ *   1. **GitHub token 只在 Worker 里用**。浏览器拿到的只有 ticket ——
+ *      就是私人角落那套口令通过后发的随机串，存在 KV（ticket:<uuid> → logId，6 小时）。
+ *      所以手机页面被翻出来也没用，拿不到任何能写仓库的凭据。
+ *   2. 复用同一道口令（HIDDEN_PASSWORD），不新增一个要记的密码。
+ *   3. 保存时**服务器自己写 updated** —— 手机上不用操心「最后修改」。
+ *   4. 改已有文件时**只替换需要变的 frontmatter 行**，注释和字段顺序原样保留；
+ *      只有新建文件才拼一份完整的 frontmatter。
+ */
+
+const CONTENT_DIR = 'src/content/posts';
+
+function repoOf(env: Env): string {
+  return env.REPO || 'yangyuuuuu/yuuu-blog-v2';
+}
+function branchOf(env: Env): string {
+  return env.BRANCH || 'main';
+}
+
+/** ticket → 是否有效（KV 里有过就是有效；离开时会被删掉） */
+async function ticketValid(env: Env, ticket: string): Promise<boolean> {
+  if (!ticket || !env.LOGS) return false;
+  const id = await env.LOGS.get('ticket:' + ticket);
+  return !!id;
+}
+
+function ghHeaders(env: Env): Record<string, string> {
+  return {
+    Authorization: 'Bearer ' + env.GITHUB_TOKEN,
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'yuuu-blog-admin-mobile',
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+}
+
+/** 从 GitHub 取一个文件：返回正文与 sha（不存在则 sha 为空） */
+async function ghGetFile(env: Env, path: string): Promise<{ text: string; sha: string } | null> {
+  const url = `${GH_API}/repos/${repoOf(env)}/contents/${path}?ref=${branchOf(env)}`;
+  const res = await fetch(url, { headers: ghHeaders(env) });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error('读文件失败（HTTP ' + res.status + '）');
+  const data = (await res.json()) as { content?: string; sha?: string };
+  const text = data.content ? new TextDecoder().decode(Uint8Array.from(atob(data.content.replace(/\n/g, '')), (c) => c.charCodeAt(0))) : '';
+  return { text, sha: data.sha || '' };
+}
+
+/** 把 base64 编码成 GitHub 要的形式（UTF-8 安全 —— 中文必须这样处理） */
+function toBase64(s: string): string {
+  const bytes = new TextEncoder().encode(s);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+async function ghPutFile(env: Env, path: string, content: string, message: string, sha: string): Promise<void> {
+  const body: Record<string, unknown> = { message, content: toBase64(content), branch: branchOf(env) };
+  if (sha) body.sha = sha;
+  const res = await fetch(`${GH_API}/repos/${repoOf(env)}/contents/${path}`, {
+    method: 'PUT',
+    headers: { ...ghHeaders(env), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error('提交失败（HTTP ' + res.status + '）：' + t.slice(0, 200));
+  }
+}
+
+async function ghDeleteFile(env: Env, path: string, message: string, sha: string): Promise<void> {
+  const res = await fetch(`${GH_API}/repos/${repoOf(env)}/contents/${path}`, {
+    method: 'DELETE',
+    headers: { ...ghHeaders(env), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, sha, branch: branchOf(env) }),
+  });
+  if (!res.ok) throw new Error('删除失败（HTTP ' + res.status + '）');
+}
+
+/** 拆出 frontmatter 与正文 */
+function splitYaml(text: string): { yaml: string; body: string } {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text);
+  if (!m) return { yaml: '', body: text };
+  return { yaml: m[1], body: text.slice(m[0].length) };
+}
+
+const yamlOne = (yaml: string, key: string): string | undefined => {
+  const m = new RegExp('^' + key + ':\\s*(.+?)\\s*$', 'm').exec(yaml);
+  return m ? m[1].replace(/^["']|["']$/g, '') : undefined;
+};
+
+/** YAML 里要用双引号包起来才安全的标量（标题里常有冒号、井号） */
+function yamlStr(s: string): string {
+  return '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+}
+
+/** 标签数组：一律写成行内 `tags: [a, b]`，和现有文章的写法一致 */
+function yamlTags(tags: string[]): string {
+  const clean = tags.map((t) => String(t).trim()).filter(Boolean);
+  if (!clean.length) return 'tags: []';
+  return 'tags: [' + clean.map((t) => (String(t).includes(',') ? yamlStr(t) : t)).join(', ') + ']';
+}
+
+/** 把字段写回 frontmatter：已存在的键就地替换，没有的键追加到末尾 */
+function setYamlKey(yaml: string, key: string, value: string): string {
+  const re = new RegExp('^(' + key + ':)\\s*.+?\\s*$', 'm');
+  if (re.test(yaml)) return yaml.replace(re, key + ': ' + value);
+  const lines = yaml.split(/\r?\n/);
+  lines.push(key + ': ' + value);
+  return lines.join('\n');
+}
+
+/** 新建文章的 slug：日期 + 标题里的安全字符（中文照留，站点本来就支持） */
+function makeSlug(date: string, title: string): string {
+  const t = String(title)
+    .trim()
+    .replace(/[\\/:*?"<>|#%&{}$!'@+=`~]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 40);
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : new Date().toISOString().slice(0, 10);
+  return d + '-' + (t || 'untitled');
+}
+
+async function handleAdmin(request: Request, env: Env, pathname: string, url: URL): Promise<Response> {
+  if (!env.GITHUB_TOKEN) {
+    return json(
+      { message: '服务端还没配置写作权限（GITHUB_TOKEN）。在 workers/oauth 里跑一次：wrangler secret put GITHUB_TOKEN' },
+      500, request, env,
+    );
+  }
+
+  let body: {
+    ticket?: string; path?: string; title?: string; body?: string; category?: string;
+    tags?: string[]; summary?: string; date?: string; draft?: boolean; private?: boolean;
+  } = {};
+  try { body = await request.json(); } catch { /* 空 body 也行 */ }
+  const ticket = String(body.ticket || url.searchParams.get('ticket') || '');
+  if (!(await ticketValid(env, ticket))) {
+    return json({ message: '登录已过期，回到 /admin/m/ 重新输一次口令' }, 401, request, env);
+  }
+
+  /* 列清单：构建时生成的静态文件（含草稿），不占 GitHub 配额 */
+  if (pathname === '/admin/posts') {
+    try {
+      const r = await fetch(manifestUrl(request).replace('/private/posts.json', '/private/posts-all.json'), {
+        cf: { cacheTtl: 0, cacheEverything: false },
+      } as RequestInit);
+      if (!r.ok) return json({ message: '清单还没生成（构建时会生成 dist/private/posts-all.json）' }, 500, request, env);
+      const data = (await r.json()) as { posts?: unknown[]; generatedAt?: string };
+      return json({ posts: data.posts || [], generatedAt: data.generatedAt || '' }, 200, request, env);
+    } catch (e) {
+      return json({ message: '取清单失败：' + (e as Error).message }, 502, request, env);
+    }
+  }
+
+  const rel = String(body.path || '');
+  /*
+   * 只允许改 src/content/posts/ 下的 .md —— 显式前缀 + 不许出现 ..
+   * （光靠正则容易漏掉路径穿越，写成白名单更省心）
+   */
+  if (rel && (!/^src\/content\/posts\/[\w\u4e00-\u9fa5.-]+\.md$/.test(rel) || rel.includes('..'))) {
+    return json({ message: '文件名不合法' }, 400, request, env);
+  }
+
+  /* 读一篇的原文 */
+  if (pathname === '/admin/file') {
+    if (!rel) return json({ message: '缺少 path' }, 400, request, env);
+    try {
+      const f = await ghGetFile(env, rel);
+      if (!f) return json({ message: '这篇文章在仓库里找不到（可能刚被改名或删除）' }, 404, request, env);
+      const { yaml: y, body: b } = splitYaml(f.text);
+      return json({
+        path: rel, body: b, sha: f.sha,
+        title: yamlOne(y, 'title') || '',
+        date: (yamlOne(y, 'date') || '').slice(0, 10),
+        category: yamlOne(y, 'category') || '',
+        summary: yamlOne(y, 'summary') || '',
+        updated: (yamlOne(y, 'updated') || '').slice(0, 10),
+        draft: yamlOne(y, 'draft') === 'true',
+        private: yamlOne(y, 'private') === 'true',
+        tags: (() => {
+          const inline = /^tags:\s*\[([^\]]*)\]\s*$/m.exec(y);
+          if (inline) return inline[1].split(',').map((s) => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+          const block = /^tags:\s*\n((?:\s+-\s*.+\n?)+)/m.exec(y);
+          if (block) return block[1].split('\n').map((l) => l.replace(/^\s+-\s*/, '').trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+          return [];
+        })(),
+      }, 200, request, env);
+    } catch (e) {
+      return json({ message: (e as Error).message }, 502, request, env);
+    }
+  }
+
+  /* 保存（新建或更新） */
+  if (pathname === '/admin/save') {
+    const now = new Date().toISOString().slice(0, 10);
+    const title = String(body.title || '').trim();
+    const text = String(body.body ?? '');
+    if (!title) return json({ message: '标题不能空' }, 400, request, env);
+    /*
+     * 和 tools/verify.mjs 用同一条规则：body.trim().length >= 20（**标点也算**）。
+     * 一开始我这里多写了「去掉标点再数」，于是同一段文字手机说能存、构建时被 verify 拦 ——
+     * 两边规则必须一模一样，否则用户会在手机上白写。
+     */
+    if (text.trim().length < 20) {
+      return json({ message: '正文太短了（至少 20 个字）—— 这是站点自检的底线' }, 400, request, env);
+    }
+    const tags = Array.isArray(body.tags) ? body.tags : [];
+    const category = String(body.category || '随笔').trim() || '随笔';
+    try {
+      if (rel) {
+        /* 改已有文章：只动需要变的几行，注释与字段顺序保留 */
+        const f = await ghGetFile(env, rel);
+        if (!f) return json({ message: '这篇文章在仓库里找不到（可能刚被改名或删除）' }, 404, request, env);
+        const { yaml: y, body: oldBody } = splitYaml(f.text);
+        let next = y;
+        next = setYamlKey(next, 'title', yamlStr(title));
+        next = setYamlKey(next, 'updated', now);
+        next = setYamlKey(next, 'category', category);
+        next = setYamlKey(next, 'tags', yamlTags(tags).replace(/^tags:\s*/, ''));
+        if (body.summary !== undefined) next = setYamlKey(next, 'summary', yamlStr(String(body.summary)));
+        if (body.draft !== undefined) next = setYamlKey(next, 'draft', body.draft ? 'true' : 'false');
+        if (body.private !== undefined) next = setYamlKey(next, 'private', body.private ? 'true' : 'false');
+        const keptBody = text.trim() ? text : oldBody;
+        const out = '---\n' + next.replace(/\r?\n/g, '\n').replace(/\n+$/, '') + '\n---\n\n' + keptBody.replace(/^\n+/, '');
+        await ghPutFile(env, rel, out, 'post: 更新《' + title + '》', f.sha);
+        return json({ ok: true, path: rel, url: '/posts/' + rel.split('/').pop()!.replace(/\.md$/, '') + '/', updated: now }, 200, request, env);
+      }
+
+      /* 新建 */
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(String(body.date || '')) ? String(body.date) : now;
+      const slug = makeSlug(date, title);
+      const newPath = CONTENT_DIR + '/' + slug + '.md';
+      const existing = await ghGetFile(env, newPath);
+      if (existing) return json({ message: '已经有同名文章了（' + slug + '）—— 改个标题或日期' }, 409, request, env);
+      const fm = [
+        '---',
+        'title: ' + yamlStr(title),
+        'date: ' + date,
+        'updated: ' + now,
+        'category: ' + category,
+        yamlTags(tags),
+        body.summary ? 'summary: ' + yamlStr(String(body.summary)) : 'summary: ""',
+        'pinned: false',
+        'draft: ' + (body.draft ? 'true' : 'false'),
+        'private: ' + (body.private ? 'true' : 'false'),
+        '---',
+        '',
+        text.replace(/^\n+/, ''),
+      ].join('\n');
+      await ghPutFile(env, newPath, fm, 'post: 新建《' + title + '》', '');
+      return json({ ok: true, path: newPath, url: '/posts/' + slug + '/', updated: now }, 200, request, env);
+    } catch (e) {
+      return json({ message: (e as Error).message }, 502, request, env);
+    }
+  }
+
+  /* 删除 */
+  if (pathname === '/admin/delete') {
+    if (!rel) return json({ message: '缺少 path' }, 400, request, env);
+    try {
+      const f = await ghGetFile(env, rel);
+      if (!f) return json({ message: '已经不存在了' }, 404, request, env);
+      await ghDeleteFile(env, rel, 'post: 删除《' + rel.split('/').pop()!.replace(/\.md$/, '') + '》', f.sha);
+      return json({ ok: true }, 200, request, env);
+    } catch (e) {
+      return json({ message: (e as Error).message }, 502, request, env);
+    }
+  }
+
+  return json({ message: 'Not Found' }, 404, request, env);
+}
+
 /* ------------------------------------------------------------------ 入口 */
 
 export default {
@@ -327,6 +627,12 @@ export default {
     const headers = cors(request, env);
 
     if (request.method === 'OPTIONS') return new Response(null, { headers });
+
+    /* ---- 手机写作页（口令换 ticket，写仓库由 Worker 代劳）---- */
+    if (url.pathname === '/admin/posts' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
+    if (url.pathname === '/admin/file' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
+    if (url.pathname === '/admin/save' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
+    if (url.pathname === '/admin/delete' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
 
     /* ---- 私人角落 ---- */
     if (url.pathname === '/hidden' && request.method === 'POST') return handleHidden(request, env);
@@ -348,7 +654,7 @@ export default {
       const code = url.searchParams.get('code');
       if (!code) return html(handshake('error', { message: '缺少 code 参数' }));
 
-      const tokenRes = await fetch(GITHUB_TOKEN, {
+      const tokenRes = await fetch(GITHUB_TOKEN_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({

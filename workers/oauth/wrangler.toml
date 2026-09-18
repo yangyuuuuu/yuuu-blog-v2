@@ -19,5 +19,12 @@ id = "9b0823ed57e94672aa0357e07b8d568f"
 # 密钥不要写在这里，用命令写入：
 #   wrangler secret put GITHUB_CLIENT_ID      （已有）
 #   wrangler secret put GITHUB_CLIENT_SECRET  （已有）
-#   wrangler secret put HIDDEN_PASSWORD       （私人角落的口令）
+#   wrangler secret put HIDDEN_PASSWORD       （私人角落 + 手机写作页的口令）
 #   wrangler secret put LOGS_TOKEN            （读日志的口令）
+#   wrangler secret put GITHUB_TOKEN          （★ 手机写作页提交文章用，见下）
+#
+# GITHUB_TOKEN 是什么：
+#   /admin/m/（手机写作页）保存文章时，由本 Worker 调 GitHub API 提交，
+#   所以需要一个对仓库有写权限的 token。用 classic PAT 勾 repo 即可。
+#   ⚠️ 这个 token 只在 Worker 里使用，**绝不下发给浏览器** ——
+#   页面拿到的只是口令换来的 ticket（随机串，存 KV，6 小时过期）。

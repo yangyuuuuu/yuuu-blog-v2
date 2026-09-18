@@ -340,6 +340,8 @@ const required = [
   'public/admin/index.html', 'public/admin/config.yml',
   /* 后台预览：模板与样式都在 public 下，不走构建，所以必须有人看着它们别被删 */
   'public/admin/preview.js', 'public/admin/preview.css',
+  /* 手机写作页（/admin/m/）：三个文件都不走构建，直接是源码，所以必须有人看着 */
+  'public/admin/m/index.html', 'public/admin/m/ui.css', 'public/admin/m/ui.js', 'public/admin/m/app.js',
   'workers/oauth/src/index.ts', 'workers/oauth/wrangler.toml',
   'astro.config.mjs', 'CHANGELOG.md', 'package.json', 'README.md',
 ];
@@ -353,6 +355,28 @@ ok('路由共 ' + routeFiles.length + ' 个：' + routeFiles.map((f) => '/' + re
 if (/@astrojs\/rss/.test(read('package.json'))) ok('RSS 依赖已安装');
 if (/@astrojs\/sitemap/.test(read('package.json'))) ok('Sitemap 依赖已安装');
 if (/pagefind/.test(read('package.json'))) ok('Pagefind 依赖已安装');
+
+/* ------------------------------------------------- 手机写作页（/admin/m/） */
+{
+  const mHtml = read('public/admin/m/index.html');
+  const mJs = read('public/admin/m/ui.js');
+  const mApp = read('public/admin/m/app.js');
+  if (/<script type="module" src="\/admin\/m\/ui\.js"><\/script>/.test(mHtml)) ok('手机写作页：用 module 方式加载 ui.js');
+  else bad('手机写作页：index.html 没有以 module 方式加载 ui.js（app.js 的 import 会失效）');
+  /* 接口地址写在 ui.js 的 API 常量里（app.js 只负责拼请求） */
+  if (/https:\/\/oauth\.yuuu\.love/.test(mJs)) ok('手机写作页：接口指向 Worker（oauth.yuuu.love）');
+  else bad('手机写作页：ui.js 里的接口地址不是 Worker');
+  /* token 绝不能出现在前端文件里 */
+  const leak = [mJs, mApp, mHtml].filter((s) => /ghp_|github_pat_|GITHUB_TOKEN/.test(s));
+  if (!leak.length) ok('手机写作页：前端文件里没有 GitHub token（写仓库只在 Worker 里做）');
+  else bad('手机写作页：前端文件里出现了 token 字样 —— 密钥绝不能下发到浏览器');
+  const vp2 = (mHtml.match(/<meta name="viewport" content="([^"]+)"/) || [])[1] || '';
+  if (/width=device-width/.test(vp2) && !/maximum-scale|user-scalable=no/.test(vp2)) ok('手机写作页：viewport 正确且不挡用户缩放');
+  else bad('手机写作页：viewport 有问题（' + vp2 + '）');
+  /* 字号 >= 16px —— 小于 16 会让 iOS 聚焦时自动放大整页 */
+  if (/font-size:\s*16(\.5)?px\s*!important/.test(read('public/admin/m/ui.css'))) ok('手机写作页：输入框字号 >= 16px（防 iOS 自动放大）');
+  else bad('手机写作页：输入框字号可能小于 16px，iOS 上聚焦会放大整页');
+}
 
 /* ------------------------------------------------- 后台预览（public 下，不走构建） */
 {

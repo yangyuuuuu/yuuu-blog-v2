@@ -352,6 +352,23 @@ npm run new -- "我的新文章" 技术 "前端, 笔记" --cover=wave --summary=
 > 后台针对窄屏做过适配（拆掉 Decap 硬编码的 800px 最小宽度、只留写作栏、
 > 输入框聚焦时会自动滚到键盘之上）。
 
+### 手机怎么改（推荐：/admin/m/）
+
+浏览器打开 **`https://yuuu.love/admin/m/`**，输入和「私人角落」同一个口令，就能：
+
+- 看到**全部**文章（含草稿），可以搜索、按「已发布 / 草稿 / 隐藏」筛选
+- 点一篇直接改标题和正文（更多设置里能改摘要、标签、创建时间、草稿/隐藏开关）
+- 右下角「＋」写新文章；有改动时右下角会浮出**保存**按钮
+- 「⋯」里可以查看文章页、删除这一篇
+
+保存后由 Worker 直接提交到 GitHub，**约 1 分钟** Cloudflare 重建完就上线。
+「最后修改」由服务器自动写成当天，不用管。
+
+> 这一页是**专门为手机做的**，和 `/admin/`（Decap 后台）是两套东西：
+> 手机上用 `/admin/m/`，电脑上想用完整字段编辑就用 `/admin/`。
+>
+> 第一次部署需要给 Worker 加一个写仓库的 token，见下一节。
+
 ### 方式三：直接改文件
 
 在 `src/content/posts/` 里新建或编辑 `.md`，然后 `npm run publish`。
@@ -521,6 +538,25 @@ wrangler deploy
 ```
 
 ---
+
+## 手机写作页要配的一次性设置
+
+`/admin/m/` 保存文章时是 **Worker 替你提交**（浏览器里没有、也不该有 token）。
+所以需要给 Worker 一个对仓库有写权限的 token：
+
+```cmd
+cd workers\oauth
+wrangler secret put GITHUB_TOKEN
+```
+
+粘贴一个 **classic PAT**（GitHub → Settings → Developer settings → Personal access tokens →
+Tokens (classic) → 勾 `repo`）。然后重新部署 Worker：
+
+```cmd
+wrangler deploy
+```
+
+没配的话，打开 `/admin/m/` 保存会直接告诉你缺 `GITHUB_TOKEN`（不会静默失败）。
 
 ## 性能约定（硬红线）
 
