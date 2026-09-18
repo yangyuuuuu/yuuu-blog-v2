@@ -378,6 +378,30 @@ if (/pagefind/.test(read('package.json'))) ok('Pagefind 依赖已安装');
   else bad('后台移动端：缺 scroll-padding-bottom，点输入框会整页上移');
   if (/viewport-fit=cover/.test(idx)) ok('后台移动端：viewport 带 viewport-fit=cover');
   else bad('后台移动端：viewport 缺 viewport-fit=cover');
+
+  /*
+   * 拦「替 Decap 算布局」。踩过一次：加了
+   *   [class*="SplitPane"] { display: block }  +  .Pane { height: calc(100dvh - 66px) }
+   * 结果 Decap 的 SplitPane（flexDirection:column + 绝对定位 + 百分比高度）直接塌掉，
+   * 手机上进文章只剩一片白板，PC 却正常。见 HANDOFF 9.95。
+   * 后台只允许改「约束 / 皮肤 / 滚动定位」，布局与高度不许碰。
+   */
+  const mobileBlock = (idx.match(/@media \(max-width: 759px\)\s*\{([\s\S]*?)\n      \}/) || [])[1] || '';
+  if (!mobileBlock) {
+    bad('后台移动端：找不到 @media (max-width:759px) 那段（结构变了就更新这条检查）');
+  } else {
+    const banned = [
+      ['display', /[^-]display\s*:/],
+      ['flex-direction', /flex-direction\s*:/],
+      ['height', /(?<![a-z-])height\s*:/],
+      ['max-height', /max-height\s*:/],
+      ['position', /(?<![a-z-])position\s*:/],
+      ['overflow', /overflow(-[xy])?\s*:/],
+    ];
+    const hit = banned.filter(([, re]) => re.test(mobileBlock)).map(([n]) => n);
+    if (hit.length) bad('后台移动端：那段里出现了会破坏 Decap 布局的属性（' + hit.join('、') + '）—— 见 HANDOFF 9.95');
+    else ok('后台移动端：没有覆盖 Decap 的布局属性（只改约束/皮肤/滚动定位）');
+  }
 }
 
 /* ---------------------------------------------------------------- 结果 */

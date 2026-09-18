@@ -289,6 +289,34 @@ npm 的扁平化会掩盖，**pnpm 的隔离模式会正确报错**。发现一�
   给滚动容器加 `scroll-padding-bottom: 45dvh`（`scroll-margin-bottom` 同理）。
   这类问题**光看代码很难判对**，改完一定要在真手机上看（本环境没有软键盘）。
 
+### 9.95 别人的组件库，不要替它算布局（后台白板事故）
+
+Decap 的后台在手机上被我用 CSS「修」成了一片白板，PC 端却正常。加的东西是：
+
+```css
+[class*="SplitPane"] { display: block !important; }
+[class*="Pane"] { height: calc(100dvh - 66px) !important; }
+```
+
+**为什么必错**：Decap 的编辑器是 SplitPane，`flexDirection: column` +
+绝对定位 + **百分比高度**，高度靠 `100%` 从 `html/body` 一层层算下来。
+把栏位高度钉成视口高、又把 flex 容器改成 `block`，分栏就塌了 —— 内容区高度归零。
+
+**规矩**：面对第三方 UI 组件，只改「约束」和「皮肤」，**不要碰它的布局与高度**：
+
+| 可以改 | 不要改 |
+| --- | --- |
+| `min-width` 这类硬编码的桌面下限 | `display` / `flex-direction` |
+| 颜色、字体、圆角、阴影 | `height` / `max-height`（百分比体系里尤其危险） |
+| `scroll-padding` / `scroll-margin`（不参与布局） | `overflow`（会截断滚动链，键盘行为更糟） |
+| `env(safe-area-inset-*)` 内缩 | `position` |
+
+顺带：上一版我还改了 `overflow`，本意是「让滚动链通、输入框能滚进可视区」，
+结果更乱。**键盘相关的问题，先用 `scroll-padding-bottom` 解决**，别动 overflow。
+
+还有个过程教训：我改完只验了「`innerWidth` 不再溢出」这一个数值就宣布修好，
+没验「编辑器还能不能正常显示字段」。**验收要盯用户看得见的结果，不是中间指标。**
+
 ### 10. 本环境能做的真实验证（比想象的强）
 
 - `npm run build` **能跑通**（约 1.3 s），早先「沙箱跑不了 astro build」的记录已经过时

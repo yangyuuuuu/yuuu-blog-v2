@@ -161,9 +161,31 @@
       var meta = [dateText, upText && upText !== dateText ? '改于 ' + upText : '', category,
                   st.words + ' 字', '约 ' + st.minutes + ' 分钟'].filter(Boolean);
 
-      var coverNode = cover
-        ? h('div', { className: 'pv-cover' }, h('img', { src: cover, alt: title }))
-        : h('div', { className: 'pv-cover pv-cover-grad', style: { background: 'linear-gradient(135deg, hsl(' + (data.get('coverHue') || 202) + ' 62% 54%), hsl(' + (((data.get('coverHue') || 202) + 46) % 360) + ' 58% 42%))' } }, letter);
+      /*
+       * 封面。
+       * 三种情况都要给得出「看得见的东西」，否则用户看到的就是一块莫名其妙的空白：
+       *   1. 选了封面池里的 id 或自定义图片 → 出图（加载失败自动退回渐变，不留破图）
+       *   2. 没选封面 → 按「封面色相」画渐变（和线上 PostLayout 同一套规则），中间放首字
+       *   3. 渐变的色相也空着 → 用站点默认的 202（水蓝）
+       */
+      var hue = Number(data.get('coverHue'));
+      if (!isFinite(hue) || hue < 0 || hue > 359) hue = 202;
+      var grad = 'linear-gradient(135deg, hsl(' + hue + ' 62% 54%), hsl(' + ((hue + 46) % 360) + ' 58% 42%))';
+      var coverNode = h('div', { className: 'pv-cover pv-cover-wrap', style: { background: grad } },
+        /* 首字垫在底下：图加载出来了自然被盖住；加载失败就露出渐变+首字，不会是破图或空白 */
+        h('span', { className: 'pv-cover-letter', key: 'l' }, letter),
+        cover
+          ? h('img', {
+              key: 'img',
+              src: cover,
+              alt: title,
+              style: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' },
+              onError: function (e) { e.currentTarget.style.display = 'none'; },
+            })
+          : null,
+        h('span', { className: 'pv-cover-meta', key: 'm' },
+          cover ? '封面：' + cover : '没选封面 · 按封面色相画渐变（hue ' + hue + '）'),
+      );
 
       var tagNodes = (Array.isArray(tags) ? tags : []).map(function (t, n) {
         return h('span', { className: 'pv-tag', key: 't' + n }, '#' + t);
