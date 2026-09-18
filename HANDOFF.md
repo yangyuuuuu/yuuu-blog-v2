@@ -225,6 +225,43 @@ npm 的扁平化会掩盖，**pnpm 的隔离模式会正确报错**。发现一�
 判断依据很简单：`dist/xxx` 的 mtime 比 `src/xxx` 旧就是没构建。
 改完源码的顺序永远是 **`npm run build` → `npm run check:all`**。
 
+### 9.8 后台（Decap）的问题：别靠读源码猜，用无头 Edge + CDP 真跑一遍
+
+**做出这个能力的钥匙**：Decap 的 GitHub 后端可以「假登录」——
+`localStorage['decap-cms-user']` 写一个带 **`backendName: 'github'`** 的假 user
+（这一步漏了就一直停在登录页，害我卡了很久），再把 `window.fetch` 里
+`api.github.com` 的请求拦下来喂合成数据（`/user`、`/repos/...`、
+`/git/trees/<branch>:<dir>`、`/contents/<path>`、`/graphql`），
+就能在本地进**真实编辑器**、量真实几何、截图。注意：
+
+- **探针的 backend 里不能带 `base_url`** —— 带了会走 OAuth 跳转（点登录按钮也没用），
+  不带才走本地 token 直连。
+- `/repos/...` 的响应必须有 `owner.login`，否则 `hasWriteAccess()` 抛
+  `Problem fetching repo data from GitHub`（这个错只出现在 console 里，很隐蔽）。
+- 列表页在假数据下可能不渲染，但**编辑器路由可以直接开**：
+  `#/collections/posts/entries/<slug>`（slug = 文件名去掉 .md）。
+- 想拿几何/样式就用 `Emulation.setDeviceMetricsOverride`（`mobile: true`）+
+  `Page.captureScreenshot`；配 `visualViewport` 一起看才知道有没有横向溢出。
+
+**为什么值得**：后台的毛病几乎全是「桌面写死、手机没管」，
+翻压缩过的 bundle 只能猜到大概，量一次就全清楚了。这次量出来的实据：
+390×844 的视口里 `innerWidth` 被撑到 800（`min-width:800px` 硬编码在
+`AppMainContainer`/`ToolbarContainer`/`EditorContainer` 上），
+编辑器在 760px 以上是左右分栏（各 400px），`body` 只有 56px 高而底色画在 `body` 上
+（`html` 透明 → 露出来的是浏览器画布的白色 = 底部那条白条）。
+
+### 9.9 手机后台那两条毛病的因果（改之前先看这里）
+
+- **底部白条**：`html` 背景是透明的、底色只画在 `body` 上，`body` 又只有几十像素高。
+  地址栏收放 / 键盘弹起时露出的那圈就是浏览器画布自己的颜色。修法是 `html` 一起刷同色。
+- **点输入框整页上移、看不到打什么**：界面高度原来靠 `height:100%` + 写死的
+  `padding-top:66px` 凑，手机键盘弹起 / 地址栏收放都会错位；再加上
+  `EditorContainer` 是 `overflow:hidden`，浏览器的「把聚焦输入框滚进可视区」
+  滚动链被截断，于是整页被推走。
+  修法：窄屏用 `100dvh`、把 `overflow` 放开成可滚、
+  给滚动容器加 `scroll-padding-bottom: 45dvh`（`scroll-margin-bottom` 同理）。
+  这类问题**光看代码很难判对**，改完一定要在真手机上看（本环境没有软键盘）。
+
 ### 10. 本环境能做的真实验证（比想象的强）
 
 - `npm run build` **能跑通**（约 1.3 s），早先「沙箱跑不了 astro build」的记录已经过时

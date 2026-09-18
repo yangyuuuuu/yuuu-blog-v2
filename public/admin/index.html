@@ -2,7 +2,7 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="robots" content="noindex, nofollow" />
     <title>内容管理 · yuuu</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
@@ -119,6 +119,96 @@
           border-color: rgba(126, 200, 227, 0.12) !important;
         }
       }
+
+      /*
+       * ===== 手机上必须盖掉的那几条（Decap 桌面优先，硬编码了 min-width: 800px）=====
+       *
+       * 量过的实据（390×844 的视口，无头 Edge 实测）：
+       *   visualViewport 390 宽，但 innerWidth 被撑到 800 —— 因为
+       *   AppMainContainer / ToolbarContainer / EditorContainer 上都写着 min-width:800px，
+       *   手机屏幕没那么宽，于是整页横向溢出、右侧一片空白，底部还可能留出没被画到的白条。
+       *
+       * 另外编辑器在 760px 以上是「写作 / 预览」左右分栏，手机上两栏各 400px 塞不下，
+       * 所以窄屏只留写作栏（预览用工具栏上的「打开/关闭预览」按钮随时切）。
+       *
+       * 还有：Decap 的界面高度是 height:100% / 计算出来的 px，靠 body 高度算。
+       * 手机键盘弹起、地址栏收放都会改可视高度，界面就会比屏幕矮一截或多出一段 ——
+       * 这里统一换成 dvh（动态视口高度）并按 .Pane 补足差量。
+       */
+      html {
+        /* 底色画在 body 上、html 透明，露出的是浏览器画布自己的颜色（通常是白的）——
+           地址栏收放或键盘弹起时露出来的那一圈就发白。把 html 一起刷成同色。 */
+        background: #f7fbfe !important;
+        -webkit-text-size-adjust: 100%;
+      }
+      body {
+        min-height: 100dvh;
+      }
+      @media (prefers-color-scheme: dark) {
+        html { background: #0d1b2a !important; }
+      }
+
+      @media (max-width: 759px) {
+        /* 1. 拆掉硬编码的 800px 最小宽度，让它真的按屏幕宽排版 */
+        [class*="AppMain"],
+        [class*="ToolbarContainer"],
+        [class*="EditorContainer"] {
+          min-width: 0 !important;
+          width: 100% !important;
+          max-width: 100% !important;
+        }
+
+        /* 2. 高度改用动态视口单位，并补掉顶部工具栏占掉的 66px
+              （原来靠 height:100% + padding-top 硬凑，键盘一来就对不上） */
+        [class*="EditorContainer"] {
+          height: 100dvh !important;
+          max-height: 100dvh !important;
+        }
+        [class*="EditorContainer"] [class*="SplitPane"],
+        [class*="EditorContainer"] .Pane {
+          height: calc(100dvh - 66px) !important;
+        }
+
+        /* 3. 窄屏只留写作栏 —— 两栏并排会把屏幕挤爆，也没法看 */
+        [class*="EditorContainer"] [class*="SplitPane"] { display: block !important; }
+        [class*="EditorContainer"] [class*="Pane"]:first-child {
+          width: 100% !important;
+          max-width: 100% !important;
+          left: 0 !important;
+        }
+        [class*="EditorContainer"] [class*="PreviewPaneContainer"],
+        [class*="EditorContainer"] [class*="Pane"]:last-child { display: none !important; }
+
+        /* 4. 「点输入框整页上移、指针跑到屏幕外」的正解：
+              让输入框获得焦点时被滚进（键盘之上的）可视区，而不是整页被推走。
+              scroll-padding 是给「滚动容器」用的 —— 手机上编辑区就是那个一边写一边滚的盒子。 */
+        html, body {
+          overscroll-behavior-y: contain;
+        }
+        [class*="EditorContainer"],
+        [class*="EditorContainer"] [class*="PreviewPaneContainer"],
+        [class*="EditorContainer"] .Pane,
+        [class*="EditorContainer"] .Pane > div,
+        textarea,
+        [contenteditable="true"] {
+          scroll-padding-bottom: 45dvh !important;
+        }
+        /* 只有滚动链能被正确推导时，输入框才会滚进可视区；
+           overflow:hidden 会把滚动链截断，于是浏览器的「把输入框滚进来」失败、整页乱跳。 */
+        [class*="EditorContainer"],
+        [class*="EditorContainer"] .Pane {
+          overflow-y: auto !important;
+          -webkit-overflow-scrolling: touch;
+        }
+        /* 键盘弹起时别让浏览器把输入框顶到贴边 */
+        input:focus, textarea:focus { scroll-margin-bottom: 45dvh !important; }
+
+        /* 5. 刘海屏 / 手势条：给固定元素留出安全区 */
+        [class*="ToolbarContainer"] {
+          padding-left: env(safe-area-inset-left);
+          padding-right: env(safe-area-inset-right);
+        }
+      }
     </style>
   </head>
   <body>
@@ -135,6 +225,12 @@
       升级：改下面的版本号，然后打开 /admin 确认能进后台、能发文。
     -->
     <script src="https://unpkg.com/decap-cms@3.8.4/dist/decap-cms.js"></script>
+
+    <!--
+      预览面板：让它长得像线上文章页。必须在 decap-cms.js 之后加载
+      （registerPreviewStyle / registerPreviewTemplate 都挂在全局 CMS 上）。
+    -->
+    <script src="/admin/preview.js"></script>
   
     <script>
       /*

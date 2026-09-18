@@ -2,6 +2,61 @@
 
 > 版本号语义化：主.次.修订。每次改动在这里加一节。
 
+## 2.8.0 · 2026-09-18
+
+### 新增
+
+- **后台预览长得像线上文章页了**（`public/admin/preview.js` + `preview.css`）。
+  原来点「打开/关闭预览」看到的是 Decap 默认的裸排版：只有正文，没有标题层级、
+  没有日期/分类/标签那一行、没有封面 —— 和线上差太远，等于没法定版式。
+  现在按 `PostLayout.astro` 的结构重画：衬线标题、日期/「改于」/分类/字数/阅读时长、
+  标签、封面（封面池 id 会解析成真实图片，没选封面就用封面色相画渐变）、正文排版
+  （标题、引用、代码块、列表、表格、行内代码）。草稿也能预览。
+  用 iframe 隔离（`decoupled: true`），这些样式碰不到后台自己的界面。
+  - 样式没去引构建产物：`dist` 里的 CSS 文件名带哈希（`BaseLayout.DpRaR-Rf.css`），
+    每次构建都变，后台里写死必然某天 404。令牌是手抄的，改主题时要一起对
+    （文件头有说明）。
+  - **它不是线上页面的镜像**。刚保存的文章要等 Cloudflare 构建（约 1 分钟），
+    想看真实的就点编辑器右上角「查看发布」。这句话也写在预览面板顶部。
+  - 兜底 Markdown 渲染器是手写的（不引任何第三方库）：段落、1~4 级标题、引用、
+    代码块、列表、分隔线、粗斜体、行内代码、链接。**验收标准是「一字不丢」** ——
+    `npm run check:preview` 拿最长的一篇真文章比对纯文本，
+    抽查 13 个 8 字片段必须全命中，另测空正文 / 未闭合代码块 / 5000 字无换行等边界。
+
+### 修复
+
+- **手机后台：整页被撑到 800px 宽、右侧一片空白、底部还有白条**。
+  用无头 Edge + CDP 量出来的实据（390×844）：`visualViewport` 是 390，
+  但 `innerWidth` 被撑到 **800**，`documentElement.scrollWidth` 也是 800。
+  原因：Decap 桌面优先，`AppMainContainer` / `ToolbarContainer` / `EditorContainer`
+  三处都硬编码了 `min-width:800px`；而且编辑器在宽屏是「写作 / 预览」左右分栏，
+  手机上两栏各 400px 根本塞不下。现在窄屏（<760px）：
+  拆掉最小宽度、只留写作栏（预览用工具栏按钮随时切）、宽度锁 100%。
+  - 底部的白条：Decap 把底色画在 `body` 上，`html` 是透明的，
+    露出来的是浏览器画布自己的颜色（通常白）。地址栏收放、键盘弹起都会露出来。
+    现在 `html` 一起刷成同色。
+  - 高度原来靠 `height:100%` + 写死的 `padding-top:66px` 凑，
+    键盘弹起、地址栏收放都会错位。窄屏改用 `100dvh`（动态视口高度）并按 `.Pane` 补差量。
+- **手机后台：点输入框整页上移、指针跑到屏幕外，看不到在打什么**。
+  这个是同一批原因的结果：界面比屏幕高、`EditorContainer` 又是 `overflow:hidden`，
+  浏览器的「把获得焦点的输入框滚进可视区」失败，于是整页被推走。
+  现在给滚动容器加 `scroll-padding-bottom: 45dvh`（键盘之上的可视区才算数）、
+  `scroll-margin-bottom`，并把 `overflow` 从 `hidden` 放开成可滚 —— 滚动链不通，
+  浏览器就没法把输入框滚进来。
+- `viewport` 补上 `viewport-fit=cover`，刘海屏/手势条上给工具栏留安全区内缩。
+
+### 新增（工具）
+
+- `npm run check:preview`（`tools/check-admin-preview.mjs`）：后台预览模板的回归检查。
+  已接进 `check:all`。
+- 后台的移动端问题是用**无头 Edge + CDP 真跑一遍**定位的：
+  用假 token（`localStorage['decap-cms-user']`，必须带 `backendName: 'github'`）+
+  拦截 `api.github.com`（`/user`、`/repos/...`、`/git/trees/...`、`/contents/...`、`/graphql`），
+  就能在本地进真实编辑器、量真实几何、截图，不用真的登录 GitHub。
+  探针要求 `backend` 里**不能带 `base_url`**（带了会走 OAuth 跳转，不走本地 token）。
+
+---
+
 ## 2.7.0 · 2026-09-18
 
 ### 新增

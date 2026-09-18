@@ -338,6 +338,8 @@ const required = [
   'src/styles/global.css', 'src/styles/theme.css',
   'src/lib/posts.ts', 'src/lib/format.ts',
   'public/admin/index.html', 'public/admin/config.yml',
+  /* 后台预览：模板与样式都在 public 下，不走构建，所以必须有人看着它们别被删 */
+  'public/admin/preview.js', 'public/admin/preview.css',
   'workers/oauth/src/index.ts', 'workers/oauth/wrangler.toml',
   'astro.config.mjs', 'CHANGELOG.md', 'package.json', 'README.md',
 ];
@@ -351,6 +353,32 @@ ok('路由共 ' + routeFiles.length + ' 个：' + routeFiles.map((f) => '/' + re
 if (/@astrojs\/rss/.test(read('package.json'))) ok('RSS 依赖已安装');
 if (/@astrojs\/sitemap/.test(read('package.json'))) ok('Sitemap 依赖已安装');
 if (/pagefind/.test(read('package.json'))) ok('Pagefind 依赖已安装');
+
+/* ------------------------------------------------- 后台预览（public 下，不走构建） */
+{
+  const pv = read('public/admin/preview.js');
+  const idx = read('public/admin/index.html');
+  if (/registerPreviewTemplate\(\s*'posts'/.test(pv)) ok('后台预览：给 posts 注册了预览模板');
+  else bad('后台预览：preview.js 没有 registerPreviewTemplate(\'posts\', …)');
+  if (/registerPreviewStyle\(\s*'preview\.css'/.test(pv)) ok('后台预览：加载了 preview.css');
+  else bad('后台预览：preview.js 没有 registerPreviewStyle(\'preview.css\')');
+  /* 预览是按需加载的，本身不大；但它是后台页面，多一个第三方请求就多一个挂掉的点 */
+  if (!/<script[^>]+src=["']https?:\/\/(?!unpkg\.com\/decap-cms)/.test(pv)) ok('后台预览：没有引入第三方脚本');
+  else bad('后台预览：preview.js 里出现了第三方脚本地址');
+  if (/<script src="\/admin\/preview\.js"><\/script>/.test(idx)) ok('后台预览：index.html 在 decap 之后加载 preview.js');
+  else bad('后台预览：index.html 没有加载 /admin/preview.js');
+  if (idx.indexOf('decap-cms.js') < idx.indexOf('preview.js')) ok('后台预览：preview.js 排在 decap-cms.js 之后（CMS 全局已就绪）');
+  else bad('后台预览：preview.js 在 decap-cms.js 之前，registerPreview* 会找不到 CMS');
+  /* 移动端修复必须还在 —— 删掉这几条手机上就会重新炸 */
+  if (/min-width:\s*0\s*!important/.test(idx)) ok('后台移动端：800px 最小宽度已被覆盖');
+  else bad('后台移动端：没有覆盖 min-width:800px，手机后台会横向溢出');
+  if (/background:\s*#f7fbfe\s*!important/.test(idx) && /html\s*\{/.test(idx)) ok('后台移动端：html 也刷了底色（底部白条）');
+  else bad('后台移动端：html 底色没刷，底部可能露白');
+  if (/scroll-padding-bottom/.test(idx)) ok('后台移动端：滚动容器加了 scroll-padding-bottom（输入框滚进可视区）');
+  else bad('后台移动端：缺 scroll-padding-bottom，点输入框会整页上移');
+  if (/viewport-fit=cover/.test(idx)) ok('后台移动端：viewport 带 viewport-fit=cover');
+  else bad('后台移动端：viewport 缺 viewport-fit=cover');
+}
 
 /* ---------------------------------------------------------------- 结果 */
 console.log('');

@@ -1,0 +1,167 @@
+/*
+ * 后台预览的样式 —— 尽量贴近线上文章页的真实排版。
+ *
+ * 谁来用：public/admin/preview.js 里 registerPreviewStyle 加载它，然后
+ * 以 iframe 方式套进预览面板（decoupled: true），所以这里怎么写都不会
+ * 污染后台自己的界面。
+ *
+ * 为什么不直接搬 dist 里的 CSS：那个文件名带哈希（BaseLayout.DpRaR-Rf.css），
+ * 每次构建都会变，写死在后台里必然哪天就 404 了。这里的令牌是手抄的，
+ * 改主题时记得跟 src/styles/theme.css + global.css 一起对一遍。
+ */
+
+:root {
+  --pb: #f5faff;          /* 站点 --bg（浅色） */
+  --ink: #1b3a5c;         /* 站点 --ink */
+  --muted: #5b7a99;
+  --line: #d5e6f5;
+  --surface: #ffffff;
+  --accent: #2f7f9e;
+  --gold: #b9862f;
+  --font-title: 'Songti SC', 'STSong', 'Source Han Serif SC', 'Noto Serif CJK SC', Georgia, serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', 'Hiragino Sans GB', 'Noto Sans CJK SC', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, 'SFMono-Regular', Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 18px 16px 40px;
+  background: var(--pb);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15.5px;
+  line-height: 1.75;
+  -webkit-text-size-adjust: 100%;
+}
+
+.pv-article {
+  max-width: 720px;
+  margin: 0 auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 26px 22px 30px;
+}
+
+.pv-title {
+  font-family: var(--font-title);
+  font-size: 27px;
+  line-height: 1.34;
+  letter-spacing: 0.01em;
+  margin: 0 0 14px;
+}
+
+.pv-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  color: var(--muted);
+  font-size: 13px;
+  padding-bottom: 14px;
+  border-bottom: 1px dashed var(--line);
+}
+
+.pv-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.pv-tag {
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+
+.pv-cover {
+  margin: 20px 0 24px;
+  height: 190px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  position: relative;
+  background: #eaf4fb;
+}
+.pv-cover > * { width: 100%; height: 100%; display: block; }
+.pv-cover-grad {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-title);
+  font-size: 46px;
+  color: rgb(255 255 255 / 0.9);
+  text-shadow: 0 2px 12px rgb(0 0 0 / 0.22);
+}
+
+/* 正文排版：对齐线上 .prose-yuuu 的观感 */
+.pv-body { font-size: 16px; line-height: 1.85; }
+.pv-body > *:first-child { margin-top: 0; }
+.pv-body h1, .pv-body h2, .pv-body h3, .pv-body h4 {
+  font-family: var(--font-title);
+  line-height: 1.4;
+  margin: 1.6em 0 0.6em;
+}
+.pv-body h2 { font-size: 21px; border-bottom: 1px dashed var(--line); padding-bottom: 6px; }
+.pv-body h3 { font-size: 18px; }
+.pv-body p { margin: 0.9em 0; }
+.pv-body a { color: var(--accent); text-underline-offset: 3px; }
+.pv-body strong { color: var(--ink); }
+.pv-body code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: #eef6fc;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1px 5px;
+}
+.pv-body pre {
+  font-family: var(--font-mono);
+  font-size: 13.4px;
+  line-height: 1.65;
+  background: #0f2233;
+  color: #dceafb;
+  border-radius: 12px;
+  padding: 14px 16px;
+  overflow-x: auto;
+}
+.pv-body pre code { background: none; border: none; color: inherit; padding: 0; }
+.pv-body blockquote {
+  margin: 1.1em 0;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}
+.pv-body ul, .pv-body ol { padding-left: 1.4em; margin: 0.9em 0; }
+.pv-body li { margin: 0.35em 0; }
+.pv-body img { max-width: 100%; border-radius: 12px; }
+.pv-body hr { border: none; border-top: 1px dashed var(--line); margin: 1.8em 0; }
+.pv-body table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.pv-body th, .pv-body td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+
+.pv-hint {
+  max-width: 720px;
+  margin: 0 auto 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: rgb(255 255 255 / 0.6);
+}
+.pv-cover-wrap { position: relative; }
+.pv-cover-meta {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 6px 12px;
+  font-size: 11.5px;
+  color: rgb(255 255 255 / 0.94);
+  background: linear-gradient(transparent, rgb(0 0 0 / 0.45));
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --pb: #0d1b2a; --ink: #e0f0ff; --muted: #9db8d2;
+    --line: rgb(126 200 227 / 0.22); --surface: #122436; --accent: #7ec8e3; --gold: #e8c87a;
+  }
+  .pv-body code { background: #0f2233; }
+}
