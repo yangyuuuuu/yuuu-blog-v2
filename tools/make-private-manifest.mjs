@@ -12,6 +12,7 @@
  * 用法：node tools/make-private-manifest.mjs   （已挂进 npm run build）
  */
 import { readFileSync, writeFileSync, readdirSync, mkdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isHiddenData } from '../src/lib/hidden.ts';
@@ -39,6 +40,23 @@ function plainText(md) {
     .trim();
 }
 
+/**
+ * 文章最后一次被改动的日期。
+ * frontmatter 里有 updated 就用它（后台保存时会自动写）；
+ * 没有就用 **git 提交日期** 兜底 —— 这样老文章也有真实的「最近修改」，
+ * 「最近修改」排序才不会和「最新发布」完全一样。
+ */
+function gitDate(file) {
+  try {
+    const out = execFileSync('git', ['log', '-1', '--format=%cs', '--', file], {
+      cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    return out || '';
+  } catch {
+    return '';
+  }
+}
+
 function readKeys(file) {
   const raw = readFileSync(join(POSTS, file), 'utf8');
   const fm = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(raw);
@@ -63,6 +81,8 @@ function readKeys(file) {
     category: one('category'),
     title: one('title') || file,
     date: one('date') || '',
+    /* 后台保存时自动写；「最近修改」排序要用它，缺了就只能退回按发布日期排 */
+    updated: one('updated') || '',
     summary: one('summary') || '',
     tags,
     /* 全文：私人角落的搜索要用它。只留前 2000 字，够搜就行 */
@@ -71,6 +91,14 @@ function readKeys(file) {
 }
 
 const all = readdirSync(POSTS).filter((f) => f.endsWith('.md')).map(readKeys);
+
+/* 没有 updated 的，用 git 提交日期兜底（注意要比 date 新，否则没有意义） */
+for (const p of all) {
+  if (!p.updated) {
+    const g = gitDate('src/content/posts/' + p.slug + '.md');
+    if (g && g > p.date) p.updated = g;
+  }
+}
 /* 草稿不算「隐藏文章」—— 草稿连构建都不输出，列出来点了会 404 */
 const hidden = all
   .filter((p) => !p.draft && isHiddenData(p))
@@ -87,6 +115,7 @@ writeFileSync(
         title: p.title,
         url: '/posts/' + p.slug + '/',
         date: p.date,
+        updated: p.updated || p.date,
         category: p.category,
         summary: p.summary,
         tags: p.tags,
