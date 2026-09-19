@@ -85,20 +85,37 @@ if (compiled === astroFiles.length) ok(astroFiles.length + ' 个 .astro 全部�
 /* ---------------------------------------------------------------- 2. 内容 schema */
 head('2. 文章 frontmatter 校验（zod，与 Content Collections 同规则）');
 const COVER_STYLES = ['wave', 'nebula', 'crown', 'opera', 'aurora', 'starry', 'bubble', 'grid', 'image'];
-/* 必须和 src/content.config.ts 保持一致 —— 网页后台清空日期字段会写 updated: ''，
-   而 z.coerce.date() 会把空串转成 Invalid Date 让构建失败。
-   这个坑就是「两边 schema 各写一份」造成的，改一边记得改另一边。 */
+/*
+ * ⚠️ 这里是 src/content.config.ts 的**镜像**（不能直接 import：那个模块依赖
+ * astro:content 这个渲染期虚拟模块，构建前的脚本里加载不了）。
+ *
+ * 既然是抄的，就会漂移 —— 已经有两次教训：
+ *   1. 后台清空日期会写 updated: ''，而 z.coerce.date() 把空串转成 Invalid Date；
+ *   2. 新增「安利」分类时我漏改了真 schema，于是构建失败、站点一直发不出新版，
+ *      而这份副本还停留在旧分类上（它没报错，所以没起到兜底作用）。
+ *
+ * 所以：**能读的都不要抄**。分类直接从 content.config.ts 里读出来，
+ * 只有 zod 的具体规则没法读、才抄。
+ */
 const optionalDate = z.preprocess((v) => (v === '' || v === null ? undefined : v), z.coerce.date().optional());
+/* 后台清空「封面色相」会写 coverHue: ''，z.number() 同样不收 —— 和日期是同一类坑 */
+const optionalHue = z.preprocess((v) => (v === '' || v === null ? undefined : v), z.coerce.number().min(0).max(359).optional());
+const CATEGORIES_FROM_SOURCE = (() => {
+  const m = /export const CATEGORIES = \[([^\]]+)\]/.exec(read('src/content.config.ts'));
+  if (!m) return ['日记', '技术', '随笔'];
+  return m[1].split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+})();
 const schema = z.object({
   title: z.string(),
   date: z.coerce.date(),
   updated: optionalDate,
-  category: z.enum(['日记', '技术', '随笔']).default('随笔'),
+  /* 分类清单从源码读，不抄第二份 —— 抄的那份在加「安利」时没跟上，等于没兜住 */
+  category: z.enum(CATEGORIES_FROM_SOURCE).default('随笔'),
   tags: z.array(z.string()).default([]),
   summary: z.string().optional(),
   cover: z.string().optional(),
   coverStyle: z.enum(COVER_STYLES).optional(),
-  coverHue: z.number().min(0).max(359).optional(),
+  coverHue: optionalHue,
   pinned: z.boolean().default(false),
   draft: z.boolean().default(false),
   private: z.boolean().default(false),

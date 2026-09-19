@@ -99,6 +99,21 @@ console.log('=== 4.5 分类：三处必须一致 ===');
   ok(!!categoryNote('安利'), '每个分类都有说明文字（手机上要显示）', categoryNote('安利'));
   ok(normalizeCategory('不存在的分类') === '随笔', '不认识的分类退回随笔（不会存成空值）');
   ok(normalizeCategory('安利') === '安利', '认识的分类原样保留');
+  /* ★ 内容 schema 也必须认识这个分类 —— 漏了它构建会直接失败（加「安利」时就是这么栽的） */
+  {
+    const schema = readFileSync('src/content.config.ts', 'utf8');
+    const m2 = /export const CATEGORIES = \[([^\]]+)\]/.exec(schema);
+    if (!m2) {
+      ok(false, 'content.config.ts 里找不到 CATEGORIES');
+    } else {
+      const fromSchema = m2[1].split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+      const onlySchema = fromSchema.filter((x) => !CATEGORIES.some((c) => c.id === x));
+      const onlyApp = CATEGORIES.map((c) => c.id).filter((x) => !fromSchema.includes(x));
+      ok(onlySchema.length === 0 && onlyApp.length === 0, '★ content.config.ts 与手机页的分类集合一致',
+         (onlySchema.length ? '只在 schema 有: ' + onlySchema.join('、') + ' ' : '') + (onlyApp.length ? '只在手机页有: ' + onlyApp.join('、') : ''));
+    }
+  }
+
   /* 新增分类还要在归档页有颜色、在封面自动配色里有条目，否则那一栏是空的 */
   for (const [file, label] of [['src/pages/archive.astro', '归档页分类色'], ['src/lib/posts.ts', '封面自动配色']]) {
     const src = readFileSync(file, 'utf8');
