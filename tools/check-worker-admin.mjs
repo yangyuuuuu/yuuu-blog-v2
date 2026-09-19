@@ -54,7 +54,7 @@ globalThis.fetch = async (input, init = {}) => {
     gh.calls.push({ method, path: 'tree:' + dir, body: null, message: '' });
     const tree = [...gh.files.entries()]
       .filter(([k]) => k.startsWith(dir + '/'))
-      .map(([k, v], i) => ({ path: k.slice(dir.length + 1), type: 'blob', size: v.text.length, sha: 'blob' + i }));
+      .map(([k, v], i) => ({ path: k.slice(dir.length + 1), type: 'blob', size: Buffer.from(v.base64, 'base64').length, sha: 'blob' + i }));
     return new Response(JSON.stringify({ sha: 't', truncated: false, tree }), { status: 200 });
   }
   /* /git/blobs 上传二进制 */
@@ -74,16 +74,23 @@ globalThis.fetch = async (input, init = {}) => {
   if (method === 'GET') {
     const f = gh.files.get(path);
     if (!f) return new Response(JSON.stringify({ message: 'Not Found' }), { status: 404 });
+    /*
+     * 假的 GitHub 和真的行为一致：content 永远是 **base64**，
+     * 不做 UTF-8 解码。之前这里把内容解码成文本再编码回去，
+     * 于是「二进制损坏」这一类 bug 全被掩盖了 —— 图库那次就是这么漏过去的。
+     */
     return new Response(JSON.stringify({
       sha: f.sha, path,
-      content: Buffer.from(f.text, 'utf8').toString('base64'),
+      content: f.base64 + '\n',
       encoding: 'base64',
     }), { status: 200 });
   }
   if (method === 'PUT') {
-    const text = Buffer.from(gh.calls.at(-1).body.content, 'base64').toString('utf8');
-    gh.files.set(path, { text, sha: 'sha-' + (gh.files.size + 1) });
-    gh.lastPutText = text;
+    const base64 = String(gh.calls.at(-1).body.content || '').replace(/\n/g, '');
+    gh.files.set(path, { base64, sha: 'sha-' + (gh.files.size + 1) });
+    /* 给文本类断言用（Markdown 场景）：解出来看看 */
+    gh.lastPutText = Buffer.from(base64, 'base64').toString('utf8');
+    gh.lastPutBase64 = base64;
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   }
   if (method === 'DELETE') { gh.files.delete(path); return new Response(JSON.stringify({ ok: true }), { status: 200 }); }
@@ -131,7 +138,7 @@ console.log('=== 1. ticket 校验 ===');
 /* ---------- 2. 读文件 ---------- */
 console.log('=== 2. 读一篇文章 ===');
 {
-  gh.files.set('src/content/posts/old.md', { text: OLD, sha: 'sha-old' });
+  gh.files.set('src/content/posts/old.md', { base64: Buffer.from(OLD, 'utf8').toString('base64'), sha: 'sha-old' });
   const r = await call('/admin/file', { ticket: 'good-ticket', path: 'src/content/posts/old.md' });
   ok(r.status === 200, '读取成功');
   ok(r.data?.title === '老标题', '解析出标题', r.data?.title);
@@ -268,7 +275,7 @@ console.log('=== 5.7 正文含 Markdown 分隔线（---）时不能吃掉正文 
     '下半段，分隔线之后的内容一个字都不能少。',
     '',
   ].join('\n');
-  gh.files.set('src/content/posts/with-rule.md', { text: withRule, sha: 's-rule' });
+  gh.files.set('src/content/posts/with-rule.md', { base64: Buffer.from(withRule, 'utf8').toString('base64'), sha: 's-rule' });
 
   const read = await call('/admin/file', { ticket: 'good-ticket', path: 'src/content/posts/with-rule.md' });
   ok(read.status === 200, '能读到这篇');
@@ -301,8 +308,8 @@ console.log('=== 6. 删除 ===');
 console.log('=== 6.5 图库：列表 / 上传 / 归类 / 删除 ===');
 {
   /* 造两张图：一张在根目录（老图，算「未分类」），一张已经在分类目录里 */
-  gh.files.set('public/uploads/old-pic.jpg', { text: Buffer.from('OLD-IMAGE-BYTES').toString('base64'), sha: 's-old' });
-  gh.files.set('public/uploads/表情包/meme-one.png', { text: Buffer.from('MEME-BYTES').toString('base64'), sha: 's-meme' });
+  gh.files.set('public/uploads/old-pic.jpg', { base64: Buffer.from('OLD-IMAGE-BYTES').toString('base64'), sha: 's-old' });
+  gh.files.set('public/uploads/表情包/meme-one.png', { base64: Buffer.from('MEME-BYTES').toString('base64'), sha: 's-meme' });
 
   const list = await call('/admin/images', { ticket: 'good-ticket' });
   ok(list.status === 200, '列表能取到', JSON.stringify(list.data).slice(0, 120));
@@ -330,13 +337,37 @@ console.log('=== 6.5 图库：列表 / 上传 / 归类 / 删除 ===');
   const bad2 = await call('/admin/image/upload', { ticket: 'good-ticket', name: 'x', dataUrl: '不是 dataURL' });
   ok(bad2.status === 400, '乱填的数据被拦');
 
+  /* ★ 二进制完整性：真实的一张小 PNG（不是 base64 文本）走一遍「归类」 */
+  {
+    /* 一个最小的合法 PNG（1x1 透明），字节里含 0x00 / 0xFF / 0x89 这类非文本字节 */
+    const pngHex = '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082';
+    const pngBuf = Buffer.from(pngHex, 'hex');
+    const pngB64 = pngBuf.toString('base64');
+    gh.files.set('public/uploads/真图.png', { base64: pngB64, sha: 's-real' });
+
+    const before = Buffer.from(gh.files.get('public/uploads/真图.png').base64, 'base64');
+    const mv = await call('/admin/image/move', { ticket: 'good-ticket', path: 'public/uploads/真图.png', dir: '测试分类' });
+    ok(mv.status === 200, '★ 真实 PNG 能归类', JSON.stringify(mv.data));
+    const moved = gh.files.get('public/uploads/测试分类/真图.png');
+    ok(!!moved, '★ 归类后文件还在（没丢）');
+    if (moved) {
+      const after = Buffer.from(moved.base64, 'base64');
+      ok(after.length === before.length, '★ 字节数一致', after.length + ' vs ' + before.length);
+      ok(after.equals(before), '★ 字节完全相同（PNG 没被当文本搞坏）', after.equals(before) ? '' : '前 8 字节 ' + after.slice(0, 8).toString('hex') + ' vs ' + before.slice(0, 8).toString('hex'));
+    }
+    /* 归类之后列表里必须还能看到它 */
+    const list2 = await call('/admin/images', { ticket: 'good-ticket' });
+    const still = (list2.data?.images || []).find((i) => i.name === '真图.png');
+    ok(!!still && still.dir === '测试分类', '★ 归类后列表里仍然能看到它', JSON.stringify(still));
+  }
+
   /* 归类：把未分类的 old-pic.jpg 挪进「电影截图」 */
-  const before = gh.files.get('public/uploads/old-pic.jpg')?.text;
+  const before = gh.files.get('public/uploads/old-pic.jpg')?.base64;
   const mv = await call('/admin/image/move', { ticket: 'good-ticket', path: 'public/uploads/old-pic.jpg', dir: '电影截图' });
   ok(mv.status === 200, '归类成功', JSON.stringify(mv.data));
   ok(mv.data?.path === 'public/uploads/电影截图/old-pic.jpg', '新路径正确', mv.data?.path);
   ok(!gh.files.has('public/uploads/old-pic.jpg'), '旧路径已删除（真正移走，不是复制两份）');
-  const after = gh.files.get('public/uploads/电影截图/old-pic.jpg')?.text;
+  const after = gh.files.get('public/uploads/电影截图/old-pic.jpg')?.base64;
   ok(after === before, '★ 图片内容一字未改（base64 原样搬运）');
 
   /* 移回未分类 */

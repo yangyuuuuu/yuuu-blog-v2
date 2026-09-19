@@ -405,6 +405,40 @@ function ghHeaders(env: Env): Record<string, string> {
   };
 }
 
+/**
+ * 取一个**二进制**文件，返回原始 base64 与 sha。
+ *
+ * ⚠️ 为什么单独一个函数、为什么不复用 ghGetFile：
+ * ghGetFile 会把内容 UTF-8 解码成字符串 —— 那是给 Markdown 用的。
+ * 图片是二进制，一旦经过 UTF-8 解码，每个非法字节都会变成 U+FFFD（3 字节），
+ * 再编码回去文件就废了：一张 56KB 的 JPEG 会涨到 105KB 且完全打不开。
+ * 我做图库「换分类」时就踩了这个坑（用户报「图片丢失」）。
+ * **凡是图片，一律走 base64，一步都不要解码成文本。**
+ */
+async function ghGetBlob(env: Env, path: string): Promise<{ base64: string; sha: string } | null> {
+  const url = `${GH_API}/repos/${repoOf(env)}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${branchOf(env)}`;
+  const res = await fetch(url, { headers: ghHeaders(env) });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error('读文件失败（HTTP ' + res.status + '）');
+  const data = (await res.json()) as { content?: string; sha?: string };
+  return { base64: (data.content || '').replace(/\n/g, ''), sha: data.sha || '' };
+}
+
+/** 直接写入一个 base64 内容（二进制安全，图片用这个） */
+async function ghPutBlob(env: Env, path: string, base64: string, message: string, sha: string): Promise<void> {
+  const body: Record<string, unknown> = { message, content: base64.replace(/\n/g, ''), branch: branchOf(env) };
+  if (sha) body.sha = sha;
+  const res = await fetch(`${GH_API}/repos/${repoOf(env)}/contents/${path.split('/').map(encodeURIComponent).join('/')}`, {
+    method: 'PUT',
+    headers: { ...ghHeaders(env), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error('提交失败（HTTP ' + res.status + '）：' + t.slice(0, 200));
+  }
+}
+
 /** 从 GitHub 取一个文件：返回正文与 sha（不存在则 sha 为空） */
 async function ghGetFile(env: Env, path: string): Promise<{ text: string; sha: string } | null> {
   const url = `${GH_API}/repos/${repoOf(env)}/contents/${path}?ref=${branchOf(env)}`;
@@ -634,16 +668,14 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
         const to = `${UPLOAD_DIR}/${dir ? dir + '/' : ''}${fileName}`;
         if (to === from) return json({ ok: true, path: to, dir }, 200, request, env);
 
-        const f = await ghGetFile(env, from);
+        /* 用 blob 版本读写：图片是二进制，解码成文本就毁了（见 ghGetBlob 的注释） */
+        const f = await ghGetBlob(env, from);
         if (!f) return json({ message: '这张图在仓库里找不到了（可能已被删或改名）' }, 404, request, env);
 
-        /* GitHub 没有「移动」接口：新建 + 删除，两条 commit（App 里也是这么做的） */
-        await fetch(`${GH_API}/repos/${repo}/contents/${to}`, {
-          method: 'PUT',
-          headers: { ...ghHeaders(env), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: 'media: 归类 ' + fileName + ' → ' + (dir || '未分类'), content: toBase64(f.text), branch: branchOf(env) }),
-        }).then(async (r2) => { if (!r2.ok) throw new Error('新建失败（HTTP ' + r2.status + '）'); });
-        await ghDeleteFile(env, from, 'media: 归类 ' + fileName + ' → ' + (dir || '未分类'), f.sha);
+        const msg = 'media: 归类 ' + fileName + ' → ' + (dir || '未分类');
+        /* GitHub 没有「移动」接口：新建 + 删除，两条 commit */
+        await ghPutBlob(env, to, f.base64, msg, '');
+        await ghDeleteFile(env, from, msg, f.sha);
         return json({ ok: true, path: to, dir, url: '/uploads/' + to.replace(UPLOAD_DIR + '/', '').split('/').map(encodeURIComponent).join('/') }, 200, request, env);
       }
 
