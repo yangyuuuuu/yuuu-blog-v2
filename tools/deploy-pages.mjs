@@ -23,19 +23,27 @@ import { existsSync, readdirSync } from 'node:fs';
 const dryRun = process.argv.includes('--dry-run');
 const ROOT = process.cwd();
 /*
- * ⚠️ Windows 上不要用 shell: true 来跑 npx/npm ——
- * shell 会把参数交给 cmd.exe 重新解析，我这里踩过一次：
- * 进程直接以 0xC0000409（栈溢出）崩掉，报错还看不出原因。
- * 正确做法是 shell: false + 补上 .cmd 后缀。
+ * ⚠️ Windows 上跑 npm / npx 的坑（踩了两次）：
+ *   · Node 18.20+/20+ 出于安全考虑，**不允许 shell:false 直接启动 .cmd/.bat** → EINVAL；
+ *   · 而 shell:true + **参数数组** 会让 cmd.exe 二次解析参数，
+ *     带空格或中文的 --commit-message 会被拆坏，甚至让进程崩掉（0xC0000409）。
+ * 结论：npm/npx 走 shell，并且传**一条预先拼好、手动加引号的命令串**；
+ * git 这类真 exe 用 shell:false 直接跑，最稳。
  */
-const exe = (cmd) => (process.platform === 'win32' && ['npm', 'npx', 'pnpm'].includes(cmd) ? cmd + '.cmd' : cmd);
-const run = (cmd, args, opts = {}) => {
+const quote = (s) => (/[\s"]/.test(s) ? '"' + s.replace(/"/g, '\\"') + '"' : s);
+import { spawnSync } from 'node:child_process';
+const run = (cmd, args) => {
   console.log('\n▶ ' + cmd + ' ' + args.join(' '));
-  return execFileSync(exe(cmd), args, { cwd: ROOT, stdio: 'inherit', shell: false, ...opts });
+  const needsShell = process.platform === 'win32' && (cmd === 'npm' || cmd === 'npx');
+  const res = needsShell
+    ? spawnSync([cmd].concat(args).map(quote).join(' '), { cwd: ROOT, stdio: 'inherit', shell: true })
+    : spawnSync(cmd, args, { cwd: ROOT, stdio: 'inherit', shell: false });
+  if (res.error) throw res.error;
+  if (res.status !== 0) throw new Error(cmd + ' 退出码 ' + res.status);
 };
 const out = (cmd, args) => {
-  try { return execFileSync(exe(cmd), args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], shell: false }).trim(); }
-  catch { return ''; }
+  const res = spawnSync(cmd, args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], shell: false });
+  return res.status === 0 ? String(res.stdout || '').trim() : '';
 };
 
 /* 0. 工作区必须干净：有未提交的改动时 pull --rebase 会直接拒绝 */
