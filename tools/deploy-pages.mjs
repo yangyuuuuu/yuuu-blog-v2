@@ -22,12 +22,19 @@ import { existsSync, readdirSync } from 'node:fs';
 
 const dryRun = process.argv.includes('--dry-run');
 const ROOT = process.cwd();
+/*
+ * ⚠️ Windows 上不要用 shell: true 来跑 npx/npm ——
+ * shell 会把参数交给 cmd.exe 重新解析，我这里踩过一次：
+ * 进程直接以 0xC0000409（栈溢出）崩掉，报错还看不出原因。
+ * 正确做法是 shell: false + 补上 .cmd 后缀。
+ */
+const exe = (cmd) => (process.platform === 'win32' && ['npm', 'npx', 'pnpm'].includes(cmd) ? cmd + '.cmd' : cmd);
 const run = (cmd, args, opts = {}) => {
   console.log('\n▶ ' + cmd + ' ' + args.join(' '));
-  return execFileSync(cmd, args, { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32', ...opts });
+  return execFileSync(exe(cmd), args, { cwd: ROOT, stdio: 'inherit', shell: false, ...opts });
 };
 const out = (cmd, args) => {
-  try { return execFileSync(cmd, args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], shell: process.platform === 'win32' }).trim(); }
+  try { return execFileSync(exe(cmd), args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], shell: false }).trim(); }
   catch { return ''; }
 };
 
