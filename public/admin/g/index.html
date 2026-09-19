@@ -38,6 +38,12 @@
         <button class="icon-btn" id="refreshBtn" type="button" aria-label="刷新">⟳</button>
       </header>
 
+      <!-- 出错时在这里说明原因（图库会同时刷新列表，不会让人以为图丢了） -->
+      <div class="banner" id="banner" hidden>
+        <span id="bannerText"></span>
+        <button class="link-btn" id="bannerAction" type="button" hidden></button>
+      </div>
+
       <div class="filters" id="cats" role="tablist"></div>
 
       <div class="search-wrap">

@@ -604,3 +604,20 @@ body.is-batch .grid-pad { height: calc(160px + var(--safe-b)); }
 .card.is-missing { background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 6px, var(--surface) 6px, var(--surface) 10px); }
 .card.is-missing img { opacity: 0; }
 .card.is-missing .card-tag { background: color-mix(in srgb, var(--gold) 78%, #000); }
+
+/* 出错横幅：把原因留在屏幕上（沿用 /admin/p 的样式） */
+.banner {
+  margin: 10px 14px 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  color: var(--ink);
+  font-size: 13.5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.banner[hidden] { display: none; }
+.banner #bannerText { flex: 1; min-width: 0; }
+.link-btn { background: none; border: none; padding: 0 6px; color: var(--accent); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }

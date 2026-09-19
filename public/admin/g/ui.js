@@ -18,6 +18,7 @@ const el = {
   screenLogin: $('screenLogin'), screenGallery: $('screenGallery'),
   loginForm: $('loginForm'), pwd: $('pwd'), loginBtn: $('loginBtn'), loginMsg: $('loginMsg'),
   cats: $('cats'), search: $('search'), grid: $('grid'), empty: $('empty'), count: $('count'),
+  banner: $('banner'), bannerText: $('bannerText'), bannerAction: $('bannerAction'),
   refreshBtn: $('refreshBtn'), pickBtn: $('pickBtn'), fileInput: $('fileInput'),
   selectBtn: $('selectBtn'), batchbar: $('batchbar'), batchCount: $('batchCount'),
   selectAllBtn: $('selectAllBtn'), clearSelBtn: $('clearSelBtn'),
@@ -65,6 +66,27 @@ function toast(text, ms = 2400) {
   el.toast.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.toast.hidden = true; }, ms);
+}
+
+/** 顶部横幅：把错误原因留在屏幕上（toast 会消失，横幅不会） */
+function showBanner(text, actionLabel, onAction) {
+  if (!el.banner) return;
+  el.bannerText.textContent = text;
+  if (actionLabel) {
+    el.bannerAction.textContent = actionLabel;
+    el.bannerAction.hidden = false;
+    el.bannerAction.onclick = onAction;
+  } else {
+    el.bannerAction.hidden = true;
+    el.bannerAction.onclick = null;
+  }
+  el.banner.hidden = false;
+}
+function hideBanner() {
+  if (!el.banner) return;
+  el.banner.hidden = true;
+  el.bannerAction.hidden = true;
+  el.bannerAction.onclick = null;
 }
 
 function show(which) {
@@ -136,6 +158,7 @@ async function load() {
   try {
     const data = await post('/admin/images', {});
     images = data.images || [];
+    hideBanner();
     renderCats();
     renderGrid();
   } catch (err) {
@@ -274,7 +297,14 @@ async function runBatch(payload, label) {
     setBatchMode(false);
     await load();
   } catch (err) {
-    toast(err.message, 5000);
+    /*
+     * 失败也要**把原因说清楚、并且刷新列表** ——
+     * 之前只丢一句 toast，用户看到"会发生错误"却不知道错在哪，
+     * 而且界面还停在操作前的样子，会以为图片丢了。
+     */
+    showBanner(label + '失败：' + err.message, '刷新列表', () => { hideBanner(); load(); });
+    toast(label + '失败：' + err.message, 8000);
+    await load();
   }
 }
 
@@ -385,7 +415,9 @@ async function changeDir(img, dir) {
     toast('已移到「' + dirLabel(dir) + '」');
     await load();
   } catch (err) {
-    toast(err.message, 4000);
+    showBanner('改分类失败：' + err.message, '刷新列表', () => { hideBanner(); load(); });
+    toast(err.message, 6000);
+    await load();
   }
 }
 
