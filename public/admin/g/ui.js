@@ -34,6 +34,20 @@ let currentDir = '__all__';
 let keyword = '';
 let picked = [];   /* 正在上传的文件 */
 
+/*
+ * 刚上传的图：**站点还没构建完**（Cloudflare 要 1 分钟左右），
+ * 这时缩略图地址 /uploads/... 还是 404，卡片就是一块空白 ——
+ * 用户会以为"没传上去"。所以上传成功后先用**手机里的原文件**（blob URL）当缩略图，
+ * 看得见、也能确认传的是哪张；等站点构建好了再把远程地址换回来。
+ */
+const pendingThumbs = new Map();   /* path -> blobURL */
+function clearStaleThumbs(maxAgeMs = 3 * 60 * 1000) {
+  const now = Date.now();
+  for (const [path, v] of pendingThumbs) {
+    if (now - v.at > maxAgeMs) { URL.revokeObjectURL(v.url); pendingThumbs.delete(path); }
+  }
+}
+
 /** 批量选择状态：mode 打开后卡片右上角出现勾选框 */
 const batch = { mode: false, paths: new Set() };
 let toastTimer = 0;
@@ -160,9 +174,19 @@ function renderGrid() {
     card.className = 'card';
     card.style.animationDelay = (i < 12 ? i * 18 : 0) + 'ms';
     const im = document.createElement('img');
-    im.src = img.url;
     im.alt = img.name;
     im.loading = 'lazy';
+    const local = pendingThumbs.get(img.path);
+    im.src = local ? local.url : img.url;
+    /*
+     * 远程地址取不到（多半是刚上传、站点还没构建完）时，
+     * 给一个说得清楚的占位，而不是一片空白。
+     */
+    im.addEventListener('error', () => {
+      if (local) return;   /* 本地缩略图也失败就算了 */
+      card.classList.add('is-missing');
+      tag.textContent = dirLabel(img.dir) + ' · 还没构建好';
+    });
     const tag = document.createElement('span');
     tag.className = 'card-tag';
     tag.textContent = dirLabel(img.dir);
@@ -383,14 +407,39 @@ async function uploadAll(files, dir) {
     toast('上传中 ' + (i + 1) + '/' + files.length + '…', 15000);
     try {
       const payload = await prepare(files[i]);
-      done.push(await post('/admin/image/upload', { ...payload, dir }));
+      const res = await post('/admin/image/upload', { ...payload, dir });
+      done.push(res);
+      /*
+       * 存下本地缩略图：站点要等 Cloudflare 构建（约 1 分钟）才有这张图，
+       * 这期间用手机里的原文件显示，用户能立刻看到自己传的是哪张。
+       */
+      if (res && res.path && files[i]) {
+        try { pendingThumbs.set(res.path, { url: URL.createObjectURL(files[i]), at: Date.now() }); } catch { /* 忽略 */ }
+      }
     } catch (err) {
       toast('第 ' + (i + 1) + ' 张失败：' + err.message, 6000);
       await new Promise((r) => setTimeout(r, 1200));
     }
   }
-  toast(done.length ? '上传完成 ' + done.length + ' 张 → ' + dirLabel(dir) : '没有图片上传成功', 3000);
+
+  if (done.length) {
+    /* 说清楚"现在看到的是本机预览，站点约 1 分钟后才有" */
+    toast('上传完成 ' + done.length + ' 张 → ' + dirLabel(dir) + '（缩略图是本机预览，站点约 1 分钟后生效）', 5000);
+  } else {
+    toast('没有图片上传成功', 3000);
+  }
   await load();
+
+  /*
+   * 站点构建好之后自动换回远程地址，并顺手把过期 blob 清掉。
+   * 60 秒是个经验值（Cloudflare Pages 一般 40~60 秒）。
+   */
+  if (done.length) {
+    setTimeout(() => {
+      clearStaleThumbs(0);      /* 立刻清掉，强制用远程地址 */
+      load();
+    }, 70000);
+  }
 }
 
 /** 读取文件 → （必要时）压缩 → dataURL */

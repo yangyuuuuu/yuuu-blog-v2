@@ -398,6 +398,34 @@ console.log('=== 6.5 图库：列表 / 上传 / 归类 / 删除 ===');
   ok(decodeURIComponent(up.data?.url || '') === '/uploads/封面/我的_新图.png', '上传返回可用的 URL');
   ok(gh.files.has('public/uploads/封面/我的_新图.png'), '文件真的写进（假）仓库了');
 
+  /*
+   * ★ 再走一遍「真实手机照片」的路径：200KB 的 JPEG + 指定分类目录。
+   * 用户报上传后图看不到，先在这里排除「上传链路本身有 bug」。
+   */
+  {
+    const head = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    const mid = Buffer.alloc(200 * 1024);
+    for (let i = 0; i < mid.length; i++) mid[i] = (i * 37 + 11) & 0xff;
+    const jpeg = Buffer.concat([head, mid, Buffer.from([0xff, 0xd9])]);
+    const dataUrl = 'data:image/jpeg;base64,' + jpeg.toString('base64');
+
+    const up2 = await call('/admin/image/upload', { ticket: 'good-ticket', name: 'IMG_20260919.jpg', dataUrl, dir: 'celeste' });
+    ok(up2.status === 200, '★ 200KB JPEG 上传成功', JSON.stringify(up2.data).slice(0, 110));
+    ok(up2.data?.dir === 'celeste', '归到指定分类');
+    const written = gh.files.get('public/uploads/celeste/IMG_20260919.jpg');
+    ok(!!written, '文件写进了（假）仓库');
+    if (written) {
+      const bytes = Buffer.from(written.base64, 'base64');
+      ok(bytes.length === jpeg.length, '★ 字节数与上传的一致', bytes.length + ' vs ' + jpeg.length);
+      ok(bytes.equals(jpeg), '★ 字节完全相同（没损坏）');
+      ok(bytes[0] === 0xff && bytes[1] === 0xd8, '开头仍是 JPEG 魔数');
+    }
+    const list3 = await call('/admin/images', { ticket: 'good-ticket' });
+    const found = (list3.data?.images || []).find((i) => i.name === 'IMG_20260919.jpg');
+    ok(!!found, '★ 上传后立刻能在列表里查到');
+    ok(found && decodeURIComponent(found.url) === '/uploads/celeste/IMG_20260919.jpg', 'URL 指向站点路径', found && found.url);
+  }
+
   /* 格式与路径的拦截 */
   const bad1 = await call('/admin/image/upload', { ticket: 'good-ticket', name: 'x', dataUrl: 'data:text/plain;base64,aGk=' });
   ok(bad1.status === 400, '非图片格式被拦', 'status=' + bad1.status);

@@ -599,3 +599,8 @@ body.is-batch .card-check { transform: scale(1); }
   text-underline-offset: 3px;
 }
 body.is-batch .grid-pad { height: calc(160px + var(--safe-b)); }
+
+/* 图还没构建好 / 取不到时，给个说得清楚的占位，而不是一片空白 */
+.card.is-missing { background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 6px, var(--surface) 6px, var(--surface) 10px); }
+.card.is-missing img { opacity: 0; }
+.card.is-missing .card-tag { background: color-mix(in srgb, var(--gold) 78%, #000); }
