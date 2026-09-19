@@ -504,3 +504,18 @@ body.is-dirty .savebar .btn { display: none; }
 .item-2col { align-items: flex-start; }
 .item-2col .item-body { padding-top: 1px; }
 .list-pad { height: calc(88px + var(--safe-b)); }
+
+/* 列表右侧的「改」按钮：和「点一条打开文章」分开，避免误触 */
+.item-edit {
+  flex: none;
+  min-width: 44px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+  transition: all 0.16s;
+}
+.item-edit:active { transform: scale(0.94); border-color: var(--accent); color: var(--accent); }

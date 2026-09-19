@@ -9,6 +9,24 @@ import { relativeDay, describe, initialOf } from '../m/app.js';
 
 export { relativeDay, describe, initialOf };
 
+/**
+ * 文章在站点上的路径。
+ *
+ * 优先用构建时写进索引的 url（最准）；没有就按 slug 现算 ——
+ * 规则与 src/lib/slug.ts 一致（小写、非字母数字换 -、合并连续 -）。
+ * 注意 **不能用文件名现拼**：2026-09-18-SEP.-26.md 的真实路径是
+ * /posts/2026-09-18-sep-26/，拼错了就是 404（这个坑踩过）。
+ */
+export function postUrl(post) {
+  if (post && typeof post.url === 'string' && post.url) return post.url;
+  const slug = String((post && post.slug) || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  return slug ? '/posts/' + slug + '/' : '';
+}
+
 /** 筛选档位：状态三档 + 分类若干 + 全部 */
 export function filtersOf(posts) {
   const cats = [...new Set(posts.map((p) => p.category).filter(Boolean))];

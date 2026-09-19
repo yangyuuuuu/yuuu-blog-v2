@@ -8,7 +8,7 @@
  *
  * 和写作页、图库共用同一个 session key，登录一次三处通用。
  */
-import { filtersOf, query, relativeDay, describe, initialOf } from './posts.js';
+import { filtersOf, query, relativeDay, describe, initialOf, postUrl } from './posts.js';
 
 const API = 'https://oauth.yuuu.love';
 const SESSION_KEY = 'yuuu-mobile-editor';
@@ -213,12 +213,31 @@ function render() {
       body.appendChild(sn);
     }
 
-    const arrow = document.createElement('span');
-    arrow.className = 'item-arrow';
-    arrow.textContent = '›';
+    li.append(mark1, body);
 
-    li.append(mark1, body, arrow);
-    li.addEventListener('click', () => { location.href = '/admin/m/?edit=' + encodeURIComponent(p.slug); });
+    /*
+     * 点一条 = **直接打开这篇文章**（新标签，后台列表留着不动）。
+     * 想看它在站上长什么样、或者把链接分享出去，都是这个需求。
+     * 要改内容请点右边那个「改」按钮。
+     */
+    const href = postUrl(p);
+    if (href) {
+      li.addEventListener('click', () => window.open(href, '_blank', 'noopener'));
+      li.title = '打开 ' + decodeURIComponent(href);
+    }
+
+    /* 编辑入口单独一个按钮，避免和「打开文章」抢点击 */
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'item-edit';
+    edit.textContent = '改';
+    edit.title = '在写作页里编辑这篇';
+    edit.addEventListener('click', (e) => {
+      e.stopPropagation();   /* 别顺带触发外层的「打开文章」 */
+      location.href = '/admin/m/?edit=' + encodeURIComponent(p.slug);
+    });
+    li.appendChild(edit);
+
     el.list.appendChild(li);
   });
 }

@@ -899,8 +899,11 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
           .replace(/[*_~`|]/g, '')
           .replace(/\s+/g, ' ')
           .trim();
+        const slug = slugify(rel);
         posts.push({
-          slug: slugify(rel),
+          slug,
+          /* 站内路径：后台「点开文章」要用它。拼错就是 404，所以这里统一算好 */
+          url: '/posts/' + slug + '/',
           path: full,
           title: pick('title') || rel,
           date: (pick('date') || '').slice(0, 10),

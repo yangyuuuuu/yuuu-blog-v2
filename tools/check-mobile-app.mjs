@@ -177,7 +177,15 @@ console.log('=== 4.8 图库逻辑（/admin/g/）===');
 
 console.log('=== 4.9 文章管理页的搜索（/admin/p/）===');
 {
-  const { filtersOf, applyFilter, searchPosts, snippet, query } = await import('../public/admin/p/posts.js');
+  const { filtersOf, applyFilter, searchPosts, snippet, query, postUrl } = await import('../public/admin/p/posts.js');
+
+  /* ★ 打开文章的链接不能拼错 —— 错一个字就是 404 */
+  ok(postUrl({ slug: '2026-09-18-SEP.-26' }) === '/posts/2026-09-18-sep-26/',
+     '★ 带点/大写的 slug 也能拼出正确路径', postUrl({ slug: '2026-09-18-SEP.-26' }));
+  ok(postUrl({ slug: 'x', url: '/posts/x/' }) === '/posts/x/', '索引里带 url 时优先用它');
+  ok(postUrl({ slug: '2026-09-16-yuuu的第一篇文章' }) === '/posts/2026-09-16-yuuu的第一篇文章/', '中文 slug 原样保留');
+  ok(postUrl({}) === '', '没有 slug 时给空串（界面上就不会当链接用）');
+  ok(postUrl({ slug: '--a--b--' }) === '/posts/a-b/', '首尾多余的连字符去掉');
 
   const posts = [
     { slug: 'a', title: '雨天、热可可，和楼下那只猫', category: '日记', tags: ['日常'], date: '2024-07-21', draft: false, hidden: true, summary: '写点小事', text: '今天下了雨，我喝了热可可，猫在楼下。' },
