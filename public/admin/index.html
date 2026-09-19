@@ -221,11 +221,18 @@
       })();
     </script>
   <!-- 手机上那两个轻量工具（正式后台还是电脑上更好用） -->
+  <!-- 手机上那两个轻量工具（正式后台还是电脑上更好用） -->
   <nav class="alt-tools" aria-label="其它工具">
     <a href="/admin/m/">手机写作页</a>
     <a href="/admin/p/">文章管理（搜索/筛选）</a>
-    <a href="/admin/g/">图库</a>
+    <a href="/admin/g/">图库（改分类 / 重命名 / 看大图）</a>
     <a href="/admin/logs/">访问日志</a>
   </nav>
+  <!--
+    两个小增强：**看原图** 和 **重命名图片**（Decap 的媒体库本身不提供）。
+    Decap 没有给媒体库留扩展点（没有重命名；DOM 里也没有稳定的 testid），
+    所以只能运行时观察 DOM 挂两个小按钮 —— 见 decap-extras.js 顶部那段说明。
+  -->
+  <script src="/admin/decap-extras.js"></script>
 </body>
 </html>

@@ -19,6 +19,10 @@ const el = {
   loginForm: $('loginForm'), pwd: $('pwd'), loginBtn: $('loginBtn'), loginMsg: $('loginMsg'),
   cats: $('cats'), search: $('search'), grid: $('grid'), empty: $('empty'), count: $('count'),
   banner: $('banner'), bannerText: $('bannerText'), bannerAction: $('bannerAction'),
+  renameSheet: $('renameSheet'), renameInput: $('renameInput'), renameHint: $('renameHint'),
+  renameRefs: $('renameRefs'), renameCancel: $('renameCancel'), renameOk: $('renameOk'),
+  lightbox: $('lightbox'), lightboxImg: $('lightboxImg'), lightboxInfo: $('lightboxInfo'),
+  lightboxRaw: $('lightboxRaw'), lightboxClose: $('lightboxClose'),
   refreshBtn: $('refreshBtn'), pickBtn: $('pickBtn'), fileInput: $('fileInput'),
   selectBtn: $('selectBtn'), batchbar: $('batchbar'), batchCount: $('batchCount'),
   selectAllBtn: $('selectAllBtn'), clearSelBtn: $('clearSelBtn'),
@@ -354,7 +358,16 @@ function openSheet(img) {
     el.sheet.hidden = true;
     pickDir((dir) => changeDir(img, dir));
   }));
-  el.sheetBody.appendChild(sheetButton('看原图', () => { window.open(img.url, '_blank', 'noopener'); }));
+  el.sheetBody.appendChild(sheetButton('看原图（大图）', () => {
+    el.sheet.hidden = true;
+    openLightbox(img);
+  }));
+
+  /* 重命名：图库里那些哈希名（0b91ecca….jpg）终于能改成看得懂的名字 */
+  el.sheetBody.appendChild(sheetButton('重命名…', () => {
+    el.sheet.hidden = true;
+    openRename(img);
+  }));
   el.sheetBody.appendChild(sheetButton('删除这张图', async () => {
     el.sheet.hidden = true;
     if (!confirm('删除《' + img.name + '》？\n会从 GitHub 删掉这个文件，用到它的文章会变成破图。')) return;
@@ -370,6 +383,84 @@ function openSheet(img) {
 }
 
 el.sheet.addEventListener('click', (e) => { if (e.target === el.sheet) el.sheet.hidden = true; });
+
+/* ------------------------------------------------------------------ 看原图（灯箱） */
+
+/**
+ * 看原图。
+ * 图库卡片里的缩略图只有几百像素，看不清细节 —— 这里铺满屏幕看**原图**。
+ * 用站点地址（同一张图，浏览器已经缓存过，不会重复下载）。
+ */
+function openLightbox(img) {
+  el.lightboxImg.src = img.url;
+  el.lightboxImg.alt = img.name;
+  el.lightboxInfo.textContent = dirLabel(img.dir) + ' · ' + img.name + ' · ' + humanSize(img.size);
+  el.lightbox.hidden = false;
+}
+function closeLightbox() {
+  el.lightbox.hidden = true;
+  el.lightboxImg.removeAttribute('src');   /* 停掉加载，省流量 */
+}
+el.lightboxClose.addEventListener('click', closeLightbox);
+el.lightbox.addEventListener('click', (e) => { if (e.target === el.lightbox) closeLightbox(); });
+el.lightboxRaw.addEventListener('click', () => {
+  if (el.lightboxImg.src) window.open(el.lightboxImg.src, '_blank', 'noopener');
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (!el.lightbox.hidden) closeLightbox();
+  if (!el.renameSheet.hidden) el.renameSheet.hidden = true;
+  if (!el.sheet.hidden) el.sheet.hidden = true;
+});
+
+/* ------------------------------------------------------------------ 重命名 */
+
+let renameTarget = null;
+
+/**
+ * 重命名对话框。
+ * 只让用户改**主名**，后缀强制沿用原来的（避免把 .jpg 改成 .png 之后浏览器按错类型解析）。
+ * 默认勾选「同时更新文章里的引用」—— 否则已经引用了这张图的文章会立刻变破图。
+ */
+function openRename(img) {
+  renameTarget = img;
+  const stem = img.name.replace(/\.[a-z0-9]+$/i, '');
+  const ext = (img.name.match(/\.[a-z0-9]+$/i) || [''])[0];
+  el.renameHint.textContent = '当前：' + img.name + '（后缀 ' + ext + ' 保持不变）';
+  el.renameInput.value = stem;
+  el.renameRefs.checked = true;
+  el.renameSheet.hidden = false;
+  /* 手机上自动聚焦 + 选中，改起来快 */
+  setTimeout(() => { el.renameInput.focus(); el.renameInput.select(); }, 50);
+}
+
+async function doRename() {
+  if (!renameTarget) return;
+  const name = el.renameInput.value.trim();
+  if (!name) { toast('新文件名不能为空', 3000); return; }
+  el.renameOk.disabled = true;
+  try {
+    const res = await post('/admin/image/rename', {
+      path: renameTarget.path,
+      name,
+      updateRefs: el.renameRefs.checked,
+    });
+    el.renameSheet.hidden = true;
+    const refs = res && res.refsUpdated ? '，同时更新了 ' + res.refsUpdated + ' 篇文章的引用' : '';
+    toast('已改名为 ' + (res && res.name ? res.name : name) + refs, 5000);
+    await load();
+  } catch (err) {
+    showBanner('改名失败：' + err.message, '关闭', hideBanner);
+    toast(err.message, 6000);
+  } finally {
+    el.renameOk.disabled = false;
+  }
+}
+
+el.renameOk.addEventListener('click', doRename);
+el.renameCancel.addEventListener('click', () => { el.renameSheet.hidden = true; });
+el.renameSheet.addEventListener('click', (e) => { if (e.target === el.renameSheet) el.renameSheet.hidden = true; });
+el.renameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doRename(); } });
 
 /* ------------------------------------------------------------------ 改分类 */
 

@@ -100,6 +100,33 @@
       </div>
     </div>
 
+    <!-- ══════════ 重命名 ══════════ -->
+    <div class="sheet" id="renameSheet" hidden>
+      <div class="sheet-panel">
+        <p class="sheet-title">重命名图片</p>
+        <p class="sheet-hint" id="renameHint"></p>
+        <input id="renameInput" type="text" placeholder="新文件名，例如 芙芙-头像" autocomplete="off" maxlength="60" />
+        <label class="switch switch--row">
+          <input id="renameRefs" type="checkbox" checked />
+          <span>同时更新文章里的引用<em>不勾选的话，已经引用这张图的文章会变成破图</em></span>
+        </label>
+        <div class="sheet-actions">
+          <button class="btn btn--ghost" id="renameCancel" type="button">取消</button>
+          <button class="btn btn--primary" id="renameOk" type="button">改名</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ 看原图（灯箱）══════════ -->
+    <div class="lightbox" id="lightbox" hidden>
+      <img id="lightboxImg" alt="" />
+      <div class="lightbox-bar">
+        <span id="lightboxInfo"></span>
+        <button class="btn btn--ghost" id="lightboxRaw" type="button">在新标签打开</button>
+        <button class="btn btn--primary" id="lightboxClose" type="button">关闭</button>
+      </div>
+    </div>
+
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
     <!--

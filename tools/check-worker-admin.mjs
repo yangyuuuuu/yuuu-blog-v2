@@ -466,6 +466,62 @@ console.log('=== 6.5 图库：列表 / 上传 / 归类 / 删除（分类存索�
   }
 }
 
+console.log('=== 6.6 重命名图片（连同文章引用一起改）===');
+{
+  const pngHex = '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082';
+  const png = Buffer.from(pngHex, 'hex');
+  const metaOf = () => JSON.parse(gh.files.get('public/uploads/categories.json')?.base64
+    ? Buffer.from(gh.files.get('public/uploads/categories.json').base64, 'base64').toString('utf8')
+    : '{}');
+
+  /* 一张有分类、且**已经被文章引用**的图 */
+  gh.files.set('public/uploads/1a2b3c4d5e6f.jpg', { base64: png.toString('base64'), sha: 's-old' });
+  gh.files.set('public/uploads/categories.json', { base64: Buffer.from(JSON.stringify({ '1a2b3c4d5e6f.jpg': '芙芙' })).toString('base64'), sha: 's-meta' });
+  gh.files.set('src/content/posts/2026-01-01-ref.md', {
+    base64: Buffer.from('---\ntitle: 用了这张图\n---\n\n正文\n\n![](/uploads/1a2b3c4d5e6f.jpg)\n').toString('base64'),
+    sha: 's-post',
+  });
+  gh.files.set('src/content/posts/2026-01-02-other.md', {
+    base64: Buffer.from('---\ntitle: 别的文章\n---\n\n没引用那张图。\n').toString('base64'), sha: 's-post2',
+  });
+
+  const rn = await call('/admin/image/rename', { ticket: 'good-ticket', path: 'public/uploads/1a2b3c4d5e6f.jpg', name: '芙芙-头像' });
+  if (rn.status !== 200) console.log('   [调试] status=' + rn.status + ' 原始响应=' + JSON.stringify(rn.raw || rn).slice(0, 300));
+  ok(rn.status === 200, '改名成功', JSON.stringify(rn.data));
+  ok(rn.data?.name === '芙芙-头像.jpg', '★ 新名字带原后缀（中文也行）', rn.data?.name);
+  ok(gh.files.has('public/uploads/芙芙-头像.jpg'), '文件已在新名下');
+  ok(!gh.files.has('public/uploads/1a2b3c4d5e6f.jpg'), '旧名下的文件没了（是改名不是复制）');
+  ok(Buffer.from(gh.files.get('public/uploads/芙芙-头像.jpg').base64, 'base64').equals(png), '★ 字节一字未改');
+  const m = metaOf();
+  ok(m['芙芙-头像.jpg'] === '芙芙' && !m['1a2b3c4d5e6f.jpg'], '★ 分类跟着改名走（索引键换了）', JSON.stringify(m));
+  const post = Buffer.from(gh.files.get('src/content/posts/2026-01-01-ref.md').base64, 'base64').toString('utf8');
+  ok(post.includes('/uploads/%E8%8A%99%E8%8A%99-%E5%A4%B4%E5%83%8F.jpg') || post.includes('/uploads/芙芙-头像.jpg'), '★ 文章里的引用被一起改了', post.split('\n').filter(Boolean).pop());
+  ok(!post.includes('1a2b3c4d5e6f'), '旧路径在文章里已不存在');
+  ok(rn.data?.refsUpdated === 1, '报告更新了 1 篇文章', String(rn.data?.refsUpdated));
+  const other = Buffer.from(gh.files.get('src/content/posts/2026-01-02-other.md').base64, 'base64').toString('utf8');
+  ok(other.includes('没引用那张图'), '没引用的文章一个字没动');
+
+  /* 关掉「更新引用」时应保持文章原样 */
+  gh.files.set('public/uploads/aaa.jpg', { base64: png.toString('base64'), sha: 's-a' });
+  gh.files.set('src/content/posts/2026-01-01-ref.md', {
+    base64: Buffer.from('---\ntitle: x\n---\n\n![](/uploads/aaa.jpg)\n').toString('base64'), sha: 's-post3',
+  });
+  const rn2 = await call('/admin/image/rename', { ticket: 'good-ticket', path: 'public/uploads/aaa.jpg', name: 'bbb', updateRefs: false });
+  ok(rn2.status === 200 && rn2.data?.refsUpdated === 0, '关掉更新引用时不碰文章', JSON.stringify(rn2.data));
+  const post3 = Buffer.from(gh.files.get('src/content/posts/2026-01-01-ref.md').base64, 'base64').toString('utf8');
+  ok(post3.includes('/uploads/aaa.jpg'), '文章里的旧引用保留（用户自己选的）');
+
+  /* 拦截 */
+  const dup = await call('/admin/image/rename', { ticket: 'good-ticket', path: 'public/uploads/bbb.jpg', name: '芙芙-头像' });
+  ok(dup.status === 409, '★ 目标重名时明确报错（不覆盖）', 'status=' + dup.status + ' ' + JSON.stringify(dup.data).slice(0, 60));
+  const empty = await call('/admin/image/rename', { ticket: 'good-ticket', path: 'public/uploads/bbb.jpg', name: '   ' });
+  ok(empty.status === 400, '空名字被拦');
+  const outside = await call('/admin/image/rename', { ticket: 'good-ticket', path: 'src/content/posts/x.md', name: 'y' });
+  ok(outside.status === 400, '只能改 uploads 下的图');
+  const same = await call('/admin/image/rename', { ticket: 'good-ticket', path: 'public/uploads/bbb.jpg', name: 'bbb.jpg' });
+  ok(same.status === 200 && same.data?.note === '名字没变', '名字没变时直接返回（不产生空提交）');
+}
+
 console.log('=== 6.7 批处理：一次提交改多张图 ===');
 {
   /*

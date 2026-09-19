@@ -357,6 +357,39 @@ async function handleLogs(request: Request, env: Env): Promise<Response> {
  */
 
 const CONTENT_DIR = 'src/content/posts';
+/**
+ * 后台所有 POST 路径 —— **只在这一处登记**。
+ *
+ * 以前是散在 fetch 里的十几个 `if (url.pathname === '...')`，
+ * 加端点时很容易只改了 handleAdmin 里的实现、忘了加路由 → 线上 404。
+ * 加「重命名图片」时就这么栽了一次（测试才发现）。现在统一放这里。
+ */
+const ADMIN_POST_PATHS: readonly string[] = [
+  '/admin/whoami',
+  '/admin/posts',
+  '/admin/posts-index',
+  '/admin/reindex',
+  '/admin/file',
+  '/admin/save',
+  '/admin/delete',
+  /* 图库 */
+  '/admin/images',
+  '/admin/image/upload',
+  '/admin/image/move',
+  '/admin/image/delete',
+  '/admin/image/rename',
+  '/admin/images/batch',
+];
+
+/** 图库那组共用同一套上下文（repo / 路径工具）的端点 */
+const GALLERY_PATHS: readonly string[] = [
+  '/admin/images',
+  '/admin/image/upload',
+  '/admin/image/move',
+  '/admin/image/delete',
+  '/admin/image/rename',
+];
+
 /** 图片目录 */
 const UPLOAD_DIR = 'public/uploads';
 /**
@@ -729,11 +762,11 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
   /*
    * 分类 = public/uploads 下的**子目录名**。
    * 为什么用目录而不是在文件名里加前缀：这样 Decap 自带的媒体库也能按文件夹浏览，
-   * 而且图片在 Markdown 里的路径天然带着分类（/uploads/表情包/xxx.jpg），一眼看得懂。
-   * 已经在 public/uploads 根目录的老图会显示成「未分类」，不需要迁移。
+   * 注意路径是**扁平**的：/uploads/xxx.jpg（分类在 categories.json 里）。
+   * 之所以不放子目录，是因为 Decap 的媒体库只列 media_folder 根目录 ——
+   * 见 MEDIA_META 的注释，那里写了完整原因。
    */
-  if (pathname === '/admin/images' || pathname === '/admin/image/upload'
-      || pathname === '/admin/image/move' || pathname === '/admin/image/delete') {
+  if (GALLERY_PATHS.includes(pathname)) {
     const repo = repoOf(env);
     const dirOf = (rel: string) => {
       /* 'public/uploads/表情包/a.jpg' → '表情包'；根目录下的 → ''（未分类） */
@@ -854,6 +887,91 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
         return json({ ok: true, path: newPath, dir, url: '/uploads/' + encodeURIComponent(newName) }, 200, request, env);
       }
 
+      /*
+       * 重命名图片。
+       *
+       * 为什么要连文章一起改：图库里的图常常已经被文章引用了，
+       * 只改文件名 → 文章里的 ![](/uploads/旧名.jpg) 立刻变破图。
+       * 所以默认 **同时更新所有文章里的引用**，而且和改名放在**同一次提交**里 ——
+       * 要么都成功，要么都没发生（不会出现"改完名字文章全破"的中间态）。
+       */
+      if (pathname === '/admin/image/rename') {
+        const b = body as { path?: string; name?: string; updateRefs?: boolean };
+        const from = String(b.path || '');
+        if (!from.startsWith(UPLOAD_DIR + '/') || from.includes('..')) return json({ message: '路径不合法' }, 400, request, env);
+        const oldName = from.split('/').pop() || '';
+        const extMatch = /\.([a-z0-9]+)$/i.exec(oldName);
+        const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
+
+        /* 用户在输入框里可能连后缀一起写，这里统一去掉再补回原后缀（不允许改格式） */
+        const asked = String(b.name || '').replace(/\.[a-z0-9]+$/i, '');
+        const base = safeName(asked);
+        if (!base || base === 'image') return json({ message: '新文件名不能为空' }, 400, request, env);
+        const newName = `${base}.${ext}`;
+        if (newName === oldName) return json({ ok: true, path: from, name: oldName, note: '名字没变' }, 200, request, env);
+
+        const to = UPLOAD_DIR + '/' + newName;
+        if (await ghGetBlob(env, to)) {
+          return json({ message: '已经有叫「' + newName + '」的图了，换个名字' }, 409, request, env);
+        }
+        const blob = await ghGetBlob(env, from);
+        if (!blob) return json({ message: '这张图在仓库里找不到了（可能已被删或改名）' }, 404, request, env);
+
+        const files: { path: string; base64: string }[] = [{ path: to, base64: blob.base64 }];
+        const removes: string[] = [from];
+
+        /* 分类索引跟着改名走（索引是以文件名为键的） */
+        const meta = await readMediaMeta(env);
+        const keptDir = meta[oldName];
+        delete meta[oldName];
+        if (keptDir) meta[newName] = keptDir;
+        files.push({ path: MEDIA_META, base64: mediaMetaBase64(meta) });
+
+        /* 顺带把文章里的引用改掉（默认开；用户可以在界面上关掉） */
+        let touched: string[] = [];
+        if (b.updateRefs !== false) {
+          const oldPath = '/uploads/' + oldName;
+          const newPath = '/uploads/' + newName;
+          /* 中文名在 markdown 里可能是原样，也可能是百分号编码 —— 两种都换 */
+          const pairs: [string, string][] = [
+            [oldPath, newPath],
+            ['/uploads/' + encodeURIComponent(oldName), '/uploads/' + encodeURIComponent(newName)],
+          ];
+          const treeRes = await fetch(
+            `${GH_API}/repos/${repo}/git/trees/${branchOf(env)}:${CONTENT_DIR.split('/').map(encodeURIComponent).join('/')}?recursive=1`,
+            { headers: ghHeaders(env) },
+          );
+          if (treeRes.ok) {
+            const tree = ((await treeRes.json()) as { tree?: { path: string; type: string }[] }).tree || [];
+            const posts = tree.filter((e) => e.type === 'blob' && e.path.endsWith('.md')).map((e) => e.path);
+            for (const rel of posts.slice(0, 60)) {
+              const full = CONTENT_DIR + '/' + rel;
+              const f = await ghGetFile(env, full);
+              if (!f) continue;
+              let text = f.text;
+              let hit = false;
+              for (const [a, z] of pairs) {
+                if (text.includes(a)) { text = text.split(a).join(z); hit = true; }
+              }
+              if (hit) {
+                files.push({ path: full, base64: toBase64(text) });
+                touched.push(rel);
+              }
+            }
+          }
+        }
+
+        await ghCommitMany(env, files, removes, 'media: 改名 ' + oldName + ' → ' + newName + (touched.length ? '（同时更新 ' + touched.length + ' 篇文章的引用）' : ''));
+        return json({
+          ok: true,
+          path: to,
+          name: newName,
+          dir: keptDir || '',
+          url: '/uploads/' + encodeURIComponent(newName),
+          refsUpdated: touched.length,
+        }, 200, request, env);
+      }
+
       /* 删除图片：连索引里那条记录一起清掉，免得留下指向空气的分类 */
       if (pathname === '/admin/image/delete') {
         const b = body as { path?: string };
@@ -968,6 +1086,13 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
       return json({ posts: [], generatedAt: '', needReindex: true }, 200, request, env);
     }
   }
+
+  /*
+   * ⚠️ 踩过的坑：后台的路径原本要在**两个地方**登记 ——
+   * 上面 fetch 里的路由表，和这里的实际实现。
+   * 加「重命名」时我只加了后者，于是线上一直 404（测试才发现）。
+   * 现在改成上面那张 ADMIN_POST_PATHS 表统一登记，这里不再各自判断。
+   */
 
   /* 重建索引：从 GitHub 读全部文章 → 抽 frontmatter → 存进 KV（需要 ticket） */
   if (pathname === '/admin/reindex') {
@@ -1186,19 +1311,9 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { headers });
 
     /* ---- 手机写作页（口令换 ticket，写仓库由 Worker 代劳）---- */
-    if (url.pathname === '/admin/whoami' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
-    if (url.pathname === '/admin/posts' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
-    if (url.pathname === '/admin/posts-index' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
-    if (url.pathname === '/admin/reindex' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
-    if (url.pathname === '/admin/file' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
-    if (url.pathname === '/admin/save' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
-    if (url.pathname === '/admin/delete' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
-    /* 图库（图片分类） */
-    if (url.pathname === '/admin/images' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
-    if (url.pathname === '/admin/image/upload' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
-    if (url.pathname === '/admin/image/move' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
-    if (url.pathname === '/admin/image/delete' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
-    if (url.pathname === '/admin/images/batch' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
+    if (ADMIN_POST_PATHS.includes(url.pathname) && request.method === 'POST') {
+      return handleAdmin(request, env, url.pathname, url);
+    }
 
     /* ---- 私人角落 ---- */
     if (url.pathname === '/hidden' && request.method === 'POST') return handleHidden(request, env);
