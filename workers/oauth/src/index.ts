@@ -357,8 +357,22 @@ async function handleLogs(request: Request, env: Env): Promise<Response> {
  */
 
 const CONTENT_DIR = 'src/content/posts';
-/** 图片目录。分类就是这里的子目录名 —— 比如 public/uploads/表情包/xxx.jpg */
+/** 图片目录 */
 const UPLOAD_DIR = 'public/uploads';
+/**
+ * 图片的「分类索引」文件。
+ *
+ * 为什么分类不放在子目录里（那本来更自然）：
+ * **Decap 的媒体库只列 media_folder 根目录下的文件** —— 它的 getMedia() 调
+ * listFiles(mediaFolder) 而 listFiles 默认 depth=1、且过滤掉路径里含 '/' 的条目。
+ * 所以图片一旦放进子目录，用户在那个后台里就永远看不到它们。
+ *
+ * 折中方案：**文件平铺在 public/uploads 根目录**（Decap 看得到），
+ * 分类写在这个 JSON 里（图库照样按分类展示）。
+ * 附带好处：改分类 = 改一行 JSON，**不用移动文件** ——
+ * 也就不存在「二进制被搬坏」那类风险（之前真的栽过）。
+ */
+const MEDIA_META = UPLOAD_DIR + '/categories.json';
 /** 允许的图片后缀（别让人往仓库里塞 exe） */
 /*
  * ⚠️ 这里必须是「以扩展名结尾」而不是「整串等于扩展名」。
@@ -526,6 +540,38 @@ async function ghCommitMany(
     body: JSON.stringify({ sha: newCommit, force: false }),
   });
   if (!upd.ok) throw new Error('更新分支失败（HTTP ' + upd.status + '）：' + (await upd.text()).slice(0, 160));
+}
+
+/* ------------------------------------------------- 图片分类索引（见 MEDIA_META 的说明） */
+
+/** 读分类索引：{ 文件名: 分类名 }；文件不存在或坏掉都退回空表 */
+async function readMediaMeta(env: Env): Promise<Record<string, string>> {
+  try {
+    const f = await ghGetFile(env, MEDIA_META);
+    if (!f) return {};
+    const data = JSON.parse(f.text) as Record<string, unknown>;
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(data)) {
+      if (k && typeof v === 'string' && v) out[k] = v;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** 分类索引的 base64（写进提交用） */
+const mediaMetaBase64 = (map: Record<string, string>): string =>
+  toBase64(JSON.stringify(map, Object.keys(map).sort(), 2) + '\n');
+
+/**
+ * 把 legacy 的「子目录分类」也算出来。
+ * 迁移期用：文件还在 public/uploads/<分类>/ 下的，dir 就取那个子目录名。
+ */
+function legacyDirOf(relPath: string): string {
+  const inside = relPath.replace(new RegExp('^' + UPLOAD_DIR + '/?'), '');
+  const cut = inside.lastIndexOf('/');
+  return cut < 0 ? '' : inside.slice(0, cut);
 }
 
 /** 从 GitHub 取一个文件：返回正文与 sha（不存在则 sha 为空） */
@@ -705,15 +751,25 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
         if (res.status === 404) return json({ images: [], dirs: [] }, 200, request, env);
         if (!res.ok) return json({ message: '读图片列表失败（HTTP ' + res.status + '）' }, 502, request, env);
         const data = (await res.json()) as { tree?: { path: string; type: string; size?: number }[] };
+        const meta = await readMediaMeta(env);
         const images = (data.tree || [])
-          .filter((e) => e.type === 'blob' && IMAGE_EXT.test(e.path))
-          .map((e) => ({
-            path: UPLOAD_DIR + '/' + e.path,
-            url: '/uploads/' + e.path.split('/').map(encodeURIComponent).join('/'),
-            name: e.path.split('/').pop() || e.path,
-            dir: dirOf(UPLOAD_DIR + '/' + e.path),
-            size: e.size || 0,
-          }))
+          /* 分类索引本身不是图片，别列进去 */
+          .filter((e) => e.type === 'blob' && IMAGE_EXT.test(e.path) && !/categories\.json$/i.test(e.path))
+          .map((e) => {
+            const name = e.path.split('/').pop() || e.path;
+            const rel = UPLOAD_DIR + '/' + e.path;
+            return {
+              path: rel,
+              url: '/uploads/' + e.path.split('/').map(encodeURIComponent).join('/'),
+              name,
+              /*
+               * 分类优先看索引（新方案）；没登记的老图就按它所在的子目录算 ——
+               * 迁移期两种都存在，谁也不用先动。
+               */
+              dir: meta[name] !== undefined ? meta[name] : legacyDirOf(rel),
+              size: e.size || 0,
+            };
+          })
           .sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir.localeCompare(b.dir)));
         const dirs = [...new Set(images.map((i) => i.dir))].filter((d) => d !== '').sort();
         return json({ images, dirs, count: images.length }, 200, request, env);
@@ -729,59 +785,86 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
         if (!IMAGE_EXT.test('x.' + ext)) return json({ message: '不支持的图片格式：' + ext }, 400, request, env);
         const dir = String(b.dir || '').trim().replace(/[\\/:*?"<>|]/g, '').slice(0, 30);
         const base = safeName(String(b.name || 'image'));
-        const target = `${UPLOAD_DIR}/${dir ? dir + '/' : ''}${base}.${ext}`;
 
-        /* 先看有没有同名，避免互相覆盖（同名就加时间戳） */
-        const existing = await ghGetFile(env, target);
-        const finalPath = existing ? target.replace(/\.(\w+)$/, '-' + Date.now().toString(36) + '.$1') : target;
+        /*
+         * 文件**平铺在 uploads 根目录**（不放分类子目录）——
+         * 因为 Decap 的媒体库只列根目录，放子目录里它就看不见（见 MEDIA_META 的注释）。
+         * 分类记在索引文件里。
+         */
+        const bare = `${base}.${ext}`;
+        const existing = await ghGetBlob(env, UPLOAD_DIR + '/' + bare);
+        const finalName = existing
+          ? bare.replace(/\.(\w+)$/, '-' + Date.now().toString(36) + '.$1')
+          : bare;
+        const finalPath = UPLOAD_DIR + '/' + finalName;
 
-        const res = await fetch(`${GH_API}/repos/${repo}/contents/${finalPath.split('/').map(encodeURIComponent).join('/')}`, {
-          method: 'PUT',
-          headers: { ...ghHeaders(env), 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: 'media: 上传 ' + finalPath.replace(UPLOAD_DIR + '/', ''),
-            content: m[2].replace(/\s/g, ''),
-            branch: branchOf(env),
-          }),
-        });
-        if (!res.ok) return json({ message: '上传失败（HTTP ' + res.status + '）：' + (await res.text()).slice(0, 160) }, 502, request, env);
+        const meta = await readMediaMeta(env);
+        if (dir) meta[finalName] = dir; else delete meta[finalName];
+
+        /* 图片本体 + 分类索引，**一次提交**（不会出现「图传上了但没归类」的中间态） */
+        await ghCommitMany(env, [
+          { path: finalPath, base64: m[2].replace(/\s/g, '') },
+          { path: MEDIA_META, base64: mediaMetaBase64(meta) },
+        ], [], 'media: 上传 ' + finalName + (dir ? '（' + dir + '）' : ''));
+
         return json({
           ok: true,
           path: finalPath,
-          url: '/uploads/' + finalPath.replace(UPLOAD_DIR + '/', '').split('/').map(encodeURIComponent).join('/'),
+          url: '/uploads/' + encodeURIComponent(finalName),
           dir,
         }, 200, request, env);
       }
 
-      /* 改分类：本质是把文件挪到另一个子目录（内容一字不改，用 Git 的 blob 复用） */
+      /*
+       * 改分类：**只改索引文件，不搬图片**。
+       * 好处很实在：一次提交、一个字节没动 —— 也就不可能把图片搬坏
+       * （之前「移进子目录」的写法真的把二进制毁过）。
+       * 例外：迁移期那些还躺在子目录里的老图，顺手挪回根目录（这样 Decap 也看得到）。
+       */
       if (pathname === '/admin/image/move') {
         const b = body as { path?: string; dir?: string };
         const from = String(b.path || '');
         if (!from.startsWith(UPLOAD_DIR + '/') || from.includes('..')) return json({ message: '路径不合法' }, 400, request, env);
         const dir = String(b.dir || '').trim().replace(/[\\/:*?"<>|]/g, '').slice(0, 30);
         const fileName = from.split('/').pop() || '';
-        const to = `${UPLOAD_DIR}/${dir ? dir + '/' : ''}${fileName}`;
-        if (to === from) return json({ ok: true, path: to, dir }, 200, request, env);
 
-        /* 用 blob 版本读写：图片是二进制，解码成文本就毁了（见 ghGetBlob 的注释） */
-        const f = await ghGetBlob(env, from);
-        if (!f) return json({ message: '这张图在仓库里找不到了（可能已被删或改名）' }, 404, request, env);
+        const meta = await readMediaMeta(env);
+        const files: { path: string; base64: string }[] = [];
+        const removes: string[] = [];
+        let newPath = from;
+        let newName = fileName;
 
-        const msg = 'media: 归类 ' + fileName + ' → ' + (dir || '未分类');
-        /* GitHub 没有「移动」接口：新建 + 删除，两条 commit */
-        await ghPutBlob(env, to, f.base64, msg, '');
-        await ghDeleteFile(env, from, msg, f.sha);
-        return json({ ok: true, path: to, dir, url: '/uploads/' + to.replace(UPLOAD_DIR + '/', '').split('/').map(encodeURIComponent).join('/') }, 200, request, env);
+        if (legacyDirOf(from) !== '') {
+          /* 老图在子目录里：挪到根目录（内容原样，blob 复用） */
+          const blob = await ghGetBlob(env, from);
+          if (!blob) return json({ message: '这张图在仓库里找不到了（可能已被删或改名）' }, 404, request, env);
+          newName = (await ghGetBlob(env, UPLOAD_DIR + '/' + fileName))
+            ? fileName.replace(/\.(\w+)$/, '-' + Date.now().toString(36) + '.$1')
+            : fileName;
+          newPath = UPLOAD_DIR + '/' + newName;
+          files.push({ path: newPath, base64: blob.base64 });
+          removes.push(from);
+          delete meta[fileName];
+        }
+
+        if (dir) meta[newName] = dir; else delete meta[newName];
+        files.push({ path: MEDIA_META, base64: mediaMetaBase64(meta) });
+
+        await ghCommitMany(env, files, removes, 'media: 归类 ' + newName + ' → ' + (dir || '未分类'));
+        return json({ ok: true, path: newPath, dir, url: '/uploads/' + encodeURIComponent(newName) }, 200, request, env);
       }
 
-      /* 删除图片 */
+      /* 删除图片：连索引里那条记录一起清掉，免得留下指向空气的分类 */
       if (pathname === '/admin/image/delete') {
         const b = body as { path?: string };
         const target = String(b.path || '');
         if (!target.startsWith(UPLOAD_DIR + '/') || target.includes('..')) return json({ message: '路径不合法' }, 400, request, env);
-        const f = await ghGetFile(env, target);
-        if (!f) return json({ message: '这张图已经不在仓库里了' }, 404, request, env);
-        await ghDeleteFile(env, target, 'media: 删除 ' + (target.split('/').pop() || ''), f.sha);
+        const fileName = target.split('/').pop() || '';
+        const blob = await ghGetBlob(env, target);
+        if (!blob) return json({ message: '这张图已经不在仓库里了' }, 404, request, env);
+        const meta = await readMediaMeta(env);
+        delete meta[fileName];
+        await ghCommitMany(env, [{ path: MEDIA_META, base64: mediaMetaBase64(meta) }], [target], 'media: 删除 ' + fileName);
         return json({ ok: true }, 200, request, env);
       }
     } catch (e) {
@@ -805,9 +888,20 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
 
     if (action === 'delete') {
       try {
-        /* 注意参数顺序是 (env, files, removes, message) —— 一开始我写错位了，
-           于是 message 收了个数组、removes 收了那条消息 → tree 里出现 path=undefined */
-        await ghCommitMany(env, [], paths, 'media: 批量删除 ' + paths.length + ' 张图');
+        /*
+         * 删文件的同时**也要清掉索引里对应的记录** —— 否则会留下指向空气的分类
+         * （图没了，categories.json 里还写着它属于某个分类）。
+         * 这个漏掉过一次，是测试盯出来的。
+         * 注意 ghCommitMany 的参数顺序是 (env, files, removes, message)。
+         */
+        const meta = await readMediaMeta(env);
+        for (const p of paths) delete meta[p.split('/').pop() || ''];
+        await ghCommitMany(
+          env,
+          [{ path: MEDIA_META, base64: mediaMetaBase64(meta) }],
+          paths,
+          'media: 批量删除 ' + paths.length + ' 张图',
+        );
         return json({ ok: true, count: paths.length, action: 'delete' }, 200, request, env);
       } catch (e) {
         return json({ message: (e as Error).message }, 502, request, env);
@@ -819,18 +913,34 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
       const files: { path: string; base64: string }[] = [];
       const removes: string[] = [];
       try {
+        const meta = await readMediaMeta(env);
+        let changed = 0;
         for (const from of paths) {
-          const blob = await ghGetBlob(env, from);
-          if (!blob) continue;                       /* 找不到就跳过，不让整批失败 */
           const fileName = from.split('/').pop() || '';
-          const to = `${UPLOAD_DIR}/${dir ? dir + '/' : ''}${fileName}`;
-          if (to === from) continue;                 /* 已经在这个分类里了 */
-          files.push({ path: to, base64: blob.base64 });
-          removes.push(from);
+          if (legacyDirOf(from) !== '') {
+            /* 老图在子目录里：挪回根目录（内容原样复用 blob） */
+            const blob = await ghGetBlob(env, from);
+            if (!blob) continue;
+            const newName = (await ghGetBlob(env, UPLOAD_DIR + '/' + fileName))
+              ? fileName.replace(/\.(\w+)$/, '-' + Date.now().toString(36) + '.$1')
+              : fileName;
+            files.push({ path: UPLOAD_DIR + '/' + newName, base64: blob.base64 });
+            removes.push(from);
+            delete meta[fileName];
+            if (dir) meta[newName] = dir; else delete meta[newName];
+            changed++;
+          } else {
+            /* 文件已经在根目录，只需要改索引里的分类 */
+            const was = meta[fileName] || '';
+            if (was === dir) continue;               /* 本来就是这个分类 */
+            if (dir) meta[fileName] = dir; else delete meta[fileName];
+            changed++;
+          }
         }
-        if (!files.length) return json({ ok: true, count: 0, action: 'move', dir, note: '这些图已经在该分类里了' }, 200, request, env);
-        await ghCommitMany(env, files, removes, 'media: 批量归类 ' + files.length + ' 张 → ' + (dir || '未分类'));
-        return json({ ok: true, count: files.length, action: 'move', dir }, 200, request, env);
+        if (!changed) return json({ ok: true, count: 0, action: 'move', dir, note: '这些图已经在该分类里了' }, 200, request, env);
+        files.push({ path: MEDIA_META, base64: mediaMetaBase64(meta) });
+        await ghCommitMany(env, files, removes, 'media: 批量归类 ' + changed + ' 张 → ' + (dir || '未分类'));
+        return json({ ok: true, count: changed, action: 'move', dir }, 200, request, env);
       } catch (e) {
         return json({ message: (e as Error).message }, 502, request, env);
       }

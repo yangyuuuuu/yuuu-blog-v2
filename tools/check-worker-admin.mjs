@@ -372,59 +372,46 @@ console.log('=== 6. 删除 ===');
 
 /* ---------- 7. 没配 token 时的提示 ---------- */
 /* ---------- 6.5 图库（图片分类） ---------- */
-console.log('=== 6.5 图库：列表 / 上传 / 归类 / 删除 ===');
+console.log('=== 6.5 图库：列表 / 上传 / 归类 / 删除（分类存索引，文件平铺）===');
 {
-  /* 造两张图：一张在根目录（老图，算「未分类」），一张已经在分类目录里 */
+  /*
+   * ★ 为什么文件是「平铺」而不是按分类放进子目录：
+   * Decap 的媒体库（/admin 的「媒体」）只列 media_folder 根目录的文件 ——
+   * 它的 getMedia() 调 listFiles(mediaFolder)，而 listFiles 默认 depth=1
+   * 且过滤掉路径里含 '/' 的条目。放子目录里，用户在那边就永远看不到。
+   * 所以：**文件平铺在 public/uploads 根目录**（Decap 看得到），
+   * 分类记在 categories.json（图库照样按分类展示）。
+   * 顺带好处：改分类只是改一行 JSON，不用搬文件 —— 也就不可能把图片搬坏。
+   */
+  const metaOf = () => JSON.parse(gh.files.get('public/uploads/categories.json')?.base64
+    ? Buffer.from(gh.files.get('public/uploads/categories.json').base64, 'base64').toString('utf8')
+    : '{}');
+
+  /* 一张老图在子目录里（迁移期的形态），一张在根目录 */
   gh.files.set('public/uploads/old-pic.jpg', { base64: Buffer.from('OLD-IMAGE-BYTES').toString('base64'), sha: 's-old' });
   gh.files.set('public/uploads/表情包/meme-one.png', { base64: Buffer.from('MEME-BYTES').toString('base64'), sha: 's-meme' });
+  gh.files.delete('public/uploads/categories.json');
 
   const list = await call('/admin/images', { ticket: 'good-ticket' });
-  ok(list.status === 200, '列表能取到', JSON.stringify(list.data).slice(0, 120));
+  ok(list.status === 200, '列表能取到');
   const imgs = list.data?.images || [];
   ok(imgs.length === 2, '列出 2 张图', '实际 ' + imgs.length);
   const old = imgs.find((i) => i.name === 'old-pic.jpg');
-  ok(old && old.dir === '', '根目录的老图算「未分类」（dir 为空）', JSON.stringify(old));
-  ok(old && old.url === '/uploads/old-pic.jpg', '未分类图的 URL 正确', old && old.url);
+  ok(old && old.dir === '', '根目录的图算「未分类」');
+  ok(old && old.url === '/uploads/old-pic.jpg', 'URL 正确', old && old.url);
   const meme = imgs.find((i) => i.name === 'meme-one.png');
-  ok(meme && meme.dir === '表情包', '分类目录里的图带上了分类名', JSON.stringify(meme));
-  ok(meme && decodeURIComponent(meme.url) === '/uploads/表情包/meme-one.png', '★ 中文分类的 URL 做了编码', meme && meme.url);
-  ok(JSON.stringify(list.data?.dirs) === JSON.stringify(['表情包']), '分类列表里去掉了「未分类」', JSON.stringify(list.data?.dirs));
+  ok(meme && meme.dir === '表情包', '★ 子目录里的老图仍按目录算分类（迁移期兼容）', JSON.stringify(meme));
+  ok(!imgs.some((i) => i.name === 'categories.json'), '分类索引本身不会被当成图片列出来');
 
-  /* 上传 */
+  /* 上传：文件必须落在根目录（这样 Decap 能看到） */
   const dataUrl = 'data:image/png;base64,' + Buffer.from('NEW-PNG').toString('base64');
   const up = await call('/admin/image/upload', { ticket: 'good-ticket', name: '我的 新图.png', dataUrl, dir: '封面' });
   ok(up.status === 200, '上传成功', JSON.stringify(up.data));
-  ok(up.data?.path === 'public/uploads/封面/我的_新图.png', '★ 文件名净化 + 归到指定分类', up.data?.path);
-  ok(decodeURIComponent(up.data?.url || '') === '/uploads/封面/我的_新图.png', '上传返回可用的 URL');
-  ok(gh.files.has('public/uploads/封面/我的_新图.png'), '文件真的写进（假）仓库了');
-
-  /*
-   * ★ 再走一遍「真实手机照片」的路径：200KB 的 JPEG + 指定分类目录。
-   * 用户报上传后图看不到，先在这里排除「上传链路本身有 bug」。
-   */
-  {
-    const head = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
-    const mid = Buffer.alloc(200 * 1024);
-    for (let i = 0; i < mid.length; i++) mid[i] = (i * 37 + 11) & 0xff;
-    const jpeg = Buffer.concat([head, mid, Buffer.from([0xff, 0xd9])]);
-    const dataUrl = 'data:image/jpeg;base64,' + jpeg.toString('base64');
-
-    const up2 = await call('/admin/image/upload', { ticket: 'good-ticket', name: 'IMG_20260919.jpg', dataUrl, dir: 'celeste' });
-    ok(up2.status === 200, '★ 200KB JPEG 上传成功', JSON.stringify(up2.data).slice(0, 110));
-    ok(up2.data?.dir === 'celeste', '归到指定分类');
-    const written = gh.files.get('public/uploads/celeste/IMG_20260919.jpg');
-    ok(!!written, '文件写进了（假）仓库');
-    if (written) {
-      const bytes = Buffer.from(written.base64, 'base64');
-      ok(bytes.length === jpeg.length, '★ 字节数与上传的一致', bytes.length + ' vs ' + jpeg.length);
-      ok(bytes.equals(jpeg), '★ 字节完全相同（没损坏）');
-      ok(bytes[0] === 0xff && bytes[1] === 0xd8, '开头仍是 JPEG 魔数');
-    }
-    const list3 = await call('/admin/images', { ticket: 'good-ticket' });
-    const found = (list3.data?.images || []).find((i) => i.name === 'IMG_20260919.jpg');
-    ok(!!found, '★ 上传后立刻能在列表里查到');
-    ok(found && decodeURIComponent(found.url) === '/uploads/celeste/IMG_20260919.jpg', 'URL 指向站点路径', found && found.url);
-  }
+  ok(up.data?.path === 'public/uploads/我的_新图.png', '★ 文件平铺在根目录（不再进子目录）', up.data?.path);
+  ok(up.data?.url === '/uploads/%E6%88%91%E7%9A%84_%E6%96%B0%E5%9B%BE.png' || decodeURIComponent(up.data?.url || '') === '/uploads/我的_新图.png', '返回可用的 URL', up.data?.url);
+  ok(gh.files.has('public/uploads/我的_新图.png'), '文件写进了（假）仓库');
+  ok(metaOf()['我的_新图.png'] === '封面', '★ 分类记进了索引文件', JSON.stringify(metaOf()));
+  ok(gh.batchCommits === 1, '★ 图片与索引是同一次提交（不会出现「传上了但没归类」）', '实际 ' + gh.batchCommits);
 
   /* 格式与路径的拦截 */
   const bad1 = await call('/admin/image/upload', { ticket: 'good-ticket', name: 'x', dataUrl: 'data:text/plain;base64,aGk=' });
@@ -432,42 +419,25 @@ console.log('=== 6.5 图库：列表 / 上传 / 归类 / 删除 ===');
   const bad2 = await call('/admin/image/upload', { ticket: 'good-ticket', name: 'x', dataUrl: '不是 dataURL' });
   ok(bad2.status === 400, '乱填的数据被拦');
 
-  /* ★ 二进制完整性：真实的一张小 PNG（不是 base64 文本）走一遍「归类」 */
-  {
-    /* 一个最小的合法 PNG（1x1 透明），字节里含 0x00 / 0xFF / 0x89 这类非文本字节 */
-    const pngHex = '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082';
-    const pngBuf = Buffer.from(pngHex, 'hex');
-    const pngB64 = pngBuf.toString('base64');
-    gh.files.set('public/uploads/真图.png', { base64: pngB64, sha: 's-real' });
-
-    const before = Buffer.from(gh.files.get('public/uploads/真图.png').base64, 'base64');
-    const mv = await call('/admin/image/move', { ticket: 'good-ticket', path: 'public/uploads/真图.png', dir: '测试分类' });
-    ok(mv.status === 200, '★ 真实 PNG 能归类', JSON.stringify(mv.data));
-    const moved = gh.files.get('public/uploads/测试分类/真图.png');
-    ok(!!moved, '★ 归类后文件还在（没丢）');
-    if (moved) {
-      const after = Buffer.from(moved.base64, 'base64');
-      ok(after.length === before.length, '★ 字节数一致', after.length + ' vs ' + before.length);
-      ok(after.equals(before), '★ 字节完全相同（PNG 没被当文本搞坏）', after.equals(before) ? '' : '前 8 字节 ' + after.slice(0, 8).toString('hex') + ' vs ' + before.slice(0, 8).toString('hex'));
-    }
-    /* 归类之后列表里必须还能看到它 */
-    const list2 = await call('/admin/images', { ticket: 'good-ticket' });
-    const still = (list2.data?.images || []).find((i) => i.name === '真图.png');
-    ok(!!still && still.dir === '测试分类', '★ 归类后列表里仍然能看到它', JSON.stringify(still));
-  }
-
-  /* 归类：把未分类的 old-pic.jpg 挪进「电影截图」 */
-  const before = gh.files.get('public/uploads/old-pic.jpg')?.base64;
+  /* 改分类：文件不动，只改索引 */
+  const beforeBytes = gh.files.get('public/uploads/old-pic.jpg').base64;
   const mv = await call('/admin/image/move', { ticket: 'good-ticket', path: 'public/uploads/old-pic.jpg', dir: '电影截图' });
   ok(mv.status === 200, '归类成功', JSON.stringify(mv.data));
-  ok(mv.data?.path === 'public/uploads/电影截图/old-pic.jpg', '新路径正确', mv.data?.path);
-  ok(!gh.files.has('public/uploads/old-pic.jpg'), '旧路径已删除（真正移走，不是复制两份）');
-  const after = gh.files.get('public/uploads/电影截图/old-pic.jpg')?.base64;
-  ok(after === before, '★ 图片内容一字未改（base64 原样搬运）');
+  ok(metaOf()['old-pic.jpg'] === '电影截图', '★ 索引里的分类改了', JSON.stringify(metaOf()));
+  ok(gh.files.get('public/uploads/old-pic.jpg').base64 === beforeBytes, '★ 图片文件一个字节都没动（不用搬文件，也就搬不坏）');
+  ok(gh.files.has('public/uploads/old-pic.jpg'), '路径没变（仍在根目录）');
 
   /* 移回未分类 */
-  const mv2 = await call('/admin/image/move', { ticket: 'good-ticket', path: 'public/uploads/电影截图/old-pic.jpg', dir: '' });
-  ok(mv2.data?.path === 'public/uploads/old-pic.jpg', '能移回「未分类」', mv2.data?.path);
+  const mv2 = await call('/admin/image/move', { ticket: 'good-ticket', path: 'public/uploads/old-pic.jpg', dir: '' });
+  ok(!metaOf()['old-pic.jpg'], '移回未分类后索引里的记录被清掉', JSON.stringify(metaOf()));
+
+  /* 老图（子目录里）改分类时，顺手挪回根目录 —— 这样 Decap 也能看到它 */
+  const legacyBytes = gh.files.get('public/uploads/表情包/meme-one.png').base64;
+  const mv3 = await call('/admin/image/move', { ticket: 'good-ticket', path: 'public/uploads/表情包/meme-one.png', dir: '表情包' });
+  ok(mv3.status === 200, '老图归类成功');
+  ok(gh.files.has('public/uploads/meme-one.png'), '★ 老图被挪到了根目录（Decap 从此能看到）');
+  ok(!gh.files.has('public/uploads/表情包/meme-one.png'), '旧的子目录路径已删除');
+  ok(gh.files.get('public/uploads/meme-one.png').base64 === legacyBytes, '★ 搬运过程中字节完全相同');
 
   /* 路径校验 */
   const badPath = await call('/admin/image/move', { ticket: 'good-ticket', path: '../../etc/passwd', dir: 'x' });
@@ -475,21 +445,43 @@ console.log('=== 6.5 图库：列表 / 上传 / 归类 / 删除 ===');
   const badPath2 = await call('/admin/image/delete', { ticket: 'good-ticket', path: 'src/content/posts/x.md' });
   ok(badPath2.status === 400, '只能删 uploads 下的图', 'status=' + badPath2.status);
 
-  /* 删除 */
+  /* 删除：文件与索引记录一起清 */
   const del = await call('/admin/image/delete', { ticket: 'good-ticket', path: 'public/uploads/old-pic.jpg' });
   ok(del.status === 200, '删除成功');
   ok(!gh.files.has('public/uploads/old-pic.jpg'), '文件真的没了');
+  ok(!metaOf()['old-pic.jpg'], '索引里那条也清掉了');
+
+  /* ★ 二进制完整性：真实 PNG 走一遍归类 */
+  {
+    const pngHex = '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082';
+    const png = Buffer.from(pngHex, 'hex');
+    gh.files.set('public/uploads/真图.png', { base64: png.toString('base64'), sha: 's-real' });
+    const mv4 = await call('/admin/image/move', { ticket: 'good-ticket', path: 'public/uploads/真图.png', dir: '测试分类' });
+    ok(mv4.status === 200, '★ 真实 PNG 能归类');
+    const after = Buffer.from(gh.files.get('public/uploads/真图.png').base64, 'base64');
+    ok(after.equals(png), '★ 字节完全相同（PNG 没被当文本搞坏）');
+    const list4 = await call('/admin/images', { ticket: 'good-ticket' });
+    const still = (list4.data?.images || []).find((i) => i.name === '真图.png');
+    ok(!!still && still.dir === '测试分类', '★ 归类后列表里仍能看到它，且分类正确', JSON.stringify(still));
+  }
 }
 
-/* ---------- 6.7 图库批处理 ---------- */
 console.log('=== 6.7 批处理：一次提交改多张图 ===');
 {
+  /*
+   * 批处理现在只改「分类索引」—— 文件本身不动（都在根目录）。
+   * 关键断言：**N 张图 = 1 条提交**，且没选中的图与索引里的其它记录都不受影响。
+   */
   const pngHex = '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082';
   const png = Buffer.from(pngHex, 'hex').toString('base64');
-  gh.files.set('public/uploads/批一.png', { base64: png, sha: 'b1' });
-  gh.files.set('public/uploads/批二.png', { base64: png, sha: 'b2' });
-  gh.files.set('public/uploads/批三.png', { base64: png, sha: 'b3' });
-  gh.files.set('public/uploads/别动.png', { base64: png, sha: 'b4' });
+  const metaOf = () => JSON.parse(gh.files.get('public/uploads/categories.json')?.base64
+    ? Buffer.from(gh.files.get('public/uploads/categories.json').base64, 'base64').toString('utf8')
+    : '{}');
+
+  for (const n of ['批一.png', '批二.png', '批三.png', '别动.png']) {
+    gh.files.set('public/uploads/' + n, { base64: png, sha: 'b-' + n });
+  }
+  gh.files.set('public/uploads/categories.json', { base64: Buffer.from(JSON.stringify({ '别动.png': '原有的分类' })).toString('base64'), sha: 's-meta' });
   gh.batchCommits = 0;
 
   const mv = await call('/admin/images/batch', {
@@ -497,33 +489,41 @@ console.log('=== 6.7 批处理：一次提交改多张图 ===');
     paths: ['public/uploads/批一.png', 'public/uploads/批二.png', 'public/uploads/批三.png'],
   });
   ok(mv.status === 200, '批量归类成功', JSON.stringify(mv.data));
-  ok(mv.data?.count === 3, '报告移动了 3 张', String(mv.data?.count));
-  ok(gh.batchCommits === 1, '★ 3 张图只产生 1 条提交（不是 3 条/6 条）', '实际 ' + gh.batchCommits + ' 条');
-  /*
-   * 这里检查的是**Worker 实际发给 GitHub 的请求**（tree 内容），
-   * 而不是我桩里那个模拟仓库 —— 那才是真正决定仓库变成什么样的东西。
-   */
+  ok(mv.data?.count === 3, '报告改了 3 张的分类', String(mv.data?.count));
+  ok(gh.batchCommits === 1, '★ 3 张图只产生 1 条提交', '实际 ' + gh.batchCommits);
+  const metaAfter = metaOf();
+  ok(metaAfter['批一.png'] === '批量测试' && metaAfter['批三.png'] === '批量测试', '★ 索引里三条都改了', JSON.stringify(metaAfter));
+  ok(metaAfter['别动.png'] === '原有的分类', '★ 没选中的图，索引里的记录一点没动');
+  ok(gh.files.has('public/uploads/批一.png'), '文件仍在根目录（批处理不搬文件）');
+
+  /* 再看一次「发给 GitHub 的提交里到底改了什么」 */
   const treeItems = (gh.lastTree && gh.lastTree.tree) || [];
   const puts = treeItems.filter((x) => x.sha !== null).map((x) => x.path);
   const dels = treeItems.filter((x) => x.sha === null).map((x) => x.path);
-  ok(puts.length === 3 && puts.every((x) => x.startsWith('public/uploads/批量测试/')), '★ tree 里新建了 3 个新分类下的路径', puts.join(', '));
-  ok(dels.length === 3 && dels.every((x) => /^public\/uploads\/批[一二三]\.png$/.test(x)), '★ tree 里删掉了 3 个旧路径', dels.join(', '));
-  ok(gh.lastTree && !!gh.lastTree.base_tree, '★ 用了 base_tree（没列出来的文件自动沿用，不会误删别的图）');
-  ok(gh.lastCommit && gh.lastCommit.includes('批量归类') && gh.lastCommit.includes('批量测试'), '提交信息说清了是批量归类到哪个分类', gh.lastCommit);
-  const blobs = [...(gh.blobs || new Map()).values()];
-  ok(blobs.length === 3 && blobs.every((b64) => Buffer.from(b64, 'base64')[0] === 0x89), '★ 交给 GitHub 的 blob 都是合法 PNG（二进制没坏）', blobs.map((b) => Buffer.from(b, 'base64').slice(0, 2).toString('hex')).join(','));
-  ok(gh.files.has('public/uploads/别动.png'), '★ 没选中的图不在 tree 的改动里（原封不动）');
+  ok(puts.length === 1 && puts[0] === 'public/uploads/categories.json', '★ 提交里只写了一个文件（分类索引）', puts.join(', '));
+  ok(dels.length === 0, '没有删除任何文件', dels.join(', '));
+  ok(gh.lastTree && !!gh.lastTree.base_tree, '★ 用了 base_tree（没列出来的文件自动沿用）');
+  ok(gh.lastCommit && gh.lastCommit.includes('批量归类') && gh.lastCommit.includes('批量测试'), '提交信息说清了改成哪个分类', gh.lastCommit);
 
-  /* 批量删除 */
+  /* 批量归类到同一个分类时应该跳过（不产生无意义的提交） */
+  gh.batchCommits = 0;
+  const again = await call('/admin/images/batch', {
+    ticket: 'good-ticket', action: 'move', dir: '批量测试',
+    paths: ['public/uploads/批一.png', 'public/uploads/批二.png'],
+  });
+  ok(again.data?.count === 0 && gh.batchCommits === 0, '★ 已经是该分类的不重复提交', JSON.stringify(again.data));
+
+  /* 批量删除：文件与索引记录一起清 */
   gh.batchCommits = 0;
   const del = await call('/admin/images/batch', {
     ticket: 'good-ticket', action: 'delete',
-    paths: ['public/uploads/批量测试/批一.png', 'public/uploads/别动.png'],
+    paths: ['public/uploads/批一.png', 'public/uploads/别动.png'],
   });
   ok(del.status === 200, '批量删除成功');
-  ok(gh.batchCommits === 1, '★ 删除两张也只提交一次（计数器在批量删除前重置过）', '实际 ' + gh.batchCommits);
-  const delItems = (gh.lastTree && gh.lastTree.tree) || [];
-  ok(delItems.length === 2 && delItems.every((x) => x.sha === null), '★ 删除的 tree 里只有两条删除、没有多余写入', JSON.stringify(delItems.map((x) => x.path)));
+  ok(gh.batchCommits === 1, '★ 删除两张也只提交一次', '实际 ' + gh.batchCommits);
+  const afterDel = metaOf();
+  ok(!afterDel['批一.png'] && !afterDel['别动.png'], '★ 索引里对应的记录也清掉了', JSON.stringify(afterDel));
+  ok(afterDel['批二.png'] === '批量测试', '没选的仍在索引里');
 
   /* 拦截 */
   const empty = await call('/admin/images/batch', { ticket: 'good-ticket', action: 'delete', paths: [] });
@@ -532,11 +532,10 @@ console.log('=== 6.7 批处理：一次提交改多张图 ===');
   ok(outside.status === 400, '越界路径被拦（只能动 uploads 下的）');
   const tooMany = await call('/admin/images/batch', { ticket: 'good-ticket', action: 'delete', paths: Array.from({ length: 61 }, (_, i) => 'public/uploads/x' + i + '.png') });
   ok(tooMany.status === 400, '超过 60 张被拦');
-  const unknown = await call('/admin/images/batch', { ticket: 'good-ticket', action: '打人', paths: ['public/uploads/批量测试/批二.png'] });
+  const unknown = await call('/admin/images/batch', { ticket: 'good-ticket', action: '打人', paths: ['public/uploads/批二.png'] });
   ok(unknown.status === 400, '未知操作被拦');
 }
 
-/* ---------- 6.9 搜索索引（/admin/reindex → KV → /admin/posts-index） ---------- */
 console.log('=== 6.9 后台搜索索引的构建与读取 ===');
 {
   /*
