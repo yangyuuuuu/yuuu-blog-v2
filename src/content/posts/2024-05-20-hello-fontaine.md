@@ -6,7 +6,7 @@ tags:
   - 生活
   - 开始
 summary: 终于把这个小站搭起来了。用 Astro 从零重构，主题依旧是芙宁娜，但这一次是「零 JS 优先」。
-cover: /uploads/77089ca81cd0966f17e0fd8dd63e762b.jpg
+cover: /uploads/芙芙x吃蛋糕.jpg
 coverStyle: nebula
 coverHue: 268
 pinned: true
