@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" content="#f5faff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0d1b2a" media="(prefers-color-scheme: dark)" />
+    <title>文章管理 · yuuu</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="stylesheet" href="/admin/p/ui.css" />
+  </head>
+  <body>
+    <!-- ══════════ 登录（和写作页、图库同一个口令）══════════ -->
+    <section class="screen screen--login" id="screenLogin">
+      <div class="login-card">
+        <img class="login-logo" src="/icon-192.png" alt="" width="64" height="64" />
+        <h1 class="login-title">文章管理</h1>
+        <p class="login-sub">和「私人角落」同一个口令</p>
+        <form id="loginForm">
+          <input id="pwd" type="password" placeholder="口令" autocomplete="current-password" enterkeyhint="go" aria-label="口令" />
+          <button id="loginBtn" class="btn btn--primary" type="submit">进入</button>
+        </form>
+        <p class="msg" id="loginMsg" role="status"></p>
+        <a class="login-alt" href="/admin/m/">写新文章 →</a>
+      </div>
+    </section>
+
+    <!-- ══════════ 列表 ══════════ -->
+    <section class="screen" id="screenList" hidden>
+      <header class="bar">
+        <div class="bar-main">
+          <h1 class="bar-title">文章</h1>
+          <span class="bar-sub" id="count"></span>
+        </div>
+        <button class="icon-btn" id="refreshBtn" type="button" aria-label="刷新">⟳</button>
+      </header>
+
+      <div class="search-wrap">
+        <input id="search" type="search" placeholder="搜标题 / 正文 / 标签 / 分类" autocomplete="off" aria-label="搜索文章" />
+      </div>
+
+      <div class="filters" id="filters" role="tablist"></div>
+
+      <ul class="list" id="list"></ul>
+      <p class="empty" id="empty" hidden>没有匹配的文章</p>
+      <div class="list-pad"></div>
+
+      <button class="fab" id="newBtn" type="button" aria-label="写新文章">＋</button>
+    </section>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+    <script type="module" src="/admin/p/ui.js"></script>
+  </body>
+</html>

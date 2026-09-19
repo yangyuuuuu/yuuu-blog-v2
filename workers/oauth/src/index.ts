@@ -439,6 +439,69 @@ async function ghPutBlob(env: Env, path: string, base64: string, message: string
   }
 }
 
+/**
+ * 用 Git 数据库接口做**一次提交改多个文件**（批量归类 / 批量删除用）。
+ *
+ * 为什么不用逐个文件调 contents 接口：那样 10 张图 = 20 次请求（新建+删除各一次）、
+ * 20 条 commit，又慢又刷屏。这里走 tree：
+ *   取当前 commit → 建 blob → 用 baseTree 建新 tree（只列出要改的路径）→ 建 commit → 移动引用
+ * baseTree 的好处是**没列出来的文件自动沿用**，所以只写差异部分就行。
+ *
+ * files：要写的（path + base64）；removes：要删的路径。
+ */
+async function ghCommitMany(
+  env: Env,
+  files: { path: string; base64: string }[],
+  removes: string[],
+  message: string,
+): Promise<void> {
+  const repo = repoOf(env);
+  const branch = branchOf(env);
+  const auth = { ...ghHeaders(env), 'Content-Type': 'application/json' };
+
+  const refRes = await fetch(`${GH_API}/repos/${repo}/git/ref/heads/${branch}`, { headers: ghHeaders(env) });
+  if (!refRes.ok) throw new Error('取分支失败（HTTP ' + refRes.status + '）');
+  const headSha = ((await refRes.json()) as { object: { sha: string } }).object.sha;
+
+  const commitRes = await fetch(`${GH_API}/repos/${repo}/git/commits/${headSha}`, { headers: ghHeaders(env) });
+  if (!commitRes.ok) throw new Error('取提交失败（HTTP ' + commitRes.status + '）');
+  const baseTree = ((await commitRes.json()) as { tree: { sha: string } }).tree.sha;
+
+  /* 新增/改写的文件先建 blob（二进制安全：内容就是 base64） */
+  const tree: Record<string, unknown>[] = [];
+  for (const f of files) {
+    const b = await fetch(`${GH_API}/repos/${repo}/git/blobs`, {
+      method: 'POST', headers: auth,
+      body: JSON.stringify({ content: f.base64.replace(/\n/g, ''), encoding: 'base64' }),
+    });
+    if (!b.ok) throw new Error('建 blob 失败（HTTP ' + b.status + '）：' + (await b.text()).slice(0, 120));
+    const blobSha = ((await b.json()) as { sha: string }).sha;
+    tree.push({ path: f.path, mode: '100644', type: 'blob', sha: blobSha });
+  }
+  /* 删除 = 在新 tree 里把该路径置为 null */
+  for (const r of removes) tree.push({ path: r, mode: '100644', type: 'blob', sha: null });
+
+  const treeRes = await fetch(`${GH_API}/repos/${repo}/git/trees`, {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({ base_tree: baseTree, tree }),
+  });
+  if (!treeRes.ok) throw new Error('建 tree 失败（HTTP ' + treeRes.status + '）：' + (await treeRes.text()).slice(0, 120));
+  const newTree = ((await treeRes.json()) as { sha: string }).sha;
+
+  const newCommitRes = await fetch(`${GH_API}/repos/${repo}/git/commits`, {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({ message, tree: newTree, parents: [headSha] }),
+  });
+  if (!newCommitRes.ok) throw new Error('建提交失败（HTTP ' + newCommitRes.status + '）');
+  const newCommit = ((await newCommitRes.json()) as { sha: string }).sha;
+
+  const upd = await fetch(`${GH_API}/repos/${repo}/git/refs/heads/${branch}`, {
+    method: 'PATCH', headers: auth,
+    body: JSON.stringify({ sha: newCommit, force: false }),
+  });
+  if (!upd.ok) throw new Error('更新分支失败（HTTP ' + upd.status + '）：' + (await upd.text()).slice(0, 160));
+}
+
 /** 从 GitHub 取一个文件：返回正文与 sha（不存在则 sha 为空） */
 async function ghGetFile(env: Env, path: string): Promise<{ text: string; sha: string } | null> {
   const url = `${GH_API}/repos/${repoOf(env)}/contents/${path}?ref=${branchOf(env)}`;
@@ -694,6 +757,70 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
     }
   }
 
+  /*
+   * 批量操作：一次提交处理多张图（图库的「批处理」）。
+   * paths 里每项都是 public/uploads 下的路径；改分类时整批用同一个 dir。
+   * 走 ghCommitMany（Git tree 接口），所以 10 张图 = 1 条 commit，而不是 20 次请求。
+   */
+  if (pathname === '/admin/images/batch') {
+    const b = body as { action?: string; paths?: string[]; dir?: string };
+    const action = String(b.action || '');
+    const paths = (Array.isArray(b.paths) ? b.paths : []).filter(
+      (x) => typeof x === 'string' && x.startsWith(UPLOAD_DIR + '/') && !x.includes('..'),
+    );
+    if (!paths.length) return json({ message: '没有选中任何图片' }, 400, request, env);
+    if (paths.length > 60) return json({ message: '一次最多处理 60 张（你选了 ' + paths.length + ' 张）' }, 400, request, env);
+
+    if (action === 'delete') {
+      try {
+        await ghCommitMany(env, [], paths, 'media: 批量删除 ' + paths.length + ' 张图');
+        return json({ ok: true, count: paths.length, action: 'delete' }, 200, request, env);
+      } catch (e) {
+        return json({ message: (e as Error).message }, 502, request, env);
+      }
+    }
+
+    if (action === 'move') {
+      const dir = String(b.dir || '').trim().replace(/[\\/:*?"<>|]/g, '').slice(0, 30);
+      const files: { path: string; base64: string }[] = [];
+      const removes: string[] = [];
+      try {
+        for (const from of paths) {
+          const blob = await ghGetBlob(env, from);
+          if (!blob) continue;                       /* 找不到就跳过，不让整批失败 */
+          const fileName = from.split('/').pop() || '';
+          const to = `${UPLOAD_DIR}/${dir ? dir + '/' : ''}${fileName}`;
+          if (to === from) continue;                 /* 已经在这个分类里了 */
+          files.push({ path: to, base64: blob.base64 });
+          removes.push(from);
+        }
+        if (!files.length) return json({ ok: true, count: 0, action: 'move', dir, note: '这些图已经在该分类里了' }, 200, request, env);
+        await ghCommitMany(env, files, removes, 'media: 批量归类 ' + files.length + ' 张 → ' + (dir || '未分类'));
+        return json({ ok: true, count: files.length, action: 'move', dir }, 200, request, env);
+      } catch (e) {
+        return json({ message: (e as Error).message }, 502, request, env);
+      }
+    }
+
+    return json({ message: '不支持的批量操作：' + action }, 400, request, env);
+  }
+
+  /*
+   * 搜索索引（含正文，构建时生成）。和私人角落一样靠口令门槛挡着，
+   * 不是靠「没人知道这个地址」—— 所以必须走 ticket 校验（就在上面）。
+   */
+  if (pathname === '/admin/posts-index') {
+    try {
+      const url = manifestUrl(request).replace('/private/posts.json', '/private/posts-index.json');
+      const r = await fetch(url, { cf: { cacheTtl: 0, cacheEverything: false } } as RequestInit);
+      if (!r.ok) return json({ message: '索引还没生成（构建时会生成 dist/private/posts-index.json）' }, 500, request, env);
+      const data = (await r.json()) as { posts?: unknown[]; generatedAt?: string };
+      return json({ posts: data.posts || [], generatedAt: data.generatedAt || '' }, 200, request, env);
+    } catch (e) {
+      return json({ message: '取索引失败：' + (e as Error).message }, 502, request, env);
+    }
+  }
+
   /* 列清单：构建时生成的静态文件（含草稿），不占 GitHub 配额 */
   if (pathname === '/admin/posts') {
     try {
@@ -846,6 +973,7 @@ export default {
     /* ---- 手机写作页（口令换 ticket，写仓库由 Worker 代劳）---- */
     if (url.pathname === '/admin/whoami' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
     if (url.pathname === '/admin/posts' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
+    if (url.pathname === '/admin/posts-index' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
     if (url.pathname === '/admin/file' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
     if (url.pathname === '/admin/save' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
     if (url.pathname === '/admin/delete' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
@@ -854,6 +982,7 @@ export default {
     if (url.pathname === '/admin/image/upload' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
     if (url.pathname === '/admin/image/move' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
     if (url.pathname === '/admin/image/delete' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
+    if (url.pathname === '/admin/images/batch' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
 
     /* ---- 私人角落 ---- */
     if (url.pathname === '/hidden' && request.method === 'POST') return handleHidden(request, env);

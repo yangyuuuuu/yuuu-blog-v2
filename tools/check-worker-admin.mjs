@@ -48,8 +48,17 @@ globalThis.fetch = async (input, init = {}) => {
   if (!/api\.github\.com/.test(url)) return realFetch(input, init);
 
   /* 图库列表走的是 git/trees 接口（递归列出 uploads 下所有文件） */
+  /* 建 tree 是 POST /git/trees（批处理用），别跟「列目录」的 GET 混在一起 */
+  if (process.env.STUB_DEBUG && /\/git\//.test(url)) console.log('   [stub] ' + method + ' ' + url.replace('https://api.github.com/repos/yangyuuuuu/yuuu-blog-v2', ''));
+  if (/\/git\/trees$/.test(url) && method === 'POST') {
+    const b = JSON.parse(init.body);
+    gh.trees = (gh.trees || 0) + 1;
+    gh.lastTree = b;
+    return new Response(JSON.stringify({ sha: 'tree-new-' + gh.trees }), { status: 201 });
+  }
+
   const treeMatch = /\/git\/trees\/[^/]+:([^?]+)/.exec(url);
-  if (treeMatch) {
+  if (treeMatch && method === 'GET') {
     const dir = decodeURIComponent(treeMatch[1]);
     gh.calls.push({ method, path: 'tree:' + dir, body: null, message: '' });
     const tree = [...gh.files.entries()]
@@ -57,13 +66,40 @@ globalThis.fetch = async (input, init = {}) => {
       .map(([k, v], i) => ({ path: k.slice(dir.length + 1), type: 'blob', size: Buffer.from(v.base64, 'base64').length, sha: 'blob' + i }));
     return new Response(JSON.stringify({ sha: 't', truncated: false, tree }), { status: 200 });
   }
+  /* ---- Git 数据库接口（批处理走这套：blob → tree → commit → 移动引用）---- */
+  if (method === 'GET' && /\/git\/ref\/heads\//.test(url)) {
+    return new Response(JSON.stringify({ object: { sha: gh.head || 'a1b2c3d4e5f6' } }), { status: 200 });
+  }
+  /* 读某个提交：路径里必须**真的带一个 sha**，否则会把 POST /git/commits 也吃掉 */
+  if (method === 'GET' && /\/git\/commits\/[0-9a-f]{6,}/i.test(url)) {
+    return new Response(JSON.stringify({ tree: { sha: 'tree-base' } }), { status: 200 });
+  }
+  if (/\/git\/commits$/.test(url) && method === 'POST') {
+    const b = JSON.parse(init.body);
+    /* 把 tree 里的改动落到假仓库：sha 为 null 表示删除，否则从 blobs 里取回 base64 */
+    if (process.env.STUB_DEBUG) console.log('   [stub] 应用提交，tree 项数=' + (b.tree || []).length + ' blobs=' + (gh.blobs ? gh.blobs.size : 0));
+    gh.batchCommits = (gh.batchCommits || 0) + 1;
+    gh.lastCommit = b.message;
+    for (const item of b.tree || []) {
+      if (item.sha === null) { gh.files.delete(item.path); continue; }
+      const content = (gh.blobs || new Map()).get(item.sha);
+      gh.files.set(item.path, { base64: String(content == null ? '' : content).replace(/\n/g, ''), sha: item.sha });
+    }
+    gh.head = 'b' + String(gh.batchCommits).padStart(11, '0');
+    return new Response(JSON.stringify({ sha: gh.head }), { status: 201 });
+  }
+  if (/\/git\/refs\/heads\//.test(url) && method === 'PATCH') {
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }
+
   /* /git/blobs 上传二进制 */
   if (/\/git\/blobs$/.test(url) && method === 'POST') {
     const b = JSON.parse(init.body);
-    const text = Buffer.from(String(b.content).replace(/\n/g, ''), 'base64').toString('base64');
+    /* 真 GitHub 收到的 content 本来就是 base64（encoding: 'base64'），原样存下来即可 ——
+       别再 base64 一次，那会把内容变成「base64 的 base64」 */
     const sha = 'blob-' + Math.random().toString(36).slice(2, 8);
     gh.blobs = gh.blobs || new Map();
-    gh.blobs.set(sha, String(b.content));
+    gh.blobs.set(sha, String(b.content || '').replace(/\n/g, ''));
     gh.calls.push({ method, path: 'blob', body: b, message: '' });
     return new Response(JSON.stringify({ sha }), { status: 201 });
   }
@@ -384,6 +420,61 @@ console.log('=== 6.5 图库：列表 / 上传 / 归类 / 删除 ===');
   const del = await call('/admin/image/delete', { ticket: 'good-ticket', path: 'public/uploads/old-pic.jpg' });
   ok(del.status === 200, '删除成功');
   ok(!gh.files.has('public/uploads/old-pic.jpg'), '文件真的没了');
+}
+
+/* ---------- 6.7 图库批处理 ---------- */
+console.log('=== 6.7 批处理：一次提交改多张图 ===');
+{
+  const pngHex = '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082';
+  const png = Buffer.from(pngHex, 'hex').toString('base64');
+  gh.files.set('public/uploads/批一.png', { base64: png, sha: 'b1' });
+  gh.files.set('public/uploads/批二.png', { base64: png, sha: 'b2' });
+  gh.files.set('public/uploads/批三.png', { base64: png, sha: 'b3' });
+  gh.files.set('public/uploads/别动.png', { base64: png, sha: 'b4' });
+  gh.batchCommits = 0;
+
+  const mv = await call('/admin/images/batch', {
+    ticket: 'good-ticket', action: 'move', dir: '批量测试',
+    paths: ['public/uploads/批一.png', 'public/uploads/批二.png', 'public/uploads/批三.png'],
+  });
+  ok(mv.status === 200, '批量归类成功', JSON.stringify(mv.data));
+  ok(mv.data?.count === 3, '报告移动了 3 张', String(mv.data?.count));
+  ok(gh.batchCommits === 1, '★ 3 张图只产生 1 条提交（不是 3 条/6 条）', '实际 ' + gh.batchCommits + ' 条');
+  /*
+   * 这里检查的是**Worker 实际发给 GitHub 的请求**（tree 内容），
+   * 而不是我桩里那个模拟仓库 —— 那才是真正决定仓库变成什么样的东西。
+   */
+  const treeItems = (gh.lastTree && gh.lastTree.tree) || [];
+  const puts = treeItems.filter((x) => x.sha !== null).map((x) => x.path);
+  const dels = treeItems.filter((x) => x.sha === null).map((x) => x.path);
+  ok(puts.length === 3 && puts.every((x) => x.startsWith('public/uploads/批量测试/')), '★ tree 里新建了 3 个新分类下的路径', puts.join(', '));
+  ok(dels.length === 3 && dels.every((x) => /^public\/uploads\/批[一二三]\.png$/.test(x)), '★ tree 里删掉了 3 个旧路径', dels.join(', '));
+  ok(gh.lastTree && !!gh.lastTree.base_tree, '★ 用了 base_tree（没列出来的文件自动沿用，不会误删别的图）');
+  ok(gh.lastCommit && gh.lastCommit.includes('批量归类') && gh.lastCommit.includes('批量测试'), '提交信息说清了是批量归类到哪个分类', gh.lastCommit);
+  const blobs = [...(gh.blobs || new Map()).values()];
+  ok(blobs.length === 3 && blobs.every((b64) => Buffer.from(b64, 'base64')[0] === 0x89), '★ 交给 GitHub 的 blob 都是合法 PNG（二进制没坏）', blobs.map((b) => Buffer.from(b, 'base64').slice(0, 2).toString('hex')).join(','));
+  ok(gh.files.has('public/uploads/别动.png'), '★ 没选中的图不在 tree 的改动里（原封不动）');
+
+  /* 批量删除 */
+  gh.batchCommits = 0;
+  const del = await call('/admin/images/batch', {
+    ticket: 'good-ticket', action: 'delete',
+    paths: ['public/uploads/批量测试/批一.png', 'public/uploads/别动.png'],
+  });
+  ok(del.status === 200, '批量删除成功');
+  ok(gh.batchCommits === 1, '★ 删除两张也只提交一次（计数器在批量删除前重置过）', '实际 ' + gh.batchCommits);
+  const delItems = (gh.lastTree && gh.lastTree.tree) || [];
+  ok(delItems.length === 2 && delItems.every((x) => x.sha === null), '★ 删除的 tree 里只有两条删除、没有多余写入', JSON.stringify(delItems.map((x) => x.path)));
+
+  /* 拦截 */
+  const empty = await call('/admin/images/batch', { ticket: 'good-ticket', action: 'delete', paths: [] });
+  ok(empty.status === 400, '空选择被拦');
+  const outside = await call('/admin/images/batch', { ticket: 'good-ticket', action: 'delete', paths: ['src/content/posts/x.md'] });
+  ok(outside.status === 400, '越界路径被拦（只能动 uploads 下的）');
+  const tooMany = await call('/admin/images/batch', { ticket: 'good-ticket', action: 'delete', paths: Array.from({ length: 61 }, (_, i) => 'public/uploads/x' + i + '.png') });
+  ok(tooMany.status === 400, '超过 60 张被拦');
+  const unknown = await call('/admin/images/batch', { ticket: 'good-ticket', action: '打人', paths: ['public/uploads/批量测试/批二.png'] });
+  ok(unknown.status === 400, '未知操作被拦');
 }
 
 console.log('=== 7. 服务端没配 GITHUB_TOKEN 时要给清楚提示 ===');

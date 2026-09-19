@@ -210,3 +210,42 @@ writeFileSync(
   'utf8',
 );
 console.log('  ✓ 手机写作页清单：' + sorted.length + ' 篇（含草稿）→ dist/private/posts-all.json');
+
+/* ------------------------------------------------------------------ 后台搜索索引
+ *
+ * /admin/p/（文章管理页）要能**搜正文**。正文不在前面那两个清单里（它们是公开文件），
+ * 所以单独出一份放到 /private/ 下 —— 和私人角落一样，靠 Worker 的口令门槛挡着，
+ * 不是靠「没人知道这个地址」。
+ *
+ * 体积控制：正文压成纯文本后截断（和搜索用不到的部分无关），4000 字足够搜到。
+ */
+const INDEX_OUT = join(OUT_DIR, 'posts-index.json');
+writeFileSync(
+  INDEX_OUT,
+  JSON.stringify(
+    {
+      generatedAt: new Date().toISOString(),
+      count: sorted.length,
+      posts: sorted.map((p) => ({
+        slug: p.slug,
+        path: 'src/content/posts/' + p.slug + '.md',
+        title: p.title,
+        date: p.date,
+        updated: p.updated || p.date,
+        category: p.category || '',
+        tags: p.tags,
+        summary: p.summary || '',
+        draft: !!p.draft,
+        hidden: isHiddenData(p),
+        pinned: p.pinned === true,
+        words: p.text ? p.text.length : 0,
+        /* 正文纯文本（截断），只给搜索用 */
+        text: (p.text || '').slice(0, 4000),
+      })),
+    },
+    null,
+    2,
+  ) + '\n',
+  'utf8',
+);
+console.log('  ✓ 后台搜索索引：' + sorted.length + ' 篇 → dist/private/posts-index.json');

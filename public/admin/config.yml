@@ -38,6 +38,9 @@ collections:
     extension: md
     format: frontmatter
     sortable_fields: [date, title, updated]
+    # 列表上方的筛选按钮。
+    # ⚠️ 这里的 pattern 是**当正则用**的（Decap 内部 new RegExp(pattern).test(字段值)），
+    # 所以能用 | 做「或」、用 ^$ 做精确匹配。改的时候按正则写。
     view_filters:
       - label: 草稿
         field: draft
@@ -48,6 +51,22 @@ collections:
       - label: 隐藏
         field: private
         pattern: true
+      # 按分类看：写文章时最常用的一组
+      - label: 分类·安利
+        field: category
+        pattern: ^安利$
+      - label: 分类·技术
+        field: category
+        pattern: ^技术$
+      - label: 分类·随笔
+        field: category
+        pattern: ^随笔$
+      - label: 分类·日记
+        field: category
+        pattern: ^日记$
+      - label: 其它分类
+        field: category
+        pattern: ^(?!安利$|技术$|随笔$|日记$).+$
     fields:
       - { name: title, label: 标题, widget: string }
       - { name: date, label: 创建时间, widget: datetime, date_format: "YYYY-MM-DD", time_format: false, picker_utc: true }

@@ -19,6 +19,9 @@ const el = {
   loginForm: $('loginForm'), pwd: $('pwd'), loginBtn: $('loginBtn'), loginMsg: $('loginMsg'),
   cats: $('cats'), search: $('search'), grid: $('grid'), empty: $('empty'), count: $('count'),
   refreshBtn: $('refreshBtn'), pickBtn: $('pickBtn'), fileInput: $('fileInput'),
+  selectBtn: $('selectBtn'), batchbar: $('batchbar'), batchCount: $('batchCount'),
+  selectAllBtn: $('selectAllBtn'), clearSelBtn: $('clearSelBtn'),
+  batchMoveBtn: $('batchMoveBtn'), batchDelBtn: $('batchDelBtn'), batchDoneBtn: $('batchDoneBtn'),
   sheet: $('sheet'), sheetThumb: $('sheetThumb'), sheetName: $('sheetName'),
   sheetInfo: $('sheetInfo'), sheetBody: $('sheetBody'),
   dirSheet: $('dirSheet'), dirChoices: $('dirChoices'), newDir: $('newDir'), useNewDir: $('useNewDir'), cancelDir: $('cancelDir'),
@@ -30,6 +33,9 @@ let images = [];
 let currentDir = '__all__';
 let keyword = '';
 let picked = [];   /* 正在上传的文件 */
+
+/** 批量选择状态：mode 打开后卡片右上角出现勾选框 */
+const batch = { mode: false, paths: new Set() };
 let toastTimer = 0;
 
 /* ------------------------------------------------------------------ 小工具 */
@@ -160,8 +166,16 @@ function renderGrid() {
     const tag = document.createElement('span');
     tag.className = 'card-tag';
     tag.textContent = dirLabel(img.dir);
-    card.append(im, tag);
-    card.addEventListener('click', () => openSheet(img));
+    /* 勾选框只在选择模式下显示（CSS 控制），始终渲染是为了切换时不闪 */
+    const check = document.createElement('span');
+    check.className = 'card-check';
+    check.textContent = batch.paths.has(img.path) ? '✓' : '';
+    card.classList.toggle('is-on', batch.paths.has(img.path));
+    card.append(im, tag, check);
+    card.addEventListener('click', () => {
+      if (batch.mode) toggleSelect(img.path);
+      else openSheet(img);
+    });
     el.grid.appendChild(card);
   });
 }
@@ -175,6 +189,70 @@ el.cats.addEventListener('click', (e) => {
 });
 el.search.addEventListener('input', () => { keyword = el.search.value; renderGrid(); });
 el.refreshBtn.addEventListener('click', () => load());
+
+/* ------------------------------------------------------------------ 批量选择 */
+
+function toggleSelect(path) {
+  if (batch.paths.has(path)) batch.paths.delete(path);
+  else batch.paths.add(path);
+  renderGrid();
+  renderBatchBar();
+}
+
+function renderBatchBar() {
+  el.batchCount.textContent = String(batch.paths.size);
+  el.batchMoveBtn.disabled = batch.paths.size === 0;
+  el.batchDelBtn.disabled = batch.paths.size === 0;
+  el.batchbar.hidden = !batch.mode;
+}
+
+function setBatchMode(on) {
+  batch.mode = on;
+  document.body.classList.toggle('is-batch', on);
+  if (!on) batch.paths.clear();
+  el.pickBtn.hidden = on;
+  renderGrid();
+  renderBatchBar();
+}
+
+el.selectBtn.addEventListener('click', () => setBatchMode(!batch.mode));
+el.batchDoneBtn.addEventListener('click', () => setBatchMode(false));
+el.selectAllBtn.addEventListener('click', () => {
+  for (const img of filterImages(images, { dir: currentDir, keyword })) batch.paths.add(img.path);
+  renderGrid();
+  renderBatchBar();
+});
+el.clearSelBtn.addEventListener('click', () => {
+  batch.paths.clear();
+  renderGrid();
+  renderBatchBar();
+});
+
+el.batchMoveBtn.addEventListener('click', () => {
+  const paths = [...batch.paths];
+  if (!paths.length) return;
+  pickDir((dir) => runBatch({ action: 'move', paths, dir }, '归类'));
+});
+
+el.batchDelBtn.addEventListener('click', async () => {
+  const paths = [...batch.paths];
+  if (!paths.length) return;
+  if (!confirm('删除选中的 ' + paths.length + ' 张图？\n会从 GitHub 删掉这些文件，用到它们的文章会变成破图。')) return;
+  await runBatch({ action: 'delete', paths }, '删除');
+});
+
+/** 批量请求：一次提交处理多张（Worker 走 Git tree 接口） */
+async function runBatch(payload, label) {
+  toast('正在' + label + ' ' + payload.paths.length + ' 张…', 20000);
+  try {
+    const res = await post('/admin/images/batch', payload);
+    toast(label + '完成：' + (res.count || 0) + ' 张' + (res.note ? '（' + res.note + '）' : ''));
+    setBatchMode(false);
+    await load();
+  } catch (err) {
+    toast(err.message, 5000);
+  }
+}
 
 /* ------------------------------------------------------------------ 图片操作面板 */
 

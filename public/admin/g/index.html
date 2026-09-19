@@ -22,6 +22,7 @@
           <button id="loginBtn" class="btn btn--primary" type="submit">进入</button>
         </form>
         <p class="msg" id="loginMsg" role="status"></p>
+        <a class="login-alt" href="/admin/p/">全部文章 →</a>
         <a class="login-alt" href="/admin/m/">去写文章 →</a>
       </div>
     </section>
@@ -33,6 +34,7 @@
           <h1 class="bar-title">图库</h1>
           <span class="bar-sub" id="count"></span>
         </div>
+        <button class="icon-btn" id="selectBtn" type="button" aria-label="批量选择">☑</button>
         <button class="icon-btn" id="refreshBtn" type="button" aria-label="刷新">⟳</button>
       </header>
 
@@ -45,6 +47,20 @@
       <div class="grid" id="grid"></div>
       <p class="empty" id="empty" hidden>这里还没有图片</p>
       <div class="grid-pad"></div>
+
+      <!-- 批量操作条：进入选择模式后出现在底部 -->
+      <div class="batchbar" id="batchbar" hidden>
+        <div class="batch-info">
+          <b id="batchCount">0</b> 张已选
+          <button class="link-btn" id="selectAllBtn" type="button">全选</button>
+          <button class="link-btn" id="clearSelBtn" type="button">清空</button>
+        </div>
+        <div class="batch-actions">
+          <button class="btn btn--ghost" id="batchMoveBtn" type="button">改分类</button>
+          <button class="btn btn--danger" id="batchDelBtn" type="button">删除</button>
+          <button class="btn btn--primary" id="batchDoneBtn" type="button">完成</button>
+        </div>
+      </div>
 
       <!-- 上传：右下角悬浮。选了图之后会先问归到哪个分类 -->
       <button class="fab" id="pickBtn" type="button" aria-label="上传图片">＋</button>

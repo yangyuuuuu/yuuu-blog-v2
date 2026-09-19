@@ -160,6 +160,64 @@ console.log('=== 4.8 图库逻辑（/admin/g/）===');
   ok(dataUrlBytes('不是dataurl') === 0, '非法输入给 0');
 }
 
+console.log('=== 4.9 文章管理页的搜索（/admin/p/）===');
+{
+  const { filtersOf, applyFilter, searchPosts, snippet, query } = await import('../public/admin/p/posts.js');
+
+  const posts = [
+    { slug: 'a', title: '雨天、热可可，和楼下那只猫', category: '日记', tags: ['日常'], date: '2024-07-21', draft: false, hidden: true, summary: '写点小事', text: '今天下了雨，我喝了热可可，猫在楼下。' },
+    { slug: 'b', title: '重新整理一次前端开发环境', category: '技术', tags: ['工具链', 'Node'], date: '2024-06-02', draft: false, hidden: false, summary: '换电脑之后重新搭了一遍', text: '把用到的东西记下来。' },
+    { slug: 'c', title: '还没写完的草稿', category: '随笔', tags: [], date: '2026-09-01', draft: true, hidden: false, summary: '', text: '' },
+    { slug: 'd', title: '看完《辉夜大小姐》', category: '安利', tags: ['番剧'], date: '2026-09-10', draft: false, hidden: false, summary: '强烈推荐', text: '这部番的节奏非常好，热可可那段也很甜。' },
+  ];
+
+  const f = filtersOf(posts);
+  ok(f[0].id === 'all' && f[0].count === 4, '筛选里第一个是「全部」且数量对');
+  ok(f.find((x) => x.id === 'draft').count === 1, '草稿数量对');
+  ok(f.find((x) => x.id === 'published').count === 3, '已发布数量对');
+  ok(f.find((x) => x.id === 'hidden').count === 1, '隐藏数量对');
+  ok(f.some((x) => x.id === 'cat:安利'), '★ 分类筛选是从数据里现算的（新增分类不用改代码）');
+  ok(f.find((x) => x.id === 'cat:安利').count === 1, '分类计数对');
+
+  ok(applyFilter(posts, 'draft').length === 1, '按草稿过滤');
+  ok(applyFilter(posts, 'published').length === 3, '按已发布过滤');
+  ok(applyFilter(posts, 'cat:技术').length === 1, '按分类过滤');
+  ok(applyFilter(posts, 'all').length === 4, '全部不过滤');
+  ok(applyFilter(posts, '不存在的档位').length === 4, '未知档位退回全部（不炸）');
+
+  /* ★ 搜索的核心要求：该搜到的必须搜到 */
+  const byTitle = searchPosts(posts, '热可可');
+  ok(byTitle.length === 2, '★ 标题和正文里的「热可可」都能搜到（2 篇）', '实际 ' + byTitle.length);
+  ok(byTitle[0].post.slug === 'a', '★ 标题命中的排在正文命中的前面', byTitle.map((h) => h.post.slug).join(','));
+  ok(byTitle[0].where.includes('标题'), '标出命中在标题');
+  ok(byTitle.some((h) => h.where.includes('正文')), '标出命中在正文');
+
+  ok(searchPosts(posts, '工具链')[0].post.slug === 'b', '按标签搜到');
+  ok(searchPosts(posts, '技术')[0].post.slug === 'b', '按分类搜到');
+  ok(searchPosts(posts, '换电脑')[0].post.slug === 'b', '按摘要搜到');
+  ok(searchPosts(posts, '辉夜')[0].post.slug === 'd', '按标题里的书名号内容搜到');
+  ok(searchPosts(posts, '不存在的词').length === 0, '搜不到就返回空');
+  ok(searchPosts(posts, '').length === 4, '空关键词返回全部');
+  ok(searchPosts(posts, '  ').length === 4, '只有空格也算空关键词');
+
+  /* 大小写不敏感 */
+  ok(searchPosts(posts, 'node').length === 1, '小写能搜到大写标签');
+  ok(searchPosts(posts, 'NODE').length === 1, '大写也能搜到');
+
+  /* 片段：要把关键词周围取出来，而不是只给开头 */
+  const sn = snippet('前面一堆无关的话'.repeat(5) + '这里的重点是热可可很好喝' + '后面还有一堆'.repeat(5), '热可可');
+  ok(sn.includes('热可可'), '片段包含关键词');
+  ok(sn.length < 120, '片段有长度上限（不会把整篇塞进列表）', String(sn.length));
+  ok(snippet('', 'x') === '', '空正文给空片段');
+  ok(snippet('abc', '找不到') === 'abc', '没命中时给开头');
+
+  /* 组合：先按分类过滤，再搜 */
+  const combo = query(posts, { filterId: 'cat:安利', keyword: '热可可' });
+  ok(combo.length === 1 && combo[0].post.slug === 'd', '★ 分类 + 关键词能叠加', JSON.stringify(combo.map((h) => h.post.slug)));
+  const combo2 = query(posts, { filterId: 'draft', keyword: '热可可' });
+  ok(combo2.length === 0, '草稿档里搜不到已发布的文章');
+}
+
 console.log('=== 5. 页面文件齐不齐 ===');
 {
   const html = readFileSync('public/admin/m/index.html', 'utf8');

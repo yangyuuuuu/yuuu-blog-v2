@@ -96,6 +96,7 @@ el.loginForm.addEventListener('submit', async (e) => {
     say(el.loginMsg, '');
     await loadList(data.posts);
     show('list');
+    await openRequested();
   } catch (err) {
     say(el.loginMsg, err.message || '校验失败', 'error');
     el.pwd.select();
@@ -373,6 +374,21 @@ window.addEventListener('pagehide', () => { /* 预留：需要时在这里补埋
 /* 给自动化探针用的就绪标记：证明监听器都已经挂上了（人工用不到，占几个字节） */
 window.__READY = true;
 
+/**
+ * 支持从「文章管理页」点进来直接编辑：/admin/m/?edit=<slug>
+ * 手机页本身没有列表跳转的需求，但管理页搜到文章后点一下就该到编辑界面，
+ * 而不是「登录 → 再从列表里翻一遍」。
+ */
+async function openRequested() {
+  const slug = new URLSearchParams(location.search).get('edit');
+  if (!slug) return;
+  const hit = posts.find((p) => p.slug === slug);
+  if (!hit) { toast('没找到这篇文章（可能刚被改名）'); return; }
+  /* 清掉参数，免得刷新时又跳一次 */
+  history.replaceState(null, '', location.pathname);
+  await openPost(hit);
+}
+
 /* ------------------------------------------------------------------ 启动 */
 
 (async function boot() {
@@ -383,6 +399,7 @@ window.__READY = true;
     show('list');
     await loadList();
     if (el.screenLogin.hidden === false) return;
+    await openRequested();
   } else {
     show('login');
     el.pwd.focus();

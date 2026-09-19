@@ -344,6 +344,8 @@ const required = [
   'public/admin/m/index.html', 'public/admin/m/ui.css', 'public/admin/m/ui.js', 'public/admin/m/app.js',
   /* 图库（/admin/g/）：同样是 public 下不走构建的源码 */
   'public/admin/g/index.html', 'public/admin/g/ui.css', 'public/admin/g/ui.js', 'public/admin/g/gallery.js',
+  /* 文章管理（/admin/p/）：搜索 + 分类筛选 */
+  'public/admin/p/index.html', 'public/admin/p/ui.css', 'public/admin/p/ui.js', 'public/admin/p/posts.js',
   'workers/oauth/src/index.ts', 'workers/oauth/wrangler.toml',
   'astro.config.mjs', 'CHANGELOG.md', 'package.json', 'README.md',
 ];
