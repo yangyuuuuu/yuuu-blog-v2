@@ -6,7 +6,7 @@
  */
 import {
   createApi, parseTags, joinTags, initialOf, describe, relativeDay, validate,
-  CATEGORIES, categoryNote, normalizeCategory,
+  CATEGORIES, categoryNote, normalizeCategory, toHardBreaks,
 } from './app.js';
 
 const API = 'https://oauth.yuuu.love';
@@ -20,7 +20,8 @@ const el = {
   filters: $('filters'), newBtn: $('newBtn'), refreshBtn: $('refreshBtn'),
   backBtn: $('backBtn'), moreBtn: $('moreBtn'), editState: $('editState'),
   fTitle: $('fTitle'), fBody: $('fBody'), fTags: $('fTags'), fSummary: $('fSummary'), fDate: $('fDate'),
-  fDraft: $('fDraft'), fPrivate: $('fPrivate'), tagRow: $('tagRow'),
+  fDraft: $('fDraft'), fPrivate: $('fPrivate'), fBreaks: $('fBreaks'), tagRow: $('tagRow'),
+  breakHint: $('breakHint'),
   saveBtn: $('saveBtn'), saveMsg: $('saveMsg'), saveFab: $('saveFab'), wordCount: $('wordCount'),
   sheet: $('sheet'), viewBtn: $('viewBtn'), delBtn: $('delBtn'), cancelSheet: $('cancelSheet'),
   toast: $('toast'),
@@ -29,6 +30,13 @@ const el = {
 
 /** 当前选中的分类（默认随笔，和站点一贯的默认一致） */
 let category = '随笔';
+
+/** 「回车即换行」开关的持久化键。默认开 —— 手机上写东西的人基本都按回车当换行 */
+const BREAKS_KEY = 'yuuu-mobile-breaks';
+const readBreaks = () => {
+  try { return localStorage.getItem(BREAKS_KEY) !== '0'; } catch { return true; }
+};
+const saveBreaks = (on) => { try { localStorage.setItem(BREAKS_KEY, on ? '1' : '0'); } catch { /* 忽略 */ } };
 
 let ticket = '';
 let posts = [];
@@ -195,6 +203,8 @@ function setEditing(post) {
 function fillForm(data) {
   category = normalizeCategory(data.category || '随笔');
   renderCats();
+  if (el.fBreaks) el.fBreaks.checked = readBreaks();
+  renderBreakHint();
   el.fTitle.value = data.title || '';
   el.fBody.value = data.body || '';
   el.fTags.value = joinTags(data.tags);
@@ -207,12 +217,15 @@ function fillForm(data) {
   setDirty(false);
 }
 
-/** 字数提示：让作者知道离 20 字底线还有多远（规则与站点自检一致） */
+/**
+ * 字数提示：**只做参考**，不设下限、也不标红。
+ * 原来写成「12 / 20 字」并变金色，等于暗示"还不够" —— 现在去掉这个要求了，
+ * 提示就该是中性信息（有些作者会想看字数）。
+ */
 function renderCount() {
   const n = el.fBody.value.trim().length;
-  const short = n < 20;
-  el.wordCount.textContent = short ? n + ' / 20 字' : n + ' 字';
-  el.wordCount.classList.toggle('is-short', short);
+  el.wordCount.textContent = n ? n + ' 字' : '';
+  el.wordCount.classList.remove('is-short');
 }
 
 /** 画分类胶囊。手机上比下拉框好点：一眼看全，点一下就切 */
@@ -246,6 +259,14 @@ function setDirty(v) {
   el.saveFab.hidden = !v;
 }
 
+/** 「回车即换行」的提示文案：让作者知道保存后会发生什么 */
+function renderBreakHint() {
+  if (!el.breakHint) return;
+  el.breakHint.textContent = el.fBreaks && el.fBreaks.checked
+    ? '回车即换行：单独换行会真的换行（写俳句、分行短句都靠它）'
+    : '标准 Markdown：空一行才算新段落，单独换行会被合并';
+}
+
 function renderTagRow() {
   const tags = parseTags(el.fTags.value);
   el.tagRow.innerHTML = '';
@@ -257,6 +278,14 @@ function renderTagRow() {
   });
 }
 el.fTags.addEventListener('input', renderTagRow);
+if (el.fBreaks) {
+  el.fBreaks.addEventListener('change', () => {
+    saveBreaks(el.fBreaks.checked);
+    renderBreakHint();
+    setDirty(true);
+  });
+}
+
 [el.fTitle, el.fBody, el.fTags, el.fSummary, el.fDate, el.fDraft, el.fPrivate]
   .forEach((n) => n.addEventListener('input', () => {
     setDirty(true);
@@ -288,9 +317,16 @@ async function openPost(p) {
 }
 
 async function doSave() {
+  /*
+   * 保存时把「单个换行」写成 Markdown 硬换行（行尾两个空格）。
+   * 用户在编辑器里看到的还是他打的样子（行尾空格不可见），
+   * 但线上渲染就会真的换行 —— 这就是他抱怨的「我换了行，上线后没了」。
+   * 代码块里的换行不动（见 toHardBreaks）。
+   */
+  const useBreaks = !el.fBreaks || el.fBreaks.checked;
   const payload = {
     title: el.fTitle.value,
-    body: el.fBody.value,
+    body: useBreaks ? toHardBreaks(el.fBody.value) : el.fBody.value,
     category,
     tags: parseTags(el.fTags.value),
     summary: el.fSummary.value,

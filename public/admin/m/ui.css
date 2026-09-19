@@ -304,6 +304,7 @@ input:focus, textarea:focus {
 
 .f-cats { padding: 2px 0 0; }
 .f-hint { margin: 2px 0 6px; font-size: 12px; color: var(--muted); min-height: 17px; }
+.f-hint--breaks { margin: 2px 0 10px; }
 .f-tags-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
 .tag-pill {
   font-size: 12px;

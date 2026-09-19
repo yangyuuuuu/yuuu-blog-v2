@@ -519,3 +519,19 @@ body.is-dirty .savebar .btn { display: none; }
   transition: all 0.16s;
 }
 .item-edit:active { transform: scale(0.94); border-color: var(--accent); color: var(--accent); }
+
+/* 出错横幅：说明原因 + 一个动作按钮（不再把人直接踢回登录页） */
+.banner {
+  margin: 10px 14px 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  color: var(--ink);
+  font-size: 13.5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.banner[hidden] { display: none; }
+.banner #bannerText { flex: 1; min-width: 0; }

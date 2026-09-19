@@ -19,6 +19,7 @@ const el = {
   loginForm: $('loginForm'), pwd: $('pwd'), loginBtn: $('loginBtn'), loginMsg: $('loginMsg'),
   search: $('search'), filters: $('filters'), list: $('list'), empty: $('empty'),
   count: $('count'), refreshBtn: $('refreshBtn'), newBtn: $('newBtn'), toast: $('toast'),
+  banner: $('banner'), bannerText: $('bannerText'), bannerAction: $('bannerAction'),
 };
 
 let ticket = '';
@@ -87,15 +88,41 @@ async function post(path, payload) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    if (/过期/.test(data.message || '')) {
-      ticket = '';
-      show('login');
-      say(el.loginMsg, data.message, 'error');
+    if (/过期|口令/.test(data.message || '')) {
+      /*
+       * 登录过期：**留在当前页**说明原因，给一个「重新输口令」的按钮。
+       * 一开始这里是直接 show('login') 把人踢回登录页 —— 万一服务端偶发拒绝，
+       * 用户就会看到「刚验证完又回登录页」的循环，而且不知道发生了什么。
+       */
+      showBanner(data.message || '登录已过期', '重新输口令', () => {
+        ticket = '';
+        hideBanner();
+        show('login');
+        el.pwd.focus();
+      });
       throw new Error('need-login');
     }
     throw new Error(data.message || ('请求失败（HTTP ' + res.status + '）'));
   }
   return data;
+}
+
+function showBanner(text, actionLabel, onAction) {
+  el.bannerText.textContent = text;
+  if (actionLabel) {
+    el.bannerAction.textContent = actionLabel;
+    el.bannerAction.hidden = false;
+    el.bannerAction.onclick = onAction;
+  } else {
+    el.bannerAction.hidden = true;
+    el.bannerAction.onclick = null;
+  }
+  el.banner.hidden = false;
+}
+function hideBanner() {
+  el.banner.hidden = true;
+  el.bannerAction.hidden = true;
+  el.bannerAction.onclick = null;
 }
 
 async function load() {
@@ -108,6 +135,7 @@ async function load() {
       await reindex();
       return;
     }
+    hideBanner();
     posts = data.posts || [];
     renderFilters();
     render();

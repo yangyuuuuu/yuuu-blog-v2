@@ -96,6 +96,19 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
+    <!--
+      登录表单的「原生提交」守卫。
+      ⚠️ 为什么需要它：ui.js 是 module（延迟执行），加载完成前表单还没有监听器。
+      用户如果这时输了口令按回车，浏览器会**原生提交**（GET 带上 ?password=…）→ 页面刷新
+      → 又看到登录页 —— 表现成"验证后重复返回登录页"。手机上网络慢时特别容易撞上。
+      这里用一个内联脚本（立即执行）先把默认行为拦掉，等模块加载好再接真正的逻辑。
+    -->
+    <script>
+      (function () {
+        var f = document.getElementById('loginForm');
+        if (f) f.addEventListener('submit', function (e) { e.preventDefault(); });
+      })();
+    </script>
     <script type="module" src="/admin/g/ui.js"></script>
   </body>
 </html>

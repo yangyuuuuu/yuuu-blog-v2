@@ -23,17 +23,17 @@ private: false
 
 上一版是手写的静态站，能跑，但越写越累。这一版换成了 Astro：
 
-| 以前              | 现在                          |
-| --------------- | --------------------------- |
-| 手写 Markdown 解析器 | Astro Content Collections   |
-| 手写导航栏与卡片        | 组件化，改一处全站生效                 |
-| 手写路由与动画         | 文件路由 + View Transitions API |
+| 以前              | 现在                          |  
+| --------------- | --------------------------- |  
+| 手写 Markdown 解析器 | Astro Content Collections   |  
+| 手写导航栏与卡片        | 组件化，改一处全站生效                 |  
+| 手写路由与动画         | 文件路由 + View Transitions API |  
 | 打包一整个 JS 文件     | 默认零 JS，按需加载                 |
 
 ## 一些小约定
 
-1. 文章用 Markdown 写，放在 `src/content/posts/`；
-2. frontmatter 有强校验，字段写错构建就会报错；
+1. 文章用 Markdown 写，放在 `src/content/posts/`；  
+2. frontmatter 有强校验，字段写错构建就会报错；  
 3. 首屏 JS 控制在 10KB 以内，超了就把功能砍掉。
 
 > 审判已经结束。现在，请为我献上掌声。

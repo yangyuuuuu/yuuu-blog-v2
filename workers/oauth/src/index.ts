@@ -987,13 +987,11 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
     const text = String(body.body ?? '');
     if (!title) return json({ message: '标题不能空' }, 400, request, env);
     /*
-     * 和 tools/verify.mjs 用同一条规则：body.trim().length >= 20（**标点也算**）。
-     * 一开始我这里多写了「去掉标点再数」，于是同一段文字手机说能存、构建时被 verify 拦 ——
-     * 两边规则必须一模一样，否则用户会在手机上白写。
+     * 正文**不设长度下限**（原来卡 20 字，已按用户要求去掉）。
+     * 短句、一张图配一行字、一句话日记都是正当内容；
+     * 也**不要**改成「必须非空」—— 只放图片的文章正文里可能只有一行 markdown。
+     * 标题仍然必须要有：没有标题就生成不了文件名（slug）。
      */
-    if (text.trim().length < 20) {
-      return json({ message: '正文太短了（至少 20 个字）—— 这是站点自检的底线' }, 400, request, env);
-    }
     const tags = Array.isArray(body.tags) ? body.tags : [];
     const category = String(body.category || '随笔').trim() || '随笔';
     try {

@@ -86,7 +86,7 @@ html.theme-switching .t-backdrop {
 
 ## 小结
 
-| 想要的效果 | 写法 |
-| --- | --- |
-| 固定色值 | `@theme { --color-x: #fff }` |
+| 想要的效果 | 写法 |  
+| --- | --- |  
+| 固定色值 | `@theme { --color-x: #fff }` |  
 | 跟随主题 | `@theme inline { --color-x: var(--x) }` |

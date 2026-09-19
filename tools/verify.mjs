@@ -154,16 +154,12 @@ for (const file of postFiles) {
   }
   if (!/^[\u4e00-\u9fa5]/.test(data.title)) warn(relative('src/content/posts', file) + ' 标题不是以中文开头（仅提示）');
   /*
-   * 正文长度只卡「要发布的」文章。
-   * 草稿（draft: true）本来就是写一半的半成品 —— 刚 npm run new 建出来的草稿
-   * 正文只有一句占位，卡它等于逼你先写满 20 字才能提交。
-   * 别忘了：草稿本来也不会被构建出去，不存在发空文上去的风险。
+   * 正文长度**不再设下限**（原来卡 20 字）。
+   * 用户要求去掉：短句、图片、一句话日记都是正当内容，
+   * 长度该由作者自己决定，站点不该替他把关。
+   * 注意也别改成「必须非空」—— 一张图配一行字的文章同样是正常的。
    */
   if (!r.data.draft) {
-    if (body.trim().length < 20) {
-      bad(relative('src/content/posts', file) + ' 正文太短（' + body.trim().length + ' 字）' +
-          ' — 要发布的文章至少 20 字，或者先标成 draft: true');
-    }
     published.push({ file, ...r.data });
   }
 }

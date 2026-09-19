@@ -259,8 +259,13 @@ console.log('=== 5. 该拦的必须拦住 ===');
 {
   const a = await call('/admin/save', { ticket: 'good-ticket', title: '', body: 'x'.repeat(50) });
   ok(a.status === 400, '空标题被拦', 'status=' + a.status);
-  const b = await call('/admin/save', { ticket: 'good-ticket', title: '够长标题', body: '太短' });
-  ok(b.status === 400, '正文太短被拦（站点自检底线是 20 字）', 'status=' + b.status);
+  /* ★ 正文长度**不再设下限**（用户要求去掉）。这几条反过来盯着：短/空正文都必须能存 */
+  const b = await call('/admin/save', { ticket: 'good-ticket', title: '很短的一篇', body: '嗯' });
+  ok(b.status === 200, '★ 极短正文也能存（20 字底线已去掉）', 'status=' + b.status + ' ' + JSON.stringify(b.data).slice(0, 70));
+  const b2 = await call('/admin/save', { ticket: 'good-ticket', title: '只有图片的一篇', body: '![](/uploads/x.jpg)' });
+  ok(b2.status === 200, '★ 只放一张图（无文字）也能存', 'status=' + b2.status);
+  const b3 = await call('/admin/save', { ticket: 'good-ticket', title: '真的空正文', body: '' });
+  ok(b3.status === 200, '★ 空正文也能存（长度由作者自己决定）', 'status=' + b3.status);
   const c = await call('/admin/file', { ticket: 'good-ticket', path: '../../etc/passwd' });
   ok(c.status === 400, '路径穿越被拦', 'status=' + c.status);
   /* 第 3 组已经在 old.md 上保存过，这里再存一次应当成功（文件仍在） */
@@ -289,7 +294,7 @@ console.log('=== 5.5 正文换行/空行一个都不能丢 ===');
     ['CRLF 换行', '第一行。\r\n第二行。', /第一行。\n第二行。/],
     ['列表与缩进', '- 甲\n  - 甲一\n- 乙', /- 甲\n  - 甲一\n- 乙/],
   ];
-  /* 站点有 20 字底线，样本前面补一段够长的固定文字（不影响要验的结尾/中间部分） */
+  /* 长度底线已去掉，样本短也没关系；保留 PAD 只是让用例更像真实文章 */
   const PAD = '这是用来凑够二十个字自检底线的填充文字。';
   for (const [label, body, expect] of cases) {
     const sent = PAD + '\n\n' + body;

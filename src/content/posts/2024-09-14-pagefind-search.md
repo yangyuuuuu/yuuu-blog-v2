@@ -13,8 +13,8 @@ coverHue: 210
 
 一开始我想过把文章标题和摘要塞进一个 JSON，前端自己过滤。问题是：
 
-- 文章一多，那个 JSON 就有几百 KB，首屏白等；
-- 只能搜标题和摘要，搜不到正文；
+- 文章一多，那个 JSON 就有几百 KB，首屏白等；  
+- 只能搜标题和摘要，搜不到正文；  
 - 中文分词要自己搞。
 
 ## Pagefind 怎么做的
@@ -44,7 +44,7 @@ dist/pagefind/
 input.addEventListener('focus', function () { load(); });
 ```
 
-用户点进输入框的那一刻，才开始 `import('/pagefind/pagefind.js')`。
+用户点进输入框的那一刻，才开始 `import('/pagefind/pagefind.js')`。  
 在那之前，首屏 JS 里跟搜索有关的字节数是 **0**。
 
 ## 自己渲染结果
@@ -65,8 +65,8 @@ const results = await Promise.all(
 
 ## 踩到的坑
 
-1. **本地开发搜不到东西** —— Pagefind 只认构建产物，`astro dev` 下没有索引。要先 `npm run build`。
-2. **动态 import 会被打包器处理** —— 用 `is:inline` 的内联脚本，路径原样保留。
+1. **本地开发搜不到东西** —— Pagefind 只认构建产物，`astro dev` 下没有索引。要先 `npm run build`。  
+2. **动态 import 会被打包器处理** —— 用 `is:inline` 的内联脚本，路径原样保留。  
 3. **高亮颜色** —— `<mark>` 默认是刺眼的黄色，记得用主题变量接管。
 
 > 结论：静态站做搜索，Pagefind 基本是目前的最优解。

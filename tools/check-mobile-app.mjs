@@ -2,12 +2,12 @@
  * 手机写作页逻辑（public/admin/m/app.js）的检查。
  *
  * 这些规则如果写错，用户会在手机上写半天然后被站点自检拦下 —— 所以要和
- * tools/verify.mjs 的规则逐条对齐（尤其是那条「20 字」）。
+ * tools/verify.mjs 的规则逐条对齐。
  *
  * 跑法：node tools/check-mobile-app.mjs
  */
 import {
-  validate, parseTags, joinTags, initialOf, describe, relativeDay, MIN_BODY,
+  validate, parseTags, joinTags, initialOf, describe, relativeDay,
   CATEGORIES, categoryNote, normalizeCategory,
 } from '../public/admin/m/app.js';
 import { readFileSync } from 'node:fs';
@@ -20,24 +20,74 @@ const ok = (cond, label, extra) => {
   return false;
 };
 
-console.log('=== 1. 与站点自检同一条底线 ===');
+console.log('=== 1. 正文长度不设下限（用户要求去掉 20 字规则）===');
 {
-  /* 直接读 verify.mjs 的实现细节来对账，避免两边各说各话 */
+  /*
+   * 原来这里有 MIN_BODY = 20 和一堆字数断言。用户明确要求去掉这个要求，
+   * 所以断言反过来写：**短正文必须放行**，并且盯着「三处都别再偷偷加回限制」。
+   */
+  ok(typeof MIN_BODY === 'undefined', '★ MIN_BODY 这个下限已经删掉，不再是导出常量');
+  ok(validate({ title: 'x', body: '一'.repeat(19) }) === null, '★ 19 字放行');
+  ok(validate({ title: 'x', body: '嗯' }) === null, '★ 一个字也放行');
+  ok(validate({ title: 'x', body: '' }) === null, '★ 空正文放行（只放一张图的文章也是正常的）');
+  ok(validate({ title: 'x', body: '   ' }) === null, '★ 只有空白也放行');
+  ok(validate({ title: 'x', body: '![](/uploads/a.jpg)' }) === null, '★ 只有图片的正文放行');
+  /* 标题仍然必须有：没有标题就生成不了 slug */
+  ok(validate({ title: '', body: '一'.repeat(30) }) !== null, '空标题仍然被拦（没有标题就没有文件名）');
+  ok(validate({ title: '   ', body: '一'.repeat(30) }) !== null, '全空格标题仍然被拦');
+  ok(validate({ title: '有标题', body: 'x' }) === null, '有标题 + 一个字 = 可以存');
+
+  /* 三处一起对账：verify.mjs、Worker、以及本文件 —— 别有人单独把限制加回来 */
   const verify = readFileSync('tools/verify.mjs', 'utf8');
-  ok(/body\.trim\(\)\.length/.test(verify), 'verify.mjs 用的是 trim().length');
-  ok(MIN_BODY === 20, 'MIN_BODY = 20');
-  ok(validate({ title: 'x', body: '一'.repeat(19) }) !== null, '19 字被拦');
-  ok(validate({ title: 'x', body: '一'.repeat(20) }) === null, '20 字放行');
-  /* 标点也要算 —— 这是之前踩过的坑：我一开始把标点剔掉再数，和 verify 不一致 */
-  /* 6 个汉字 + 2 个标点 + 12 个汉字 = 20 个字符 */
-  const withPunct = '你好，世界。' + '啊'.repeat(20); // 26 个字符
-  
-  ok(withPunct.length === 26 && validate({ title: 'x', body: withPunct }) === null, '标点也算字（26 个字符含 2 个标点，放行）', '长度=' + withPunct.length);
-  const punctOnly = '。'.repeat(20);
-  ok(validate({ title: 'x', body: punctOnly }) === null, '全是标点也算够长（规则与 verify.mjs 一致）');
-  ok(validate({ title: 'x', body: '   ' + '一'.repeat(20) + '   ' }) === null, '首尾空白不算（trim 后仍是 20）');
-  ok(validate({ title: '', body: '一'.repeat(30) }) !== null, '空标题被拦');
-  ok(validate({ title: '   ', body: '一'.repeat(30) }) !== null, '全空格标题被拦');
+  ok(!/body\.trim\(\)\.length\s*<\s*\d+/.test(verify), '★ verify.mjs 里没有「正文长度 < N」的判断');
+  const worker = readFileSync('workers/oauth/src/index.ts', 'utf8');
+  ok(!/text\.trim\(\)\.length\s*<\s*\d+/.test(worker), '★ Worker 里也没有正文长度下限');
+}
+
+console.log('=== 1.5 回车即换行（把单个换行写成 Markdown 硬换行）===');
+{
+  const { toHardBreaks } = await import('../public/admin/m/app.js');
+
+  /* 用户实际踩到的例子：俳句三行，Markdown 会合并成一行 */
+  const haiku = ['礼貌启心门，', '交谈舒畅似春风，', '双赢喜相逢。'].join('\n');
+  const fixed = toHardBreaks(haiku);
+  /*
+   * 规则：只有「后面还跟着文字」的行才补两个空格。
+   * 最后一行后面是空行/文末 —— 那里本来就会换行，补了是多余的。
+   */
+  const fl = fixed.split('\n');
+  ok(fl[0].endsWith('  ') && fl[1].endsWith('  '), '★ 前两行补上了硬换行', JSON.stringify(fixed));
+  ok(fl[2] === '双赢喜相逢。', '★ 最后一行（段末）不补 —— 后面本来就会换行', JSON.stringify(fl[2]));
+  ok(fixed.replace(/ +$/gm, '') === haiku, '内容一个字没改，只是行尾多了空格');
+
+  /* 段落之间空行分隔的，不要乱加 */
+  const paras = ['第一段。', '', '第二段。'].join('\n');
+  ok(toHardBreaks(paras) === paras, '★ 空行分隔的段落不动（本来就正常换段）');
+
+  /* 段末那一行不用加 */
+  const tail = ['一行', '两行', '', '单行段'].join('\n');
+  const t2 = toHardBreaks(tail).split('\n');
+  ok(t2[0].endsWith('  '), '连续行的第一行补');
+  ok(t2[1] === '两行', '★ 紧接着空行的那一行不补（它已经是段末）', JSON.stringify(t2[1]));
+  ok(t2[3] === '单行段', '单行段落不补');
+
+  /* ★ 代码块里的换行绝不能碰 */
+  const F = String.fromCharCode(96, 96, 96);
+  const code = ['正文一行', F + 'js', 'const a = 1;', 'const b = 2;', F, '后面一行'].join('\n');
+  const c2 = toHardBreaks(code);
+  const codeLines = c2.split('\n');
+  ok(codeLines[2] === 'const a = 1;' && codeLines[3] === 'const b = 2;', '★ 代码块内部一个字都没动（没加空格）', JSON.stringify(codeLines.slice(1, 5)));
+  /* 代码围栏自带换行，所以它前面那一行也不需要补空格 */
+  ok(codeLines[0] === '正文一行', '★ 代码块前面那行不补（围栏本身就会断行）', JSON.stringify(codeLines[0]));
+  ok(codeLines[5] === '后面一行', '代码块后面那行是文末，不补');
+
+  /* 已经硬换行过的不重复加 */
+  const already = ['一行  ', '两行'].join('\n');
+  ok(toHardBreaks(already) === already, '★ 已经有硬换行的行不重复处理');
+
+  ok(toHardBreaks('') === '', '空正文不炸');
+  ok(toHardBreaks(undefined) === '', 'undefined 不炸');
+  ok(toHardBreaks('单行') === '单行', '只有一行时不动它');
 }
 
 console.log('=== 2. 标签解析 ===');

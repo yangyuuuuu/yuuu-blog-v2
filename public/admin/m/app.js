@@ -12,8 +12,53 @@
  * 真正写 GitHub 的是 Worker（token 只在服务端），口令也是 Worker 校验。
  */
 
-/** 站点的写作底线，和 tools/verify.mjs 保持一致（标点也算字） */
-export const MIN_BODY = 20;
+/*
+ * 正文没有长度下限（原来这里有个 MIN_BODY = 20，已按用户要求去掉）。
+ * 短句、图片、一句话日记都是正当内容，长度由作者自己决定。
+ * 如果哪天想再加限制，记得**三处一起改**：这里、workers/oauth 的 /admin/save、
+ * 以及 tools/verify.mjs —— 三处不一致会让用户在手机上白写。
+ */
+
+/**
+ * 把「单个换行」变成 Markdown 的**硬换行**（行尾两个空格）。
+ *
+ * 为什么需要：Markdown 里单个换行**不算换行**，会被合并成同一段 ——
+ * 用户写的俳句「礼貌启心门，/ 交谈舒畅似春风，/ 双赢喜相逢。」
+ * 渲染出来是一行。他就报过「我自己换了行，为什么上线后没有了」。
+ *
+ * 为什么不直接开全局的 breaks（GitHub 那种规则）：
+ * 站里 13 篇文章含多处**软折行**（长句在源码里折成两三行），
+ * 一开全局，它们会在句子中间凭空多出换行。所以改成**写的时候才转换**：
+ * 只影响你保存的这一篇，老文章一个字都不动。
+ *
+ * 实现要点：
+ *   · 围栏代码块（三个反引号）里的换行**必须原样保留** —— 那是代码，加空格会改坏它
+ *   · 已经以两个空格或反斜杠结尾的行不重复处理
+ *   · 只处理「后面还跟着非空行」的行（段末那个换行本来就没意义）
+ */
+export function toHardBreaks(markdown) {
+  const FENCE = String.fromCharCode(96, 96, 96);   /* 三个反引号，避免在模板字符串里转义 */
+  const lines = String(markdown || '').split('\n');
+  let inFence = false;
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim().indexOf(FENCE) === 0) {
+      inFence = !inFence;
+      out.push(line);
+      continue;
+    }
+    const next = lines[i + 1];
+    const nextIsText = next !== undefined && next.trim() !== '' && next.trim().indexOf(FENCE) !== 0;
+    const alreadyHard = /( {2,}|\\)$/.test(line);
+    if (!inFence && line.trim() !== '' && nextIsText && !alreadyHard) {
+      out.push(line.replace(/\s+$/, '') + '  ');
+    } else {
+      out.push(line);
+    }
+  }
+  return out.join('\n');
+}
 
 /**
  * 分类。必须和 public/admin/config.yml 的 options 一致 ——
@@ -35,12 +80,9 @@ export const normalizeCategory = (id) =>
   CATEGORIES.some((c) => c.id === id) ? id : '随笔';
 
 /** 保存前的本地校验。返回 null 表示可以提交，否则返回给用户看的错误文案。 */
-export function validate({ title, body }) {
+export function validate({ title }) {
+  /* 只要求标题：没有标题就没有文件名（slug），那是真存不了 */
   if (!String(title || '').trim()) return '标题还没写';
-  const text = String(body || '');
-  if (text.trim().length < MIN_BODY) {
-    return '正文太短了（至少 ' + MIN_BODY + ' 个字，标点也算）—— 站点自检会拦下它';
-  }
   return null;
 }
 

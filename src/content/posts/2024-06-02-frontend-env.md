@@ -11,10 +11,10 @@ coverHue: 215
 
 ## 基础三件套
 
-| 工具 | 用途 | 备注 |
-| --- | --- | --- |
-| Node.js | 运行时 | 用 LTS，别追最新 |
-| pnpm | 包管理 | 磁盘占用小，装得快 |
+| 工具 | 用途 | 备注 |  
+| --- | --- | --- |  
+| Node.js | 运行时 | 用 LTS，别追最新 |  
+| pnpm | 包管理 | 磁盘占用小，装得快 |  
 | Git | 版本控制 | 顺手配好 SSH key |
 
 ## 装 Node
@@ -41,8 +41,8 @@ pnpm -v
 
 VS Code 只装必要的：
 
-- ESLint —— 保存时自动修
-- Prettier —— 统一格式
+- ESLint —— 保存时自动修  
+- Prettier —— 统一格式  
 - EditorConfig —— 统一缩进换行
 
 `.editorconfig`：
