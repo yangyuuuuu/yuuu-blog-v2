@@ -271,11 +271,18 @@ import SortSelect from '../components/SortSelect.astro';
 
     function render() {
       const q = (searchEl ? searchEl.value : '').trim().toLowerCase();
-      /* 全文搜索：标题 / 摘要 / 正文 / 标签 / 分类 / 日期 */
+      /*
+       * 搜索：标题 / 摘要 / 标签 / 分类 / 日期。
+       *
+       * **这里不搜正文** —— /private/posts.json 是公开可访问的静态文件，
+       * 里面只放元信息；正文一旦写进去，任何人都能下载到（「私人」靠的是
+       * Worker 的口令门槛，不是文件藏得深）。
+       * 需要搜正文时用 /admin/p/（那边的索引存在 KV 里，要口令才拿得到）。
+       */
       const matched = !q
         ? all.slice()
         : all.filter((p) =>
-            [p.title, p.summary, p.text, (p.tags || []).join(' '), p.category, p.date]
+            [p.title, p.summary, (p.tags || []).join(' '), p.category, p.date]
               .some((v) => String(v || '').toLowerCase().includes(q)),
           );
       const shown = sortPosts(matched, sortEl ? sortEl.value : 'date-desc');
