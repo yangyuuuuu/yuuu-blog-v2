@@ -243,6 +243,51 @@ console.log('=== 5.5 正文换行/空行一个都不能丢 ===');
   }
 }
 
+/* ---------- 5.7 正文里的 --- 不能把正文截断 ---------- */
+console.log('=== 5.7 正文含 Markdown 分隔线（---）时不能吃掉正文 ===');
+{
+  /*
+   * splitYaml 找 frontmatter 结束位置；如果正文里有 ---（Markdown 分隔线），
+   * 实现不严谨就会把后面整段正文丢掉 —— 用户在手机上改一篇文章，正文直接少一半。
+   * 目前的实现要求结束的 --- 后面必须跟换行，所以是安全的；
+   * 这条测试留着，防止以后有人为了「宽松一点」把正则改坏。
+   */
+  const withRule = [
+    '---',
+    'title: 带分隔线的文章',
+    'date: 2024-01-01',
+    'category: 随笔',
+    'tags: []',
+    '',
+    '---',
+    '',
+    '上半段的内容写在这里，长度足够通过站点的二十字自检。',
+    '',
+    '---',
+    '',
+    '下半段，分隔线之后的内容一个字都不能少。',
+    '',
+  ].join('\n');
+  gh.files.set('src/content/posts/with-rule.md', { text: withRule, sha: 's-rule' });
+
+  const read = await call('/admin/file', { ticket: 'good-ticket', path: 'src/content/posts/with-rule.md' });
+  ok(read.status === 200, '能读到这篇');
+  ok(read.data?.body.includes('上半段'), '读到上半段');
+  ok(read.data?.body.includes('下半段'), '★ 读到下半段（正文没被 --- 截断）', JSON.stringify(String(read.data?.body).slice(0, 60)));
+  ok(read.data?.body.includes('---'), '★ 正文里的分隔线本身也保留着');
+
+  /* 再保存一次，正文必须原样不变 */
+  const save = await call('/admin/save', {
+    ticket: 'good-ticket', path: 'src/content/posts/with-rule.md',
+    title: '带分隔线的文章', body: read.data.body, category: '随笔', tags: [],
+  });
+  ok(save.status === 200, '保存成功', JSON.stringify(save.data).slice(0, 100));
+  const out = gh.lastPutText || '';
+  const bodyOut = out.slice(out.indexOf('\n---\n', 3) + 6);
+  ok(bodyOut.includes('下半段'), '★ 保存后下半段还在');
+  ok(bodyOut === read.data.body, '★ 正文往返一次完全不变', bodyOut === read.data.body ? '' : '长度 ' + bodyOut.length + ' vs ' + String(read.data.body).length);
+}
+
 /* ---------- 6. 删除 ---------- */
 console.log('=== 6. 删除 ===');
 {
