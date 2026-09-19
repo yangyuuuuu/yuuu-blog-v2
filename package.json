@@ -30,7 +30,8 @@
     "posts": "explorer src\\content\\posts",
     "publish": "node tools/publish.mjs",
     "og": "node tools/make-og.mjs",
-    "deploy": "npm run build && npx wrangler pages deploy dist",
+    "deploy": "node tools/deploy-pages.mjs",
+    "deploy:dry": "node tools/deploy-pages.mjs --dry-run",
     "domain": "node tools/set-domain.mjs",
     "icons": "node tools/make-icons.mjs"
   },
