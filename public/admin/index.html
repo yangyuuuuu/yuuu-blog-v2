@@ -79,6 +79,16 @@
       [class*="Login"] [class*="Logo"], [class*="login"] img { max-width: 220px; }
 
       /*
+       * 手机写作页 / 图库的入口：放在页面最底部。
+       * ⚠️ 这里刻意**不用 flex/grid、不写任何布局属性** —— verify.mjs 有守卫：
+       * 后台 <style> 里只允许改颜色。Decap 的界面是按桌面宽度设计的，
+       * 我曾经在这里加过布局覆盖，把手机后台改成了白板（见 HANDOFF 9.95）。
+       * 所以入口只用最朴素的行内块 + 居中。
+       */
+      .alt-tools { text-align: center; padding: 10px 16px 24px; font-size: 13px; }
+      .alt-tools a { color: #2f7f9e; text-decoration: none; margin: 0 7px; white-space: nowrap; }
+
+      /*
        * 深色模式：Decap 会跟随系统偏好。上面那套是浅色皮肤，
        * 如果系统是深色，必须换成深色配色，否则深色文字压在浅色底上会糊成一片。
        * 这里用站点自己的深色令牌（--bg #0d1b2a / --ink #e0f0ff）。
@@ -210,5 +220,11 @@
         }, 100);
       })();
     </script>
+  <!-- 手机上那两个轻量工具（正式后台还是电脑上更好用） -->
+  <nav class="alt-tools" aria-label="其它工具">
+    <a href="/admin/m/">手机写作页</a>
+    <a href="/admin/g/">图库</a>
+    <a href="/admin/logs/">访问日志</a>
+  </nav>
 </body>
 </html>
