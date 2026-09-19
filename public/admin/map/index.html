@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>全站页面索引 · yuuu</title>
+<!--
+  这一页是「防止忘记有什么」的清单。
+  内容是静态 HTML（放在 public/admin/map/），不用构建就能改。
+
+  为什么做成一个静态页而不是塞进 Decap：
+  Decap 是别人的东西，我们只能往它底部那段 nav 里加个链接。
+
+  这一页本身**不包含任何密码或令牌** —— 只是个地址清单。
+  它没有口令保护（方便随手打开），所以别往这里放敏感信息。
+-->
+<style>
+  :root {
+    --ink: #12232e;
+    --muted: #5b7386;
+    --line: #d8e6f0;
+    --surface: #ffffff;
+    --bg: #f4f9fd;
+    --accent: #2f7f9e;
+    --gold: #b8860b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 22px 16px 60px;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.65 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { margin: 0 0 4px; font-size: 21px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  h2 {
+    font-size: 15px;
+    margin: 26px 0 10px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--line);
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  h2 span { font-weight: 400; font-size: 12.5px; color: var(--muted); }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .row {
+    display: flex;
+    gap: 12px;
+    padding: 11px 14px;
+    border-top: 1px solid #eef5fa;
+    align-items: baseline;
+    flex-wrap: wrap;
+  }
+  .row:first-child { border-top: 0; }
+  .row:hover { background: #fafdff; }
+  .path {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    color: var(--accent);
+    text-decoration: none;
+    flex: none;
+    min-width: 210px;
+    word-break: break-all;
+  }
+  .path:hover { text-decoration: underline; }
+  .path--plain { color: var(--ink); }
+  .desc { color: var(--muted); font-size: 13px; flex: 1; min-width: 200px; }
+  .badge {
+    font-size: 11.5px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    flex: none;
+  }
+  .badge--pw { border-color: #f0d9a0; background: #fdf7e6; color: var(--gold); }
+  .badge--gh { border-color: #cfd8e4; background: #f2f5f9; color: #4a5c72; }
+  .badge--pub { border-color: #cfe8d8; background: #eefaf2; color: #2e7d52; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    background: #eef5fa;
+    padding: 1px 5px;
+    border-radius: 5px;
+  }
+  .note {
+    background: #fffaf0;
+    border: 1px solid #f0e0bc;
+    border-left: 3px solid var(--gold);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    margin: 14px 0 0;
+  }
+  .note b { color: #8a6100; }
+  .note ul { margin: 6px 0 0; padding-left: 20px; }
+  .note li { margin: 3px 0; }
+  footer { margin-top: 30px; font-size: 12.5px; color: var(--muted); text-align: center; }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>全站页面索引</h1>
+  <p class="sub">
+    这里是这个站所有的页面、接口和常用命令。想不起来某个东西在哪时翻这一页。
+    <br />最后核对：2026-09-19 · 文章 16 篇 · 图片 11 张
+  </p>
+
+  <h2>后台 <span>只有你能进</span></h2>
+  <div class="card">
+    <div class="row">
+      <a class="path" href="/admin/">/admin/</a>
+      <span class="desc">完整后台（Decap）。写文章的完整字段、媒体库、预览面板。电脑上用它。</span>
+      <span class="badge badge--gh">GitHub 登录</span>
+    </div>
+    <div class="row">
+      <a class="path" href="/admin/m/">/admin/m/</a>
+      <span class="desc">手机写作页。标题/正文/分类/标签一屏搞定，带「回车即换行」。</span>
+      <span class="badge badge--pw">口令</span>
+    </div>
+    <div class="row">
+      <a class="path" href="/admin/p/">/admin/p/</a>
+      <span class="desc">文章管理。全部文章 + 搜索（跨标题/正文/标签）+ 分类筛选。点一条直接打开文章，点「改」去编辑。</span>
+      <span class="badge badge--pw">口令</span>
+    </div>
+    <div class="row">
+      <a class="path" href="/admin/g/">/admin/g/</a>
+      <span class="desc">图库。上传（自动压缩）、分类、批量改分类/删除、<b>重命名</b>、<b>看原图</b>、复制路径。</span>
+      <span class="badge badge--pw">口令</span>
+    </div>
+    <div class="row">
+      <a class="path" href="/admin/logs/">/admin/logs/</a>
+      <span class="desc">私人角落的访问日志（IP/设备/停留时长），可导出 CSV。</span>
+      <span class="badge badge--pw">LOGS_TOKEN</span>
+    </div>
+    <div class="row">
+      <a class="path" href="/admin/map/">/admin/map/</a>
+      <span class="desc">就是这一页。</span>
+      <span class="badge badge--pub">公开</span>
+    </div>
+  </div>
+
+  <h2>后台的内部文件 <span>不用点，知道在哪就行</span></h2>
+  <div class="card">
+    <div class="row">
+      <span class="path path--plain">public/admin/config.yml</span>
+      <span class="desc">Decap 的配置：集合、字段、分类下拉、筛选按钮。<b>加分类要改这里。</b></span>
+    </div>
+    <div class="row">
+      <span class="path path--plain">public/admin/preview.js</span>
+      <span class="desc">后台预览面板的模板（让预览长得像线上文章页）。</span>
+    </div>
+    <div class="row">
+      <span class="path path--plain">public/admin/decap-extras.js</span>
+      <span class="desc">给 Decap 媒体库注入「看原图 🔍」「重命名 ✎」两个按钮。Decap 没有扩展点，只能运行时挂。</span>
+    </div>
+    <div class="row">
+      <span class="path path--plain">workers/oauth/src/index.ts</span>
+      <span class="desc">Worker 全部逻辑：OAuth 代理 + 私人角落 + 后台接口。GitHub token 只在这一侧。</span>
+    </div>
+  </div>
+
+  <h2>站点页面 <span>访客能看到的</span></h2>
+  <div class="card">
+    <div class="row"><a class="path" href="/">/</a><span class="desc">首页（文章列表 + 排序下拉 + 搜索）</span></div>
+    <div class="row"><a class="path" href="/archive/">/archive/</a><span class="desc">归档（按年/分类）</span></div>
+    <div class="row"><a class="path" href="/tags/">/tags/</a><span class="desc">标签总览（每个标签一页：/tags/标签名/）</span></div>
+    <div class="row"><a class="path" href="/about/">/about/</a><span class="desc">关于</span></div>
+    <div class="row"><a class="path" href="/changelog/">/changelog/</a><span class="desc">更新记录（读 CHANGELOG.md）</span></div>
+    <div class="row"><a class="path" href="/search-guide/">/search-guide/</a><span class="desc">搜索怎么用（给访客看的说明）</span></div>
+    <div class="row"><a class="path" href="/private/">/private/</a><span class="desc">私人角落。隐藏/日记文章都在这里，Worker 口令把关。</span><span class="badge badge--pw">口令</span></div>
+    <div class="row"><a class="path" href="/rss.xml">/rss.xml</a><span class="desc">RSS 订阅</span></div>
+    <div class="row"><a class="path" href="/sitemap-index.xml">/sitemap-index.xml</a><span class="desc">站点地图（给搜索引擎）</span></div>
+    <div class="row"><span class="path path--plain">/posts/&lt;slug&gt;/</span><span class="desc">文章页。slug 由文件名生成（小写、非字母数字换 -）。</span></div>
+    <div class="row"><span class="path path--plain">/404</span><span class="desc">找不到页面</span></div>
+  </div>
+
+  <h2>公开的数据文件 <span>前台 JS 和访客会取</span></h2>
+  <div class="card">
+    <div class="row"><a class="path" href="/api/posts/1.json">/api/posts/&lt;N&gt;.json</a><span class="desc">分页文章清单（首页「加载更多」用）</span></div>
+    <div class="row"><a class="path" href="/private/posts-all.json">/private/posts-all.json</a><span class="desc">全部文章清单（含草稿）。<b>只有元信息，没有正文。</b>私人角落页面取它做搜索。</span></div>
+    <div class="row"><a class="path" href="/private/posts.json">/private/posts.json</a><span class="desc">隐藏文章清单（凭 ticket 才该看，但文件本身是公开的 —— 只有元信息）</span></div>
+    <div class="row"><a class="path" href="/uploads/categories.json">/uploads/categories.json</a><span class="desc">图片分类索引：<code>{"文件名": "分类"}</code>。图库靠它分类。</span></div>
+  </div>
+
+  <div class="note">
+    <b>为什么正文不在这些 JSON 里：</b>
+    整个 <code>dist/</code> 和 <code>public/</code> 都是公开可下载的，正文一旦写进去就等于公开发布。
+    所以私有清单只放元信息；全文搜索索引存在 Cloudflare KV 里，凭 ticket 通过 Worker 取。
+  </div>
+
+  <h2>Worker 接口 <span>oauth.yuuu.love</span></h2>
+  <div class="card">
+    <div class="row"><span class="path path--plain">/</span><span class="desc">自检：返回路由清单和 build 标记</span></div>
+    <div class="row"><span class="path path--plain">/auth · /callback</span><span class="desc">GitHub OAuth 代理（Decap 登录用）</span></div>
+    <div class="row"><span class="path path--plain">/hidden</span><span class="desc">私人角落验口令 → 发 ticket（6 小时）</span></div>
+    <div class="row"><span class="path path--plain">/hidden/leave · /hidden/logs</span><span class="desc">离开记时长 · 读日志</span></div>
+    <div class="row"><span class="path path--plain">/admin/whoami</span><span class="desc">探活（不需要 ticket）</span></div>
+    <div class="row"><span class="path path--plain">/admin/posts · /admin/file · /admin/save · /admin/delete</span><span class="desc">读列表 / 读单篇 / 保存 / 删除</span></div>
+    <div class="row"><span class="path path--plain">/admin/reindex · /admin/posts-index</span><span class="desc">重建搜索索引（存 KV）· 读索引</span></div>
+    <div class="row"><span class="path path--plain">/admin/images · /admin/image/upload</span><span class="desc">列图库 · 上传</span></div>
+    <div class="row"><span class="path path--plain">/admin/image/move · /rename · /delete</span><span class="desc">改分类 · 重命名 · 删除</span></div>
+    <div class="row"><span class="path path--plain">/admin/images/batch</span><span class="desc">批量改分类 / 批量删除</span></div>
+  </div>
+
+  <h2>仓库里东西在哪 <span>D:\DS\yuuu-blog-v2</span></h2>
+  <div class="card">
+    <div class="row"><span class="path path--plain">src/content/posts/*.md</span><span class="desc">文章本体（文件名 = slug 来源，日期写在 frontmatter 里）</span></div>
+    <div class="row"><span class="path path--plain">public/uploads/</span><span class="desc">图片，<b>平铺在根目录</b>（分类在 categories.json 里）</span></div>
+    <div class="row"><span class="path path--plain">src/pages/</span><span class="desc">站点页面（Astro）</span></div>
+    <div class="row"><span class="path path--plain">src/content.config.ts</span><span class="desc">frontmatter 的 schema。<b>分类白名单在这里，是权威清单。</b></span></div>
+    <div class="row"><span class="path path--plain">HANDOFF.md</span><span class="desc">踩过的坑与两条铁律（动手前先看它）</span></div>
+    <div class="row"><span class="path path--plain">CHANGELOG.md · DEPLOY.md</span><span class="desc">更新记录 · 部署说明</span></div>
+  </div>
+
+  <div class="note">
+    <b>加一个分类要改 5 处</b>（漏一处就会出事 —— 加「安利」时漏了第 1 处，构建直接失败、线上发不出新版）：
+    <ul>
+      <li><code>src/content.config.ts</code> 的 <code>CATEGORIES</code>（权威，构建时校验）</li>
+      <li><code>public/admin/config.yml</code>（Decap 下拉）</li>
+      <li><code>public/admin/m/app.js</code>（手机页胶囊）</li>
+      <li><code>src/pages/archive.astro</code>（归档页配色）</li>
+      <li><code>src/lib/posts.ts</code>（没指定封面时按分类挑图）</li>
+    </ul>
+    <code>npm run check:mobile</code> 会核对前两处与 schema 是否一致。
+  </div>
+
+  <h2>常用命令 <span>在仓库根目录跑</span></h2>
+  <div class="card">
+    <div class="row"><span class="path path--plain">npm run dev</span><span class="desc">本地开发</span></div>
+    <div class="row"><span class="path path--plain">npm run new</span><span class="desc">新建文章草稿</span></div>
+    <div class="row"><span class="path path--plain">npm run build</span><span class="desc">构建（astro + 私有清单 + 搜索索引）</span></div>
+    <div class="row"><span class="path path--plain">npm run check:all</span><span class="desc">9 项自检：schema / 搜索 / 产物 / 排序 / 预览 / 手机页 / Worker / Decap 增强</span></div>
+    <div class="row"><span class="path path--plain">npm run deploy</span><span class="desc"><b>发布站点。</b>会先 pull、再构建、再体检产物、最后才发。</span></div>
+    <div class="row"><span class="path path--plain">npm run deploy:dry</span><span class="desc">只跑前面几步，不真的发布</span></div>
+    <div class="row"><span class="path path--plain">cd workers/oauth &amp;&amp; npm run deploy</span><span class="desc">发布 Worker</span></div>
+  </div>
+
+  <div class="note">
+    <b>三条硬规矩（都流过血）：</b>
+    <ul>
+      <li><b>发布前必须先 pull。</b>后台传图走的是 GitHub API，本地不会自动更新；
+        没 pull 就构建 + 发布，会把刚传的图从线上挤掉（发生过三次）。用 <code>npm run deploy</code>，别手敲 wrangler。</li>
+      <li><b>图片永远是二进制。</b>只能用 blob 那条路读写；当文本处理会把图变成一堆乱码（发生过一次）。</li>
+      <li><b><code>dist/</code> 和 <code>public/</code> 一律当公开。</b>任何正文只能放 KV，凭 ticket 取。</li>
+    </ul>
+  </div>
+
+  <footer>
+    <a href="/admin/">回到完整后台</a> ·
+    <a href="/admin/g/">图库</a> ·
+    <a href="/admin/p/">文章管理</a> ·
+    <a href="/admin/m/">手机写作页</a>
+  </footer>
+
+</div>
+</body>
+</html>
