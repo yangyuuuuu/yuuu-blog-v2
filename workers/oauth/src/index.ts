@@ -806,18 +806,88 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
   }
 
   /*
-   * 搜索索引（含正文，构建时生成）。和私人角落一样靠口令门槛挡着，
-   * 不是靠「没人知道这个地址」—— 所以必须走 ticket 校验（就在上面）。
+   * 搜索索引（含**全文**，所以绝不能是公开文件）。
+   *
+   * 一开始我让构建脚本把它生成到 dist/private/ 下 —— 那是**静态托管**的目录，
+   * 任何人访问 /private/posts-index.json 都能拿到全部正文、草稿和隐藏文章。
+   * 「私人角落」那两份清单靠的是 Worker 的口令门槛，不是文件藏得深；
+   * 而全文索引连那层门槛都没过。现在改成：**索引只存在 KV 里**，
+   * 由 Worker 从 GitHub 现场构建（见下面的 /admin/reindex），读取必须持有 ticket。
    */
   if (pathname === '/admin/posts-index') {
+    const raw = await env.LOGS?.get('posts:index');
+    if (!raw) return json({ posts: [], generatedAt: '', needReindex: true }, 200, request, env);
     try {
-      const url = manifestUrl(request).replace('/private/posts.json', '/private/posts-index.json');
-      const r = await fetch(url, { cf: { cacheTtl: 0, cacheEverything: false } } as RequestInit);
-      if (!r.ok) return json({ message: '索引还没生成（构建时会生成 dist/private/posts-index.json）' }, 500, request, env);
-      const data = (await r.json()) as { posts?: unknown[]; generatedAt?: string };
+      const data = JSON.parse(raw) as { posts?: unknown[]; generatedAt?: string };
       return json({ posts: data.posts || [], generatedAt: data.generatedAt || '' }, 200, request, env);
+    } catch {
+      return json({ posts: [], generatedAt: '', needReindex: true }, 200, request, env);
+    }
+  }
+
+  /* 重建索引：从 GitHub 读全部文章 → 抽 frontmatter → 存进 KV（需要 ticket） */
+  if (pathname === '/admin/reindex') {
+    if (!env.LOGS) return json({ message: '没有绑定 KV（LOGS）' }, 500, request, env);
+    const repo = repoOf(env);
+    try {
+      const treeRes = await fetch(
+        `${GH_API}/repos/${repo}/git/trees/${branchOf(env)}:${CONTENT_DIR}?recursive=1`,
+        { headers: ghHeaders(env) },
+      );
+      if (!treeRes.ok) return json({ message: '读文章目录失败（HTTP ' + treeRes.status + '）' }, 502, request, env);
+      const tree = ((await treeRes.json()) as { tree?: { path: string; type: string }[] }).tree || [];
+      const files = tree.filter((e) => e.type === 'blob' && e.path.endsWith('.md')).map((e) => e.path);
+
+      const posts: Record<string, unknown>[] = [];
+      for (const rel of files) {
+        const full = CONTENT_DIR + '/' + rel;
+        const f = await ghGetFile(env, full).catch(() => null);
+        if (!f) continue;
+        const { yaml, body } = splitYaml(f.text);
+        const pick = (k: string) => yamlOne(yaml, k);
+        const tags = (() => {
+          const inline = /^tags:\s*\[([^\]]*)\]\s*$/m.exec(yaml);
+          if (inline) return inline[1].split(',').map((s) => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+          const block = /^tags:\s*\n((?:\s+-\s*.+\n?)+)/m.exec(yaml);
+          if (block) return block[1].split('\n').map((l) => l.replace(/^\s+-\s*/, '').trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+          return [];
+        })();
+        const category = pick('category') || '';
+        const isPrivate = pick('private') === 'true';
+        const text = body
+          .replace(/```[\s\S]*?```/g, ' ')
+          .replace(/`[^`]*`/g, ' ')
+          .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+          .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+          .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+          .replace(/^\s{0,3}>\s?/gm, '')
+          .replace(/^\s{0,3}[-*+]\s+/gm, '')
+          .replace(/[*_~`|]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        posts.push({
+          slug: slugify(rel),
+          path: full,
+          title: pick('title') || rel,
+          date: (pick('date') || '').slice(0, 10),
+          updated: (pick('updated') || '').slice(0, 10),
+          category,
+          tags,
+          summary: pick('summary') || '',
+          draft: pick('draft') === 'true',
+          /* 和 src/lib/hidden.ts 同一条规则：分类是「日记」或手写 private: true */
+          hidden: isPrivate || category === '日记',
+          words: text.length,
+          /* 全文只留前面一段，够搜就行；索引在 KV 里，不落公开文件 */
+          text: text.slice(0, 4000),
+        });
+      }
+      posts.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+      const payload = { generatedAt: new Date().toISOString(), posts };
+      await env.LOGS.put('posts:index', JSON.stringify(payload));
+      return json({ ok: true, count: posts.length, generatedAt: payload.generatedAt }, 200, request, env);
     } catch (e) {
-      return json({ message: '取索引失败：' + (e as Error).message }, 502, request, env);
+      return json({ message: '重建索引失败：' + (e as Error).message }, 502, request, env);
     }
   }
 
@@ -974,6 +1044,7 @@ export default {
     if (url.pathname === '/admin/whoami' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
     if (url.pathname === '/admin/posts' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
     if (url.pathname === '/admin/posts-index' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
+    if (url.pathname === '/admin/reindex' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
     if (url.pathname === '/admin/file' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
     if (url.pathname === '/admin/save' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
     if (url.pathname === '/admin/delete' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);

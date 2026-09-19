@@ -438,6 +438,48 @@ head('8.5 私人角落排序：三种模式必须真的给出三种顺序');
   }
 }
 
+/* --------------------------------- 8.55 公开目录里不许放敏感内容 */
+head('8.55 公开目录里不许出现正文 / 草稿 / 隐藏文章的内容');
+{
+  /*
+   * 血泪教训：我一度把「后台搜索索引」生成到 dist/private/ 下，
+   * 那个目录是**静态托管**的 —— 任何人访问 /private/posts-index.json
+   * 都能拿到全部正文（含草稿和隐藏文章）。而「私人角落」那两份清单
+   * 靠的是 Worker 的口令门槛，不是文件藏得深。
+   *
+   * 所以规矩是：**凡是含正文/草稿内容的文件，一律不能出现在 dist 里**，
+   * 只能存在 KV（由 Worker 凭 ticket 提供）。
+   */
+  const privDir = join(DIST, 'private');
+  if (existsSync(privDir)) {
+    const files = readdirSync(privDir);
+    /* 只认「像正文索引」的名字 —— 别把 index.html（私人角落的登录页）也算进去 */
+    const banned = files.filter((f) => /(index|full|content|body|draft)[^.]*\.json$/i.test(f));
+    if (banned.length) {
+      banned.forEach((f) => bad('dist/private/' + f + ' 像正文索引 —— 这个目录是公开的，全文只能放 KV'));
+    } else {
+      ok('dist/private 下只有元信息清单（' + files.length + ' 个文件，无全文索引）');
+    }
+    /*
+     * 逐篇检查公开清单里带了多长的正文。这里的经验值：
+     * 摘要最多几百字，所以单篇 > 600 字、或整份合计 > 3000 字，就说明混进了正文。
+     */
+    for (const f of files.filter((x) => x.endsWith('.json'))) {
+      const data = JSON.parse(readFileSync(join(privDir, f), 'utf8'));
+      const list = data.posts || [];
+      const longest = list.reduce((m, p) => Math.max(m, typeof p.text === 'string' ? p.text.length : 0), 0);
+      const total = list.reduce((s, p) => s + (typeof p.text === 'string' ? p.text.length : 0), 0);
+      if (longest > 600 || total > 3000) {
+        bad('dist/private/' + f + ' 疑似含正文（单篇最长 ' + longest + ' 字，合计 ' + total + ' 字）—— 这是公开文件');
+      } else {
+        ok('dist/private/' + f + '：' + list.length + ' 篇，正文累计 ' + total + ' 字（都是摘要级）');
+      }
+    }
+  } else {
+    ok('没有 dist/private 目录');
+  }
+}
+
 /* ------------------------------------------- 8.6 清单里的 URL 必须能打开 */
 head('8.6 清单 URL 与产物对照（点开不能 404）');
 {

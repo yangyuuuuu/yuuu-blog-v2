@@ -79,26 +79,60 @@ el.loginForm.addEventListener('submit', async (e) => {
 
 /* ------------------------------------------------------------------ 数据 */
 
+async function post(path, payload) {
+  const res = await fetch(API + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...(payload || {}), ticket }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (/过期/.test(data.message || '')) {
+      ticket = '';
+      show('login');
+      say(el.loginMsg, data.message, 'error');
+      throw new Error('need-login');
+    }
+    throw new Error(data.message || ('请求失败（HTTP ' + res.status + '）'));
+  }
+  return data;
+}
+
 async function load() {
   if (!ticket) { show('login'); return; }
   el.count.textContent = '加载中…';
   try {
-    const res = await fetch(API + '/admin/posts-index', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticket }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      if (/过期/.test(data.message || '')) { ticket = ''; show('login'); say(el.loginMsg, data.message, 'error'); return; }
-      throw new Error(data.message || ('请求失败（HTTP ' + res.status + '）'));
+    const data = await post('/admin/posts-index', {});
+    if (data.needReindex) {
+      /* 索引只在 KV 里（含全文，绝不能是公开文件），所以第一次用要现场建一次 */
+      await reindex();
+      return;
     }
     posts = data.posts || [];
     renderFilters();
     render();
   } catch (err) {
+    if (err.message === 'need-login') return;
     el.count.textContent = '';
     toast(err.message, 4000);
+  }
+}
+
+/** 从 GitHub 现场重建索引（Worker 读全部文章并抽 frontmatter，约几秒） */
+async function reindex() {
+  el.count.textContent = '正在建索引…';
+  toast('第一次使用要建一次全文索引，稍等几秒…', 20000);
+  try {
+    const res = await post('/admin/reindex', {});
+    toast('索引建好了：' + res.count + ' 篇');
+    const data = await post('/admin/posts-index', {});
+    posts = data.posts || [];
+    renderFilters();
+    render();
+  } catch (err) {
+    if (err.message === 'need-login') return;
+    el.count.textContent = '';
+    toast('建索引失败：' + err.message, 5000);
   }
 }
 
@@ -197,7 +231,7 @@ el.filters.addEventListener('click', (e) => {
   render();
 });
 el.search.addEventListener('input', () => { keyword = el.search.value; render(); });
-el.refreshBtn.addEventListener('click', () => load());
+el.refreshBtn.addEventListener('click', () => reindex());
 el.newBtn.addEventListener('click', () => { location.href = '/admin/m/'; });
 
 /* ------------------------------------------------------------------ 启动 */
