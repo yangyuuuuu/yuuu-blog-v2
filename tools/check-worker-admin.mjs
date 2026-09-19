@@ -54,12 +54,25 @@ globalThis.fetch = async (input, init = {}) => {
     const b = JSON.parse(init.body);
     gh.trees = (gh.trees || 0) + 1;
     gh.lastTree = b;
+    /*
+     * 真 GitHub 在这里收下 tree、返回一个新的 tree sha；
+     * 之后 POST /git/commits 只带那个 sha，**不再带 tree 内容**。
+     * 所以桩必须在这里把改动记下来，等 commit 时应用 ——
+     * 之前桩在 commit 处理里读 b.tree，而 commit 请求体里根本没有它，于是拿到 undefined。
+     */
+    gh.pendingTree = b.tree || [];
     return new Response(JSON.stringify({ sha: 'tree-new-' + gh.trees }), { status: 201 });
   }
 
   const treeMatch = /\/git\/trees\/[^/]+:([^?]+)/.exec(url);
   if (treeMatch && method === 'GET') {
-    const dir = decodeURIComponent(treeMatch[1]);
+    /* 先切掉 query（'?recursive=1'），否则 decodeURIComponent 会因 % 非法而抛异常 */
+    const dir = decodeURIComponent(treeMatch[1].split('?')[0]);
+    if (process.env.STUB_DEBUG) {
+      const bad = [...gh.files.keys()].filter((k) => typeof k !== 'string');
+      console.log('   [stub] 列目录 dir=' + JSON.stringify(dir) + ' | 仓库 ' + gh.files.size + ' 个文件'
+        + (bad.length ? ' | ❌ 有 ' + bad.length + ' 个非字符串键: ' + JSON.stringify(bad) : ''));
+    }
     gh.calls.push({ method, path: 'tree:' + dir, body: null, message: '' });
     const tree = [...gh.files.entries()]
       .filter(([k]) => k.startsWith(dir + '/'))
@@ -77,10 +90,16 @@ globalThis.fetch = async (input, init = {}) => {
   if (/\/git\/commits$/.test(url) && method === 'POST') {
     const b = JSON.parse(init.body);
     /* 把 tree 里的改动落到假仓库：sha 为 null 表示删除，否则从 blobs 里取回 base64 */
-    if (process.env.STUB_DEBUG) console.log('   [stub] 应用提交，tree 项数=' + (b.tree || []).length + ' blobs=' + (gh.blobs ? gh.blobs.size : 0));
+    const items = gh.pendingTree || [];
+    if (process.env.STUB_DEBUG) console.log('   [stub] 应用提交，tree 项数=' + items.length + ' blobs=' + (gh.blobs ? gh.blobs.size : 0));
     gh.batchCommits = (gh.batchCommits || 0) + 1;
     gh.lastCommit = b.message;
-    for (const item of b.tree || []) {
+    gh.pendingTree = [];
+    for (const item of items) {
+      /* 桩也要像真 GitHub 一样盯住坏数据：path 必须是字符串 */
+      if (typeof item.path !== 'string' || !item.path) {
+        throw new Error('提交里出现了非法路径：' + JSON.stringify(item.path) + '（真 GitHub 也会拒绝这种请求）');
+      }
       if (item.sha === null) { gh.files.delete(item.path); continue; }
       const content = (gh.blobs || new Map()).get(item.sha);
       gh.files.set(item.path, { base64: String(content == null ? '' : content).replace(/\n/g, ''), sha: item.sha });
@@ -109,7 +128,14 @@ globalThis.fetch = async (input, init = {}) => {
 
   if (method === 'GET') {
     const f = gh.files.get(path);
-    if (!f) return new Response(JSON.stringify({ message: 'Not Found' }), { status: 404 });
+    if (!f) {
+      /* 让「读不到」这件事在测试输出里看得见，而不是变成一句莫名的 TypeError */
+      if (process.env.STUB_DEBUG) console.log('   [stub] 404 读不到: ' + JSON.stringify(path));
+      return new Response(JSON.stringify({ message: 'Not Found' }), { status: 404 });
+    }
+    if (typeof f.base64 !== 'string') {
+      throw new Error('测试数据有问题：gh.files 里的 ' + path + ' 没有 base64 字段（桩的 get 需要 base64）');
+    }
     /*
      * 假的 GitHub 和真的行为一致：content 永远是 **base64**，
      * 不做 UTF-8 解码。之前这里把内容解码成文本再编码回去，
@@ -475,6 +501,66 @@ console.log('=== 6.7 批处理：一次提交改多张图 ===');
   ok(tooMany.status === 400, '超过 60 张被拦');
   const unknown = await call('/admin/images/batch', { ticket: 'good-ticket', action: '打人', paths: ['public/uploads/批量测试/批二.png'] });
   ok(unknown.status === 400, '未知操作被拦');
+}
+
+/* ---------- 6.9 搜索索引（/admin/reindex → KV → /admin/posts-index） ---------- */
+console.log('=== 6.9 后台搜索索引的构建与读取 ===');
+{
+  /*
+   * 这一段是补一个真实的坑：/admin/reindex 里我调了 slugify 却没定义，
+   * 一上线就报「slugify is not defined」。当时测试没覆盖这条路径。
+   * 现在真的走一遍：从假仓库读文章 → 抽 frontmatter → 存 KV → 再读回来。
+   */
+  /*
+   * 用函数生成三篇，别在同一个字符串上连续 replace ——
+   * 上一版就是那么写的，其中一处把 'title: ' 前缀漏掉了，YAML 直接坏掉，
+   * 表现成「标题解析不出来」，排查了好一会儿。
+   */
+  const mkPost = ({ title, date, isPrivate = false, isDraft = false }) => [
+    '---',
+    'title: ' + title,
+    'date: ' + date,
+    'category: 技术',
+    'tags: [测试, 索引]',
+    'summary: 用来验证索引',
+    'private: ' + (isPrivate ? 'true' : 'false'),
+    'draft: ' + (isDraft ? 'true' : 'false'),
+    '---',
+    '',
+    '正文里有一句独一无二的话：紫色河马在打字。',
+    '',
+  ].join('\n');
+  const put = (file, text) => gh.files.set(file, { base64: Buffer.from(text, 'utf8').toString('base64'), sha: 's-' + file });
+  put('src/content/posts/2024-03-03-index-test.md', mkPost({ title: '索引测试文章', date: '2024-03-03' }));
+  put('src/content/posts/2024-03-04-hidden.md', mkPost({ title: '隐藏的索引文章', date: '2024-03-04', isPrivate: true }));
+  put('src/content/posts/2024-03-05-draft.md', mkPost({ title: '草稿也进索引', date: '2024-03-05', isDraft: true }));
+
+  const re = await call('/admin/reindex', { ticket: 'good-ticket' });
+  ok(re.status === 200, '★ 重建索引成功（不会再报 slugify is not defined）', JSON.stringify(re.data).slice(0, 140));
+  ok(re.data?.count >= 3, '索引里有至少 3 篇', String(re.data?.count));
+
+  const idx = await call('/admin/posts-index', { ticket: 'good-ticket' });
+  ok(idx.status === 200, '能读回索引');
+  const list = idx.data?.posts || [];
+  const hit = list.find((p) => p.title === '索引测试文章');
+  ok(!!hit, '索引里有那篇测试文章');
+  if (hit) {
+    ok(hit.slug === '2024-03-03-index-test', '★ slug 算对了（slugify 生效）', hit.slug);
+    ok(hit.category === '技术', '分类解析对了');
+    ok(JSON.stringify(hit.tags) === JSON.stringify(['测试', '索引']), '标签解析对了');
+    ok(String(hit.text).includes('紫色河马'), '★ 索引里带了正文（搜索要用）');
+    ok(hit.draft === false && hit.hidden === false, '状态标记对');
+  }
+  const h2 = list.find((p) => p.title === '隐藏的索引文章');
+  ok(h2 && h2.hidden === true, '隐藏文章被标成 hidden');
+  const d2 = list.find((p) => p.title === '草稿也进索引');
+  if (!d2) {
+    console.log('   [调试] 索引里的标题: ' + JSON.stringify(list.map((p) => p.title)));
+  }
+  ok(d2 && d2.draft === true, '草稿也进索引（后台要能看到）', d2 ? 'draft=' + d2.draft : '标题都没找到');
+  ok(list.find((p) => p.title === '索引测试文章')?.category === '技术', '（对照）三篇都进了索引');
+  /* 索引必须存 KV，不能落公开文件 */
+  ok(kvStore.has('posts:index'), '★ 索引存进了 KV（不是公开文件）');
 }
 
 console.log('=== 7. 服务端没配 GITHUB_TOKEN 时要给清楚提示 ===');

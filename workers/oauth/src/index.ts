@@ -373,6 +373,22 @@ const IMAGE_EXT = /\.(jpe?g|png|gif|webp|avif|svg|bmp)$/i;
  * 图片文件名净化：**保留中文**（站点的文章名本来就支持中文），
  * 只去掉路径分隔符和 Windows 上非法的字符，空格变下划线。
  */
+/**
+ * 文件名 → Astro 生成的 slug（和 src/lib/slug.ts 同一条规则）。
+ *
+ * ⚠️ 之前 /admin/reindex 里直接调了 slugify 却没定义它 —— 一跑就报
+ * 「slugify is not defined」。所以那里的测试现在会真的走一遍重建索引。
+ * 规则：小写 → 非 [a-z0-9\u4e00-\u9fa5] 换 - → 合并连续 - → 去掉首尾 -
+ */
+function slugify(name: string): string {
+  return String(name)
+    .replace(/\.md$/, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
 function safeName(name: string): string {
   return String(name)
     .replace(/\.[^.]+$/, '')                                  /* 去掉原后缀，后面统一按 MIME 推断 */
@@ -467,6 +483,16 @@ async function ghCommitMany(
   if (!commitRes.ok) throw new Error('取提交失败（HTTP ' + commitRes.status + '）');
   const baseTree = ((await commitRes.json()) as { tree: { sha: string } }).tree.sha;
 
+  /*
+   * 防线：路径必须是像样的字符串。写成这样是因为踩过一次 ——
+   * 调用时参数错位，removes 收到了一条消息字符串、path 成了 undefined，
+   * 结果往 GitHub 发了一个 path=undefined 的 tree 项。宁可在这里响亮地失败。
+   */
+  const okPath = (p: unknown): p is string => typeof p === 'string' && p.length > 0 && !p.includes('..');
+  const bad = [...files.map((f) => f.path), ...removes].filter((p) => !okPath(p));
+  if (bad.length) throw new Error('内部错误：提交里出现了非法路径 ' + JSON.stringify(bad.slice(0, 3)));
+  if (files.length + removes.length > 200) throw new Error('一次提交的文件太多（' + (files.length + removes.length) + '）');
+
   /* 新增/改写的文件先建 blob（二进制安全：内容就是 base64） */
   const tree: Record<string, unknown>[] = [];
   for (const f of files) {
@@ -504,7 +530,12 @@ async function ghCommitMany(
 
 /** 从 GitHub 取一个文件：返回正文与 sha（不存在则 sha 为空） */
 async function ghGetFile(env: Env, path: string): Promise<{ text: string; sha: string } | null> {
-  const url = `${GH_API}/repos/${repoOf(env)}/contents/${path}?ref=${branchOf(env)}`;
+  /*
+   * ⚠️ 路径必须**逐段 URL 编码**。漏了这一步，中文路径（中文分类目录、
+   * 中文文件名）会让 GitHub 返回 404 —— 表现为「这篇文章/这张图在仓库里找不到」，
+   * 而实际上它就在那儿。踩过两次：图库中文分类、以及后台重建索引读到中文文章名。
+   */
+  const url = `${GH_API}/repos/${repoOf(env)}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${branchOf(env)}`;
   const res = await fetch(url, { headers: ghHeaders(env) });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error('读文件失败（HTTP ' + res.status + '）');
@@ -524,7 +555,7 @@ function toBase64(s: string): string {
 async function ghPutFile(env: Env, path: string, content: string, message: string, sha: string): Promise<void> {
   const body: Record<string, unknown> = { message, content: toBase64(content), branch: branchOf(env) };
   if (sha) body.sha = sha;
-  const res = await fetch(`${GH_API}/repos/${repoOf(env)}/contents/${path}`, {
+  const res = await fetch(`${GH_API}/repos/${repoOf(env)}/contents/${path.split('/').map(encodeURIComponent).join('/')}`, {
     method: 'PUT',
     headers: { ...ghHeaders(env), 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -536,7 +567,7 @@ async function ghPutFile(env: Env, path: string, content: string, message: strin
 }
 
 async function ghDeleteFile(env: Env, path: string, message: string, sha: string): Promise<void> {
-  const res = await fetch(`${GH_API}/repos/${repoOf(env)}/contents/${path}`, {
+  const res = await fetch(`${GH_API}/repos/${repoOf(env)}/contents/${path.split('/').map(encodeURIComponent).join('/')}`, {
     method: 'DELETE',
     headers: { ...ghHeaders(env), 'Content-Type': 'application/json' },
     body: JSON.stringify({ message, sha, branch: branchOf(env) }),
@@ -668,7 +699,8 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
     try {
       /* 列全部图片 */
       if (pathname === '/admin/images') {
-        const treeUrl = `${GH_API}/repos/${repo}/git/trees/${branchOf(env)}:${UPLOAD_DIR}?recursive=1`;
+        /* 路径要逐段编码（中文分类目录），但 ':' 必须保持字面量 —— 它是 tree 接口的分支/路径分隔符 */
+        const treeUrl = `${GH_API}/repos/${repo}/git/trees/${branchOf(env)}:${UPLOAD_DIR.split('/').map(encodeURIComponent).join('/')}?recursive=1`;
         const res = await fetch(treeUrl, { headers: ghHeaders(env) });
         if (res.status === 404) return json({ images: [], dirs: [] }, 200, request, env);
         if (!res.ok) return json({ message: '读图片列表失败（HTTP ' + res.status + '）' }, 502, request, env);
@@ -703,7 +735,7 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
         const existing = await ghGetFile(env, target);
         const finalPath = existing ? target.replace(/\.(\w+)$/, '-' + Date.now().toString(36) + '.$1') : target;
 
-        const res = await fetch(`${GH_API}/repos/${repo}/contents/${finalPath}`, {
+        const res = await fetch(`${GH_API}/repos/${repo}/contents/${finalPath.split('/').map(encodeURIComponent).join('/')}`, {
           method: 'PUT',
           headers: { ...ghHeaders(env), 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -773,6 +805,8 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
 
     if (action === 'delete') {
       try {
+        /* 注意参数顺序是 (env, files, removes, message) —— 一开始我写错位了，
+           于是 message 收了个数组、removes 收了那条消息 → tree 里出现 path=undefined */
         await ghCommitMany(env, [], paths, 'media: 批量删除 ' + paths.length + ' 张图');
         return json({ ok: true, count: paths.length, action: 'delete' }, 200, request, env);
       } catch (e) {
@@ -831,7 +865,7 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
     const repo = repoOf(env);
     try {
       const treeRes = await fetch(
-        `${GH_API}/repos/${repo}/git/trees/${branchOf(env)}:${CONTENT_DIR}?recursive=1`,
+        `${GH_API}/repos/${repo}/git/trees/${branchOf(env)}:${CONTENT_DIR.split('/').map(encodeURIComponent).join('/')}?recursive=1`,
         { headers: ghHeaders(env) },
       );
       if (!treeRes.ok) return json({ message: '读文章目录失败（HTTP ' + treeRes.status + '）' }, 502, request, env);
