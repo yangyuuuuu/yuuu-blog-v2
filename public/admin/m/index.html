@@ -30,6 +30,7 @@
           <button id="loginBtn" class="btn btn--primary" type="submit">进入</button>
         </form>
         <p class="msg" id="loginMsg" role="status"></p>
+        <a class="login-alt" href="/admin/g/">图库（管图片分类）→</a>
         <a class="login-alt" href="/admin/">用完整后台（电脑上更合适）→</a>
       </div>
     </section>
@@ -74,6 +75,10 @@
 
       <div class="edit-body">
         <input id="fTitle" class="f-title" type="text" placeholder="标题" autocomplete="off" enterkeyhint="next" />
+
+        <!-- 分类：一行胶囊，比下拉框在手机上好点 -->
+        <div class="filters f-cats" id="cats" role="group" aria-label="分类"></div>
+        <p class="f-hint" id="catHint"></p>
 
         <div class="f-tags-row" id="tagRow"></div>
 

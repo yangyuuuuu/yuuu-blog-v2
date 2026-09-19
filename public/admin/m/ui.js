@@ -4,7 +4,10 @@
  * 分工：本文件只管「界面上发生什么」，规则在 app.js（可被测试直接 import），
  * 写仓库在 Worker（token 只在服务端）。
  */
-import { createApi, parseTags, joinTags, initialOf, describe, relativeDay, validate } from './app.js';
+import {
+  createApi, parseTags, joinTags, initialOf, describe, relativeDay, validate,
+  CATEGORIES, categoryNote, normalizeCategory,
+} from './app.js';
 
 const API = 'https://oauth.yuuu.love';
 const SESSION_KEY = 'yuuu-mobile-editor';
@@ -21,7 +24,11 @@ const el = {
   saveBtn: $('saveBtn'), saveMsg: $('saveMsg'), saveFab: $('saveFab'), wordCount: $('wordCount'),
   sheet: $('sheet'), viewBtn: $('viewBtn'), delBtn: $('delBtn'), cancelSheet: $('cancelSheet'),
   toast: $('toast'),
+  cats: $('cats'), catHint: $('catHint'),
 };
+
+/** 当前选中的分类（默认随笔，和站点一贯的默认一致） */
+let category = '随笔';
 
 let ticket = '';
 let posts = [];
@@ -185,6 +192,8 @@ function setEditing(post) {
 }
 
 function fillForm(data) {
+  category = normalizeCategory(data.category || '随笔');
+  renderCats();
   el.fTitle.value = data.title || '';
   el.fBody.value = data.body || '';
   el.fTags.value = joinTags(data.tags);
@@ -204,6 +213,30 @@ function renderCount() {
   el.wordCount.textContent = short ? n + ' / 20 字' : n + ' 字';
   el.wordCount.classList.toggle('is-short', short);
 }
+
+/** 画分类胶囊。手机上比下拉框好点：一眼看全，点一下就切 */
+function renderCats() {
+  el.cats.innerHTML = '';
+  CATEGORIES.forEach((c) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip' + (c.id === category ? ' is-on' : '');
+    b.textContent = c.id;
+    b.dataset.cat = c.id;
+    b.setAttribute('aria-pressed', c.id === category ? 'true' : 'false');
+    el.cats.appendChild(b);
+  });
+  el.catHint.textContent = categoryNote(category);
+}
+
+el.cats.addEventListener('click', (e) => {
+  const btn = e.target.closest('.chip');
+  if (!btn) return;
+  category = normalizeCategory(btn.dataset.cat);
+  renderCats();
+  setDirty(true);
+  say(el.saveMsg, '');
+});
 
 /** 有未保存改动时把悬浮保存按钮亮出来（平时界面保持安静） */
 function setDirty(v) {
@@ -257,7 +290,7 @@ async function doSave() {
   const payload = {
     title: el.fTitle.value,
     body: el.fBody.value,
-    category: current?.category || '随笔',
+    category,
     tags: parseTags(el.fTags.value),
     summary: el.fSummary.value,
     date: el.fDate.value,

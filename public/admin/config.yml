@@ -55,9 +55,9 @@ collections:
       - name: category
         label: 分类
         widget: select
-        options: [日记, 技术, 随笔]
+        options: [日记, 技术, 随笔, 安利]
         default: 随笔
-        hint: "选「日记」会自动隐藏：不进首页/标签/搜索/RSS/sitemap，但链接仍可访问"
+        hint: "「安利」= 看完电影/番剧/书之后想推荐或吐槽的。选「日记」会自动隐藏：不进首页/标签/搜索/RSS/sitemap，但链接仍可访问"
       - { name: tags, label: 标签, widget: list, default: [], hint: "回车添加一个标签" }
       - { name: summary, label: 摘要, widget: text, required: false, hint: "留空则自动截取正文开头" }
 

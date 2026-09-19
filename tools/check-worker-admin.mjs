@@ -47,6 +47,27 @@ globalThis.fetch = async (input, init = {}) => {
   }
   if (!/api\.github\.com/.test(url)) return realFetch(input, init);
 
+  /* 图库列表走的是 git/trees 接口（递归列出 uploads 下所有文件） */
+  const treeMatch = /\/git\/trees\/[^/]+:([^?]+)/.exec(url);
+  if (treeMatch) {
+    const dir = decodeURIComponent(treeMatch[1]);
+    gh.calls.push({ method, path: 'tree:' + dir, body: null, message: '' });
+    const tree = [...gh.files.entries()]
+      .filter(([k]) => k.startsWith(dir + '/'))
+      .map(([k, v], i) => ({ path: k.slice(dir.length + 1), type: 'blob', size: v.text.length, sha: 'blob' + i }));
+    return new Response(JSON.stringify({ sha: 't', truncated: false, tree }), { status: 200 });
+  }
+  /* /git/blobs 上传二进制 */
+  if (/\/git\/blobs$/.test(url) && method === 'POST') {
+    const b = JSON.parse(init.body);
+    const text = Buffer.from(String(b.content).replace(/\n/g, ''), 'base64').toString('base64');
+    const sha = 'blob-' + Math.random().toString(36).slice(2, 8);
+    gh.blobs = gh.blobs || new Map();
+    gh.blobs.set(sha, String(b.content));
+    gh.calls.push({ method, path: 'blob', body: b, message: '' });
+    return new Response(JSON.stringify({ sha }), { status: 201 });
+  }
+
   const path = decodeURIComponent(url.split('/contents/')[1]?.split('?')[0] || '');
   gh.calls.push({ method, path, body: init.body ? JSON.parse(init.body) : null, message: init.body ? JSON.parse(init.body).message : '' });
 
@@ -183,6 +204,45 @@ console.log('=== 5. 该拦的必须拦住 ===');
   ok(f.status === 200, '★ 新建（不带 path）不会被文件名校验误拦', 'status=' + f.status + ' ' + JSON.stringify(f.data));
 }
 
+/* ---------- 5.5 换行必须原样保留 ---------- */
+console.log('=== 5.5 正文换行/空行一个都不能丢 ===');
+{
+  /*
+   * 用户报「结尾的换行符被吞掉了」。这里把各种换行情况都写死成断言：
+   * 结尾多个空行、行尾空格、连续空行、CRLF、只有换行符的正文……
+   * 一旦哪一步（worker / 手机页 / Decap）又开始 trim，这里立刻红。
+   */
+  const cases = [
+    ['结尾 3 个空行', '第一段。\n\n第二段。\n\n\n', /第二段。\n\n\n$/],
+    ['结尾 1 个换行', '一整段文字，最后带一个换行。\n', /换行。\n$/],
+    ['中间连续空行', '甲。\n\n\n\n乙。', /甲。\n\n\n\n乙。/],
+    ['行尾有空格', '有行尾空格的一行   \n下一行。', /一行   \n下一行。/],
+    ['CRLF 换行', '第一行。\r\n第二行。', /第一行。\n第二行。/],
+    ['列表与缩进', '- 甲\n  - 甲一\n- 乙', /- 甲\n  - 甲一\n- 乙/],
+  ];
+  /* 站点有 20 字底线，样本前面补一段够长的固定文字（不影响要验的结尾/中间部分） */
+  const PAD = '这是用来凑够二十个字自检底线的填充文字。';
+  for (const [label, body, expect] of cases) {
+    const sent = PAD + '\n\n' + body;
+    const r = await call('/admin/save', { ticket: 'good-ticket', title: '换行测试 ' + label, body: sent, category: '随笔', tags: [] });
+    if (r.status !== 200) { ok(false, label + ' 能保存', JSON.stringify(r.data)); continue; }
+    const out = gh.lastPutText || '';
+    const normalized = sent.replace(/\r\n/g, '\n');
+    /*
+     * 取正文别再靠数偏移（我数错过两回）：直接在提交内容里找正文的第一行，
+     * 从那里切到结尾 —— 这样即使分隔符前后空行数变了也不会误判。
+     */
+    const anchor = normalized.slice(0, 8);
+    const start = out.indexOf(anchor);
+    const body2 = start < 0 ? '' : out.slice(start);
+    const hit = expect.test(body2);
+    ok(hit, label + ' 原样保留', hit ? '' : '实际=' + JSON.stringify(body2.slice(0, 80)));
+    /* 更强的一条：除了 CRLF→LF 这一种规范化，正文必须与提交的一模一样 */
+    ok(body2 === normalized, label + ' 与提交内容逐字符相同',
+       body2 === normalized ? '' : '长度 ' + body2.length + ' vs ' + normalized.length + ' | 尾部=' + JSON.stringify(body2.slice(-8)));
+  }
+}
+
 /* ---------- 6. 删除 ---------- */
 console.log('=== 6. 删除 ===');
 {
@@ -192,6 +252,64 @@ console.log('=== 6. 删除 ===');
 }
 
 /* ---------- 7. 没配 token 时的提示 ---------- */
+/* ---------- 6.5 图库（图片分类） ---------- */
+console.log('=== 6.5 图库：列表 / 上传 / 归类 / 删除 ===');
+{
+  /* 造两张图：一张在根目录（老图，算「未分类」），一张已经在分类目录里 */
+  gh.files.set('public/uploads/old-pic.jpg', { text: Buffer.from('OLD-IMAGE-BYTES').toString('base64'), sha: 's-old' });
+  gh.files.set('public/uploads/表情包/meme-one.png', { text: Buffer.from('MEME-BYTES').toString('base64'), sha: 's-meme' });
+
+  const list = await call('/admin/images', { ticket: 'good-ticket' });
+  ok(list.status === 200, '列表能取到', JSON.stringify(list.data).slice(0, 120));
+  const imgs = list.data?.images || [];
+  ok(imgs.length === 2, '列出 2 张图', '实际 ' + imgs.length);
+  const old = imgs.find((i) => i.name === 'old-pic.jpg');
+  ok(old && old.dir === '', '根目录的老图算「未分类」（dir 为空）', JSON.stringify(old));
+  ok(old && old.url === '/uploads/old-pic.jpg', '未分类图的 URL 正确', old && old.url);
+  const meme = imgs.find((i) => i.name === 'meme-one.png');
+  ok(meme && meme.dir === '表情包', '分类目录里的图带上了分类名', JSON.stringify(meme));
+  ok(meme && decodeURIComponent(meme.url) === '/uploads/表情包/meme-one.png', '★ 中文分类的 URL 做了编码', meme && meme.url);
+  ok(JSON.stringify(list.data?.dirs) === JSON.stringify(['表情包']), '分类列表里去掉了「未分类」', JSON.stringify(list.data?.dirs));
+
+  /* 上传 */
+  const dataUrl = 'data:image/png;base64,' + Buffer.from('NEW-PNG').toString('base64');
+  const up = await call('/admin/image/upload', { ticket: 'good-ticket', name: '我的 新图.png', dataUrl, dir: '封面' });
+  ok(up.status === 200, '上传成功', JSON.stringify(up.data));
+  ok(up.data?.path === 'public/uploads/封面/我的_新图.png', '★ 文件名净化 + 归到指定分类', up.data?.path);
+  ok(decodeURIComponent(up.data?.url || '') === '/uploads/封面/我的_新图.png', '上传返回可用的 URL');
+  ok(gh.files.has('public/uploads/封面/我的_新图.png'), '文件真的写进（假）仓库了');
+
+  /* 格式与路径的拦截 */
+  const bad1 = await call('/admin/image/upload', { ticket: 'good-ticket', name: 'x', dataUrl: 'data:text/plain;base64,aGk=' });
+  ok(bad1.status === 400, '非图片格式被拦', 'status=' + bad1.status);
+  const bad2 = await call('/admin/image/upload', { ticket: 'good-ticket', name: 'x', dataUrl: '不是 dataURL' });
+  ok(bad2.status === 400, '乱填的数据被拦');
+
+  /* 归类：把未分类的 old-pic.jpg 挪进「电影截图」 */
+  const before = gh.files.get('public/uploads/old-pic.jpg')?.text;
+  const mv = await call('/admin/image/move', { ticket: 'good-ticket', path: 'public/uploads/old-pic.jpg', dir: '电影截图' });
+  ok(mv.status === 200, '归类成功', JSON.stringify(mv.data));
+  ok(mv.data?.path === 'public/uploads/电影截图/old-pic.jpg', '新路径正确', mv.data?.path);
+  ok(!gh.files.has('public/uploads/old-pic.jpg'), '旧路径已删除（真正移走，不是复制两份）');
+  const after = gh.files.get('public/uploads/电影截图/old-pic.jpg')?.text;
+  ok(after === before, '★ 图片内容一字未改（base64 原样搬运）');
+
+  /* 移回未分类 */
+  const mv2 = await call('/admin/image/move', { ticket: 'good-ticket', path: 'public/uploads/电影截图/old-pic.jpg', dir: '' });
+  ok(mv2.data?.path === 'public/uploads/old-pic.jpg', '能移回「未分类」', mv2.data?.path);
+
+  /* 路径校验 */
+  const badPath = await call('/admin/image/move', { ticket: 'good-ticket', path: '../../etc/passwd', dir: 'x' });
+  ok(badPath.status === 400, '越界路径被拦', 'status=' + badPath.status);
+  const badPath2 = await call('/admin/image/delete', { ticket: 'good-ticket', path: 'src/content/posts/x.md' });
+  ok(badPath2.status === 400, '只能删 uploads 下的图', 'status=' + badPath2.status);
+
+  /* 删除 */
+  const del = await call('/admin/image/delete', { ticket: 'good-ticket', path: 'public/uploads/old-pic.jpg' });
+  ok(del.status === 200, '删除成功');
+  ok(!gh.files.has('public/uploads/old-pic.jpg'), '文件真的没了');
+}
+
 console.log('=== 7. 服务端没配 GITHUB_TOKEN 时要给清楚提示 ===');
 {
   const saved = env.GITHUB_TOKEN;

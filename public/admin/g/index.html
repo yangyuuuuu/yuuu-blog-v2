@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" content="#f5faff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0d1b2a" media="(prefers-color-scheme: dark)" />
+    <title>图库 · yuuu</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="stylesheet" href="/admin/g/ui.css" />
+  </head>
+  <body>
+    <!-- ══════════ 登录（和写作页、私人角落同一个口令）══════════ -->
+    <section class="screen screen--login" id="screenLogin">
+      <div class="login-card">
+        <img class="login-logo" src="/icon-192.png" alt="" width="64" height="64" />
+        <h1 class="login-title">图库</h1>
+        <p class="login-sub">和「私人角落」同一个口令</p>
+        <form id="loginForm">
+          <input id="pwd" type="password" placeholder="口令" autocomplete="current-password" enterkeyhint="go" aria-label="口令" />
+          <button id="loginBtn" class="btn btn--primary" type="submit">进入</button>
+        </form>
+        <p class="msg" id="loginMsg" role="status"></p>
+        <a class="login-alt" href="/admin/m/">去写文章 →</a>
+      </div>
+    </section>
+
+    <!-- ══════════ 图库 ══════════ -->
+    <section class="screen" id="screenGallery" hidden>
+      <header class="bar">
+        <div class="bar-main">
+          <h1 class="bar-title">图库</h1>
+          <span class="bar-sub" id="count"></span>
+        </div>
+        <button class="icon-btn" id="refreshBtn" type="button" aria-label="刷新">⟳</button>
+      </header>
+
+      <div class="filters" id="cats" role="tablist"></div>
+
+      <div class="search-wrap">
+        <input id="search" type="search" placeholder="搜文件名 / 分类" autocomplete="off" aria-label="搜索图片" />
+      </div>
+
+      <div class="grid" id="grid"></div>
+      <p class="empty" id="empty" hidden>这里还没有图片</p>
+      <div class="grid-pad"></div>
+
+      <!-- 上传：右下角悬浮。选了图之后会先问归到哪个分类 -->
+      <button class="fab" id="pickBtn" type="button" aria-label="上传图片">＋</button>
+      <input id="fileInput" type="file" accept="image/*" multiple hidden />
+    </section>
+
+    <!-- ══════════ 图片操作面板 ══════════ -->
+    <div class="sheet" id="sheet" hidden>
+      <div class="sheet-panel">
+        <div class="sheet-head">
+          <img class="sheet-thumb" id="sheetThumb" alt="" />
+          <div class="sheet-meta">
+            <b id="sheetName"></b>
+            <span id="sheetInfo"></span>
+          </div>
+        </div>
+        <div class="sheet-body" id="sheetBody"></div>
+      </div>
+    </div>
+
+    <!-- 上传时选分类 -->
+    <div class="sheet" id="dirSheet" hidden>
+      <div class="sheet-panel">
+        <p class="sheet-title">这些图归到哪个分类？</p>
+        <div class="filters filters--wrap" id="dirChoices"></div>
+        <div class="dir-new">
+          <input id="newDir" type="text" placeholder="新建分类…" autocomplete="off" maxlength="20" />
+          <button class="btn btn--ghost" id="useNewDir" type="button">用这个</button>
+        </div>
+        <button class="btn btn--primary" id="cancelDir" type="button">取消</button>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+    <script type="module" src="/admin/g/ui.js"></script>
+  </body>
+</html>

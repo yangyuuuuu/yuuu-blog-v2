@@ -6,10 +6,12 @@ import { formatShort } from '../lib/format';
 const posts = await getPosts();
 const years = groupByYear(posts);
 
+/* 新增分类时这里要一起加，否则归档页那一栏没有颜色 */
 const CAT_CLASS: Record<string, string> = {
   日记: 'bg-gold',
   技术: 'bg-accent',
   随笔: 'bg-[#c9a0ff]',
+  安利: 'bg-[#ff8fa3]',
 };
 ---
 

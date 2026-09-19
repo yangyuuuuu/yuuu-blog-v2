@@ -6,7 +6,10 @@
  *
  * 跑法：node tools/check-mobile-app.mjs
  */
-import { validate, parseTags, joinTags, initialOf, describe, relativeDay, MIN_BODY } from '../public/admin/m/app.js';
+import {
+  validate, parseTags, joinTags, initialOf, describe, relativeDay, MIN_BODY,
+  CATEGORIES, categoryNote, normalizeCategory,
+} from '../public/admin/m/app.js';
 import { readFileSync } from 'node:fs';
 
 let failed = 0;
@@ -72,6 +75,91 @@ console.log('=== 4. 相对时间 ===');
   ok(relativeDay('不是日期', today) === '不是日期', '非法值原样返回');
 }
 
+console.log('=== 4.5 分类：三处必须一致 ===');
+{
+  /*
+   * 分类列表写了两份：public/admin/config.yml（Decap 后台的下拉）
+   * 和 public/admin/m/app.js 的 CATEGORIES（手机页的胶囊）。
+   * 漂移的后果很隐蔽：手机上选了「安利」，而 Decap 的下拉里没有这一项 →
+   * 用电脑打开这篇文章时分类显示空，一保存就把分类抹掉了。所以直接对账。
+   */
+  const cfg = readFileSync('public/admin/config.yml', 'utf8');
+  const m = /options:\s*\[([^\]]+)\]/.exec(cfg);
+  if (!m) {
+    ok(false, 'config.yml 里找不到分类 options');
+  } else {
+    const fromCfg = m[1].split(',').map((s) => s.trim()).filter(Boolean);
+    const fromApp = CATEGORIES.map((c) => c.id);
+    /* 比集合，不比顺序 —— 手机页按常用度排、后台保持原顺序，都合理 */
+    const onlyCfg = fromCfg.filter((x) => !fromApp.includes(x));
+    const onlyApp = fromApp.filter((x) => !fromCfg.includes(x));
+    ok(onlyCfg.length === 0 && onlyApp.length === 0, 'config.yml 与 app.js 的分类集合一致',
+       (onlyCfg.length ? '只在后台有: ' + onlyCfg.join('、') + ' ' : '') + (onlyApp.length ? '只在手机页有: ' + onlyApp.join('、') : ''));
+  }
+  ok(!!categoryNote('安利'), '每个分类都有说明文字（手机上要显示）', categoryNote('安利'));
+  ok(normalizeCategory('不存在的分类') === '随笔', '不认识的分类退回随笔（不会存成空值）');
+  ok(normalizeCategory('安利') === '安利', '认识的分类原样保留');
+  /* 新增分类还要在归档页有颜色、在封面自动配色里有条目，否则那一栏是空的 */
+  for (const [file, label] of [['src/pages/archive.astro', '归档页分类色'], ['src/lib/posts.ts', '封面自动配色']]) {
+    const src = readFileSync(file, 'utf8');
+    const missing = CATEGORIES.map((c) => c.id).filter((id) => !src.includes(id + ':'));
+    ok(missing.length === 0, label + '覆盖了全部分类', missing.length ? '缺 ' + missing.join('、') : '');
+  }
+}
+
+console.log('=== 4.8 图库逻辑（/admin/g/）===');
+{
+  const {
+    groupByDir, categories, filterImages, humanSize, dirLabel, dirValue,
+    toJpegName, dataUrlBytes, shouldCompress,
+  } = await import('../public/admin/g/gallery.js');
+
+  const imgs = [
+    { name: 'a.jpg', dir: '', path: 'public/uploads/a.jpg' },
+    { name: 'b.png', dir: '表情包', path: 'public/uploads/表情包/b.png' },
+    { name: 'c.webp', dir: '封面', path: 'public/uploads/封面/c.webp' },
+    { name: 'd.gif', dir: '表情包', path: 'public/uploads/表情包/d.gif' },
+  ];
+  const groups = groupByDir(imgs);
+  ok(groups[0].dir === '', '「未分类」排在最前', groups.map((g) => g.label).join(','));
+  ok(groups[0].label === '未分类', '空分类显示成「未分类」');
+  ok(groups.length === 3, '三个分类分组', '实际 ' + groups.length);
+  ok(groups.find((g) => g.dir === '表情包').images.length === 2, '同分类归到一起');
+
+  const cats = categories(imgs);
+  ok(cats[0].dir === '__all__' && cats[0].count === 4, '首个筛选是「全部」且计数对');
+  ok(cats.find((c) => c.dir === '表情包').count === 2, '每个分类带数量');
+
+  ok(filterImages(imgs, { dir: '表情包' }).length === 2, '按分类过滤');
+  ok(filterImages(imgs, { keyword: 'b.png' }).length === 1, '按文件名搜索');
+  ok(filterImages(imgs, { keyword: '表情' }).length === 2, '搜索也能命中分类名');
+  ok(filterImages(imgs, { dir: '表情包', keyword: 'gif' }).length === 1, '分类与关键词同时生效');
+  ok(filterImages(imgs, { dir: '不存在' }).length === 0, '不存在的分类给空数组');
+
+  ok(dirValue('未分类') === '', '「未分类」→ 根目录', JSON.stringify(dirValue('未分类')));
+  ok(dirValue('表情包') === '表情包', '普通分类名原样');
+  ok(dirLabel('') === '未分类', '空 dir → 「未分类」');
+
+  ok(humanSize(800) === '800 B', '体积显示 B', humanSize(800));
+  ok(humanSize(2048) === '2.0 KB', '体积显示 KB', humanSize(2048));
+  ok(humanSize(3 * 1024 * 1024) === '3.0 MB', '体积显示 MB', humanSize(3 * 1024 * 1024));
+  ok(humanSize(0) === '0 B', '0 不炸');
+
+  ok(toJpegName('IMG_1234.HEIC') === 'IMG_1234.jpg', '压缩后统一叫 .jpg', toJpegName('IMG_1234.HEIC'));
+  ok(toJpegName('没有后缀') === '没有后缀.jpg', '没后缀也能处理');
+
+  /* 压缩策略：小图不压、gif/svg 不压（压了就没动画/变糊） */
+  ok(!shouldCompress({ type: 'image/jpeg', size: 100 * 1024 }), '小于 400KB 不压');
+  ok(shouldCompress({ type: 'image/jpeg', size: 900 * 1024 }), '大图要压');
+  ok(!shouldCompress({ type: 'image/gif', size: 5 * 1024 * 1024 }), '★ gif 不压（压了没动画）');
+  ok(!shouldCompress({ type: 'image/svg+xml', size: 5 * 1024 * 1024 }), 'svg 不压');
+  ok(!shouldCompress({ type: '', size: 5 * 1024 * 1024 }), '类型不明不压');
+
+  const tiny = 'data:image/png;base64,' + Buffer.from('12345678').toString('base64');
+  ok(dataUrlBytes(tiny) === 8, '能算出 dataURL 的字节数', String(dataUrlBytes(tiny)));
+  ok(dataUrlBytes('不是dataurl') === 0, '非法输入给 0');
+}
+
 console.log('=== 5. 页面文件齐不齐 ===');
 {
   const html = readFileSync('public/admin/m/index.html', 'utf8');
@@ -89,6 +177,22 @@ console.log('=== 5. 页面文件齐不齐 ===');
   ok(missing.length === 0, 'ui.js 里取的 ' + wanted.length + ' 个 id 在页面里都存在', missing.join(', '));
   const dupes = ids.filter((x, i) => ids.indexOf(x) !== i);
   ok(dupes.length === 0, '页面里没有重复 id', dupes.join(', '));
+
+  /* 图库页也照同样的规矩查一遍：id 对不上就是「点了没反应」 */
+  const gHtml = readFileSync('public/admin/g/index.html', 'utf8');
+  ok(gHtml.includes('/admin/g/ui.js'), '图库页引了 ui.js');
+  ok(/type="module"/.test(gHtml), '图库页的 ui.js 用 module 加载');
+  const gIds = [...gHtml.matchAll(/id="([^"]+)"/g)].map((m) => m[1]);
+  const gUi = readFileSync('public/admin/g/ui.js', 'utf8');
+  const gWanted = [...gUi.matchAll(/\$\('([^']+)'\)/g)].map((m) => m[1]);
+  const gMissing = gWanted.filter((w) => !gIds.includes(w));
+  ok(gMissing.length === 0, '图库页 ui.js 取的 ' + gWanted.length + ' 个 id 都存在', gMissing.join(', '));
+  const gDupes = gIds.filter((x, i) => gIds.indexOf(x) !== i);
+  ok(gDupes.length === 0, '图库页没有重复 id', gDupes.join(', '));
+  /* token 绝不能在两个前端页面上出现 */
+  const leak2 = [gUi, readFileSync('public/admin/g/gallery.js', 'utf8'), gHtml]
+    .filter((s) => /ghp_|github_pat_|GITHUB_TOKEN/.test(s));
+  ok(leak2.length === 0, '图库前端文件里没有 token 字样');
 }
 
 console.log('');

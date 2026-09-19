@@ -357,6 +357,30 @@ async function handleLogs(request: Request, env: Env): Promise<Response> {
  */
 
 const CONTENT_DIR = 'src/content/posts';
+/** 图片目录。分类就是这里的子目录名 —— 比如 public/uploads/表情包/xxx.jpg */
+const UPLOAD_DIR = 'public/uploads';
+/** 允许的图片后缀（别让人往仓库里塞 exe） */
+/*
+ * ⚠️ 这里必须是「以扩展名结尾」而不是「整串等于扩展名」。
+ * 我一开始写成 /^(jpe?g|png|…)$/ ，结果是：
+ *   · 上传时传进来的是裸后缀（'png'）→ 碰巧为真，看起来正常
+ *   · 列图片时传进来的是完整路径（'表情包/a.png'）→ 全被判为非法，列表永远是空的
+ * 一个正则写错，表现成「列表没图但能上传」，很难往这里想。
+ */
+const IMAGE_EXT = /\.(jpe?g|png|gif|webp|avif|svg|bmp)$/i;
+
+/**
+ * 图片文件名净化：**保留中文**（站点的文章名本来就支持中文），
+ * 只去掉路径分隔符和 Windows 上非法的字符，空格变下划线。
+ */
+function safeName(name: string): string {
+  return String(name)
+    .replace(/\.[^.]+$/, '')                                  /* 去掉原后缀，后面统一按 MIME 推断 */
+    .replace(/[\\/:*?"<>|#%&{}$!'@+=`~\s]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 60) || 'image';
+}
 
 function repoOf(env: Env): string {
   return env.REPO || 'yangyuuuuu/yuuu-blog-v2';
@@ -526,6 +550,118 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
     return json({ message: '登录已过期，回到 /admin/m/ 重新输一次口令' }, 401, request, env);
   }
 
+  /* ---------------------------------------------------------- 图库（图片分类）
+
+  /*
+   * 分类 = public/uploads 下的**子目录名**。
+   * 为什么用目录而不是在文件名里加前缀：这样 Decap 自带的媒体库也能按文件夹浏览，
+   * 而且图片在 Markdown 里的路径天然带着分类（/uploads/表情包/xxx.jpg），一眼看得懂。
+   * 已经在 public/uploads 根目录的老图会显示成「未分类」，不需要迁移。
+   */
+  if (pathname === '/admin/images' || pathname === '/admin/image/upload'
+      || pathname === '/admin/image/move' || pathname === '/admin/image/delete') {
+    const repo = repoOf(env);
+    const dirOf = (rel: string) => {
+      /* 'public/uploads/表情包/a.jpg' → '表情包'；根目录下的 → ''（未分类） */
+      const inside = rel.replace(new RegExp('^' + UPLOAD_DIR + '/?'), '');
+      const cut = inside.lastIndexOf('/');
+      return cut < 0 ? '' : inside.slice(0, cut);
+    };
+
+    try {
+      /* 列全部图片 */
+      if (pathname === '/admin/images') {
+        const treeUrl = `${GH_API}/repos/${repo}/git/trees/${branchOf(env)}:${UPLOAD_DIR}?recursive=1`;
+        const res = await fetch(treeUrl, { headers: ghHeaders(env) });
+        if (res.status === 404) return json({ images: [], dirs: [] }, 200, request, env);
+        if (!res.ok) return json({ message: '读图片列表失败（HTTP ' + res.status + '）' }, 502, request, env);
+        const data = (await res.json()) as { tree?: { path: string; type: string; size?: number }[] };
+        const images = (data.tree || [])
+          .filter((e) => e.type === 'blob' && IMAGE_EXT.test(e.path))
+          .map((e) => ({
+            path: UPLOAD_DIR + '/' + e.path,
+            url: '/uploads/' + e.path.split('/').map(encodeURIComponent).join('/'),
+            name: e.path.split('/').pop() || e.path,
+            dir: dirOf(UPLOAD_DIR + '/' + e.path),
+            size: e.size || 0,
+          }))
+          .sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir.localeCompare(b.dir)));
+        const dirs = [...new Set(images.map((i) => i.dir))].filter((d) => d !== '').sort();
+        return json({ images, dirs, count: images.length }, 200, request, env);
+      }
+
+      /* 上传（手机上是相册选图 → base64 传过来） */
+      if (pathname === '/admin/image/upload') {
+        const b = body as { name?: string; dataUrl?: string; dir?: string };
+        const raw = String(b.dataUrl || '');
+        const m = /^data:image\/([a-z0-9.+-]+);base64,(.+)$/i.exec(raw);
+        if (!m) return json({ message: '图片数据格式不对（需要 data:image/...;base64,...）' }, 400, request, env);
+        const ext = m[1] === 'jpeg' ? 'jpg' : m[1].toLowerCase();
+        if (!IMAGE_EXT.test('x.' + ext)) return json({ message: '不支持的图片格式：' + ext }, 400, request, env);
+        const dir = String(b.dir || '').trim().replace(/[\\/:*?"<>|]/g, '').slice(0, 30);
+        const base = safeName(String(b.name || 'image'));
+        const target = `${UPLOAD_DIR}/${dir ? dir + '/' : ''}${base}.${ext}`;
+
+        /* 先看有没有同名，避免互相覆盖（同名就加时间戳） */
+        const existing = await ghGetFile(env, target);
+        const finalPath = existing ? target.replace(/\.(\w+)$/, '-' + Date.now().toString(36) + '.$1') : target;
+
+        const res = await fetch(`${GH_API}/repos/${repo}/contents/${finalPath}`, {
+          method: 'PUT',
+          headers: { ...ghHeaders(env), 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: 'media: 上传 ' + finalPath.replace(UPLOAD_DIR + '/', ''),
+            content: m[2].replace(/\s/g, ''),
+            branch: branchOf(env),
+          }),
+        });
+        if (!res.ok) return json({ message: '上传失败（HTTP ' + res.status + '）：' + (await res.text()).slice(0, 160) }, 502, request, env);
+        return json({
+          ok: true,
+          path: finalPath,
+          url: '/uploads/' + finalPath.replace(UPLOAD_DIR + '/', '').split('/').map(encodeURIComponent).join('/'),
+          dir,
+        }, 200, request, env);
+      }
+
+      /* 改分类：本质是把文件挪到另一个子目录（内容一字不改，用 Git 的 blob 复用） */
+      if (pathname === '/admin/image/move') {
+        const b = body as { path?: string; dir?: string };
+        const from = String(b.path || '');
+        if (!from.startsWith(UPLOAD_DIR + '/') || from.includes('..')) return json({ message: '路径不合法' }, 400, request, env);
+        const dir = String(b.dir || '').trim().replace(/[\\/:*?"<>|]/g, '').slice(0, 30);
+        const fileName = from.split('/').pop() || '';
+        const to = `${UPLOAD_DIR}/${dir ? dir + '/' : ''}${fileName}`;
+        if (to === from) return json({ ok: true, path: to, dir }, 200, request, env);
+
+        const f = await ghGetFile(env, from);
+        if (!f) return json({ message: '这张图在仓库里找不到了（可能已被删或改名）' }, 404, request, env);
+
+        /* GitHub 没有「移动」接口：新建 + 删除，两条 commit（App 里也是这么做的） */
+        await fetch(`${GH_API}/repos/${repo}/contents/${to}`, {
+          method: 'PUT',
+          headers: { ...ghHeaders(env), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: 'media: 归类 ' + fileName + ' → ' + (dir || '未分类'), content: toBase64(f.text), branch: branchOf(env) }),
+        }).then(async (r2) => { if (!r2.ok) throw new Error('新建失败（HTTP ' + r2.status + '）'); });
+        await ghDeleteFile(env, from, 'media: 归类 ' + fileName + ' → ' + (dir || '未分类'), f.sha);
+        return json({ ok: true, path: to, dir, url: '/uploads/' + to.replace(UPLOAD_DIR + '/', '').split('/').map(encodeURIComponent).join('/') }, 200, request, env);
+      }
+
+      /* 删除图片 */
+      if (pathname === '/admin/image/delete') {
+        const b = body as { path?: string };
+        const target = String(b.path || '');
+        if (!target.startsWith(UPLOAD_DIR + '/') || target.includes('..')) return json({ message: '路径不合法' }, 400, request, env);
+        const f = await ghGetFile(env, target);
+        if (!f) return json({ message: '这张图已经不在仓库里了' }, 404, request, env);
+        await ghDeleteFile(env, target, 'media: 删除 ' + (target.split('/').pop() || ''), f.sha);
+        return json({ ok: true }, 200, request, env);
+      }
+    } catch (e) {
+      return json({ message: (e as Error).message }, 502, request, env);
+    }
+  }
+
   /* 列清单：构建时生成的静态文件（含草稿），不占 GitHub 配额 */
   if (pathname === '/admin/posts') {
     try {
@@ -608,8 +744,15 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
         if (body.summary !== undefined) next = setYamlKey(next, 'summary', yamlStr(String(body.summary)));
         if (body.draft !== undefined) next = setYamlKey(next, 'draft', body.draft ? 'true' : 'false');
         if (body.private !== undefined) next = setYamlKey(next, 'private', body.private ? 'true' : 'false');
-        const keptBody = text.trim() ? text : oldBody;
-        const out = '---\n' + next.replace(/\r?\n/g, '\n').replace(/\n+$/, '') + '\n---\n\n' + keptBody.replace(/^\n+/, '');
+        /*
+     * 正文**原样保留**，只做一件事：把 CRLF 统一成 LF。
+     * 用户报过「结尾的换行符被吞掉了」—— 所以这里刻意**不** trim：
+     * 结尾的空行、行尾两个空格（Markdown 的硬换行）、列表缩进全都要留着。
+     * 长度校验用的是 text.trim()，跟这里无关，别为了校验去改正文。
+     */
+    const keptBody = (text.trim() ? text : oldBody).replace(/\r\n/g, '\n');
+        /* frontmatter 的尾随空行清掉（那是我自己拼的），正文一个字符都不动 */
+        const out = '---\n' + next.replace(/\r?\n/g, '\n').replace(/\n+$/, '') + '\n---\n\n' + keptBody;
         await ghPutFile(env, rel, out, 'post: 更新《' + title + '》', f.sha);
         return json({ ok: true, path: rel, url: '/posts/' + rel.split('/').pop()!.replace(/\.md$/, '') + '/', updated: now }, 200, request, env);
       }
@@ -633,7 +776,8 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
         'private: ' + (body.private ? 'true' : 'false'),
         '---',
         '',
-        text.replace(/^\n+/, ''),
+        /* 新建：同样只统一换行，不 trim —— 用户排的版是他的 */
+        text.replace(/\r\n/g, '\n'),
       ].join('\n');
       await ghPutFile(env, newPath, fm, 'post: 新建《' + title + '》', '');
       return json({ ok: true, path: newPath, url: '/posts/' + slug + '/', updated: now }, 200, request, env);
@@ -673,6 +817,11 @@ export default {
     if (url.pathname === '/admin/file' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
     if (url.pathname === '/admin/save' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
     if (url.pathname === '/admin/delete' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
+    /* 图库（图片分类） */
+    if (url.pathname === '/admin/images' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
+    if (url.pathname === '/admin/image/upload' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
+    if (url.pathname === '/admin/image/move' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
+    if (url.pathname === '/admin/image/delete' && request.method === 'POST') return handleAdmin(request, env, url.pathname, url);
 
     /* ---- 私人角落 ---- */
     if (url.pathname === '/hidden' && request.method === 'POST') return handleHidden(request, env);

@@ -12,12 +12,15 @@ export type CoverStyleId =
   | 'wave' | 'nebula' | 'crown' | 'opera' | 'aurora' | 'starry' | 'bubble' | 'grid' | 'image';
 
 /** 没写 coverStyle 时，按分类自动挑一个 */
+/* 没指定 coverStyle 时按分类自动挑。加新分类时这里也补一行，不然会掉进随笔的样式 */
 const AUTO_STYLE: Record<string, CoverStyleId> = {
   技术: 'grid',
   日记: 'bubble',
   随笔: 'nebula',
+  安利: 'opera',
 };
-const AUTO_HUE: Record<string, number> = { 技术: 202, 日记: 38, 随笔: 266 };
+/* 色相：安利用偏暖的玫红，和「推荐 / 观影」的气质搭一点 */
+const AUTO_HUE: Record<string, number> = { 技术: 202, 日记: 38, 随笔: 266, 安利: 340 };
 const VALID_STYLES: CoverStyleId[] = [
   'wave', 'nebula', 'crown', 'opera', 'aurora', 'starry', 'bubble', 'grid', 'image',
 ];

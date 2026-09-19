@@ -342,6 +342,8 @@ const required = [
   'public/admin/preview.js', 'public/admin/preview.css',
   /* 手机写作页（/admin/m/）：三个文件都不走构建，直接是源码，所以必须有人看着 */
   'public/admin/m/index.html', 'public/admin/m/ui.css', 'public/admin/m/ui.js', 'public/admin/m/app.js',
+  /* 图库（/admin/g/）：同样是 public 下不走构建的源码 */
+  'public/admin/g/index.html', 'public/admin/g/ui.css', 'public/admin/g/ui.js', 'public/admin/g/gallery.js',
   'workers/oauth/src/index.ts', 'workers/oauth/wrangler.toml',
   'astro.config.mjs', 'CHANGELOG.md', 'package.json', 'README.md',
 ];

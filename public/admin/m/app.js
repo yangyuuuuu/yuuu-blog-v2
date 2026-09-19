@@ -15,6 +15,25 @@
 /** 站点的写作底线，和 tools/verify.mjs 保持一致（标点也算字） */
 export const MIN_BODY = 20;
 
+/**
+ * 分类。必须和 public/admin/config.yml 的 options 一致 ——
+ * 那边是给 Decap 后台用的，这里是手机页用的；改一处记得改两处。
+ * 每条带一句说明，手机上选的时候能明白后果（尤其是「日记」会隐藏）。
+ */
+export const CATEGORIES = [
+  { id: '随笔', note: '想到什么写什么' },
+  { id: '安利', note: '看完电影 / 番剧 / 书，想推荐或吐槽' },
+  { id: '技术', note: '折腾记录、踩坑' },
+  { id: '日记', note: '会被隐藏：不进首页 / 搜索 / RSS' },
+];
+
+/** 分类的说明文字（给手机页显示） */
+export const categoryNote = (id) => (CATEGORIES.find((c) => c.id === id) || {}).note || '';
+
+/** 分类是否合法；不认识的一律退回「随笔」（后台改过分类名时也不会存成空值） */
+export const normalizeCategory = (id) =>
+  CATEGORIES.some((c) => c.id === id) ? id : '随笔';
+
 /** 保存前的本地校验。返回 null 表示可以提交，否则返回给用户看的错误文案。 */
 export function validate({ title, body }) {
   if (!String(title || '').trim()) return '标题还没写';
