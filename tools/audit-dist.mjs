@@ -582,6 +582,19 @@ head('8.6 清单 URL 与产物对照（点开不能 404）');
    * 私人角落和手机写作页点开就打不开，而且很难想到是这个原因。
    */
   for (const [name, file] of [['隐藏文章清单', 'private/posts.json'], ['手机写作页清单', 'private/posts-all.json']]) {
+    /*
+     * ★ 先确认每条都拿得出 slug 或 url。
+     * 这条是补一个真实 bug：隐藏清单当时只有 url、没有 slug，
+     * 而新加的日记页读的是 slug → 拼出 /posts/undefined/ → 点一篇 404。
+     * 8.6 本身没发现，因为它对隐藏清单走的是 url 分支（那是好的）。
+     * 所以这里改成：两个字段至少有一个，且不能出现 undefined。
+     */
+    {
+      const d = JSON.parse(readFileSync(join(DIST, file), 'utf8'));
+      const broken = (d.posts || []).filter((p) => !p.slug && !p.url);
+      if (broken.length) bad(name + '里有 ' + broken.length + ' 条既没有 slug 也没有 url');
+      else ok(name + '：每条都有 slug/url');
+    }
     const abs = join(DIST, file);
     if (!existsSync(abs)) { bad('缺少 ' + file); continue; }
     const data = JSON.parse(readFileSync(abs, 'utf8'));

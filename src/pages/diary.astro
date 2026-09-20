@@ -170,7 +170,7 @@ const START_YEAR = 2024;
   const writeBtn = $('dgWriteBtn') as HTMLButtonElement;
   const again = $('dgAgain') as HTMLButtonElement;
 
-  type Post = { slug: string; title: string; date: string; category?: string; draft?: boolean };
+  type Post = { slug?: string; url?: string; title: string; date: string; category?: string; draft?: boolean };
   let diary: Post[] = [];       /* 只含 category === 日记 且非草稿 */
   let ticket: string | null = null;
   let enteredAt = 0;
@@ -181,6 +181,12 @@ const START_YEAR = 2024;
   };
   const pad = (n: number) => String(n).padStart(2, '0');
   const dateOf = (p: Post) => String(p.date || '').slice(0, 10);
+  /**
+   * 清单里 slug 和 url 都可能存在（见 make-private-manifest.mjs 的注释）。
+   * 两个都认，谁缺了都不至于拼出 /posts/undefined/ 这种链接。
+   */
+  const slugOf = (p: Post) =>
+    p.slug || String(p.url || '').replace(/^\/posts\//, '').replace(/\/$/, '');
 
   /* 离开页面时告诉 Worker，用于统计停留时长（和私人角落一样） */
   const flush = () => {
@@ -271,7 +277,7 @@ const START_YEAR = 2024;
       const li = document.createElement('li');
       const a = document.createElement('a');
       a.className = 'dg-item';
-      a.href = '/posts/' + encodeURIComponent(p.slug) + '/';
+      a.href = '/posts/' + encodeURIComponent(slugOf(p)) + '/';
       const t = document.createElement('time');
       t.textContent = dateOf(p).slice(8) || dateOf(p);
       const s = document.createElement('span');

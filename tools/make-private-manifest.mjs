@@ -153,6 +153,13 @@ writeFileSync(
       count: hidden.length,
       posts: hidden.map((p) => ({
         title: p.title,
+        /*
+         * ⚠️ slug 和 url 两个都要给。
+         * 之前这里只有 url，而 posts-all.json 只有 slug —— 日记页读的是 slug，
+         * 于是它拼出 /posts/undefined/ 全 404（站主报的「点击显示不存在」）。
+         * 两个清单字段保持一致，谁读哪个都不会再踩。
+         */
+        slug: p.slug,
         url: '/posts/' + p.slug + '/',
         date: p.date,
         /* 可能是 ISO 时刻（来自 git）或纯日期（来自 frontmatter）；页面显示与排序都吃得下 */
@@ -196,6 +203,8 @@ writeFileSync(
       count: sorted.length,
       posts: sorted.map((p) => ({
         slug: p.slug,
+        /* 同样两个都给 —— 见上面 hidden 那段注释 */
+        url: '/posts/' + p.slug + '/',
         path: 'src/content/posts/' + p.slug + '.md',
         title: p.title,
         date: p.date,
