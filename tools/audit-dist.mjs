@@ -494,6 +494,40 @@ head('8.55 公开目录里不许出现正文 / 草稿 / 隐藏文章的内容');
   }
 }
 
+/* ------------------------------------------- 8.65 slug 规则必须与 Astro 完全一致 */
+head('8.65 slug 规则：全部文章逐个与产物目录对账');
+{
+  /*
+   * ★ 这条是补一个**真实发生过的漏洞**。
+   *
+   * 8.6 只检查「清单里的 URL 能不能打开」—— 清单和站点地图都用的是我们自己的
+   * slugify，所以它俩一致时 8.6 永远是绿的；但**页面路径其实是 Astro 生成的**。
+   * 两者规则不一致时，表现是「用户从私人角落点文章 → 404」。
+   *
+   * 实例：2026-09-20-恭喜自己，终于脱贫啦！.md
+   *   Astro：标点【删掉】 → /posts/2026-09-20-恭喜自己终于脱贫啦/
+   *   我们：标点【换成 -】→ /posts/2026-09-20-恭喜自己-终于脱贫啦/  (404)
+   * 上次对账只挑了 2026-09-18-SEP.-26 一个样本，而那一条恰好两种规则结果相同
+   * （那个点后面本来就跟着 -），于是漏了。
+   *
+   * 所以这里改成**集合比较**：每个 .md 文件名过一遍 slugify，
+   * 结果必须恰好是 dist/posts 下的一组目录名。一篇对不上就报错。
+   */
+  const postFiles = readdirSync(join(ROOT, 'src/content/posts')).filter((f) => f.endsWith('.md'));
+  const distSlugs = new Set(readdirSync(join(DIST, 'posts')));
+  const missing = [];
+  for (const f of postFiles) {
+    const s = slugify(f);
+    if (!distSlugs.has(s)) missing.push(f + ' → ' + s);
+  }
+  if (missing.length) {
+    missing.slice(0, 5).forEach((m) => bad('slug 规则与 Astro 不一致：' + m));
+    bad('（Astro 会把标点删掉，我们如果换成 - 就会差一个字符 —— 见 src/lib/slug.ts 的说明）');
+  } else {
+    ok(postFiles.length + ' 篇文章的 slug 与产物目录逐个对上');
+  }
+}
+
 /* ------------------------------------------- 8.6 清单里的 URL 必须能打开 */
 head('8.6 清单 URL 与产物对照（点开不能 404）');
 {
