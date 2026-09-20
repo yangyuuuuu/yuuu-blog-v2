@@ -528,6 +528,20 @@ head('8.65 slug 规则：全部文章逐个与产物目录对账');
   }
 }
 
+/* ------------------------------------------- 8.75 口令页不许进 sitemap */
+head('8.75 口令页（admin / private / diary）不进 sitemap');
+{
+  /*
+   * 这几页的隐私一半靠「不公开」，sitemap 是最大的那个出口 ——
+   * 一旦被收录，搜索引擎就会把 /diary/ 摆到搜索结果里。加了新口令页别忘了同步配置。
+   */
+  const sm = readdirSync(DIST).filter((f) => /^sitemap.*\.xml$/.test(f));
+  const xml = sm.map((f) => readFileSync(join(DIST, f), 'utf8')).join('\n');
+  const leaked = ['admin', 'private', 'diary'].filter((k) => new RegExp('<' + '[^>]*>' + '[^<]*/' + k + '/').test(xml) || xml.includes('/' + k + '/'));
+  if (leaked.length) leaked.forEach((k) => bad('sitemap 里出现了 /' + k + '/（口令页不该被收录）'));
+  else ok('sitemap 里没有 admin / private / diary');
+}
+
 /* ------------------------------------------- 8.7 受口令保护的页面不许泄漏内容 */
 head('8.7 日记页 / 私人角落的公开 HTML 里不能有文章标题');
 {

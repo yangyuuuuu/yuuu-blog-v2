@@ -86,7 +86,8 @@ export default defineConfig({
       filter: (page) => {
         /* 后台与私人角落不该出现在 sitemap 里 —— 它们本来就带 noindex，
            没必要再让搜索引擎知道这两个路径存在 */
-        if (/\/(admin|private)(\/|$)/.test(page)) return false;
+        /* diary 和 private 一样是「知道网址才进得去」的口令页，别让搜索引擎收录 */
+        if (/\/(admin|private|diary)(\/|$)/.test(page)) return false;
         /* 隐藏的文章（private: true 或 category: 日记）也不进 sitemap */
         const m = /\/posts\/(.+?)\/?$/.exec(page);
         return m ? !hiddenSlugs.has(decodeURIComponent(m[1])) : true;
