@@ -528,6 +528,36 @@ head('8.65 slug 规则：全部文章逐个与产物目录对账');
   }
 }
 
+/* ------------------------------------------- 8.7 受口令保护的页面不许泄漏内容 */
+head('8.7 日记页 / 私人角落的公开 HTML 里不能有文章标题');
+{
+  /*
+   * ★ 这两页的隐私**全靠「公开的只是个空壳」**。
+   * 一旦有人手滑把文章列表渲染进静态 HTML（比如把 getStaticPaths 当成普通列表页用），
+   * 标题就进了公开可下载的文件，口令形同虚设 —— 而且从页面上看不出任何异常。
+   * 所以这里拿**全部文章的标题**去 grep 这两页的产物，一个都不许命中。
+   */
+  const allPath = join(DIST, 'private', 'posts-all.json');
+  if (!existsSync(allPath)) {
+    bad('缺少 private/posts-all.json，无法做泄漏检查');
+  } else {
+    const titles = (JSON.parse(readFileSync(allPath, 'utf8')).posts || [])
+      .map((p) => String(p.title || '').trim())
+      .filter((t) => t.length >= 3);   /* 太短的容易误伤（比如「嗯」） */
+    for (const page of ['diary/index.html', 'private/index.html']) {
+      const abs = join(DIST, page);
+      if (!existsSync(abs)) { bad('缺少 ' + page); continue; }
+      const html = readFileSync(abs, 'utf8');
+      const leaked = titles.filter((t) => html.indexOf(t) >= 0);
+      if (leaked.length) {
+        leaked.slice(0, 3).forEach((t) => bad(page + ' 的公开 HTML 里出现了文章标题：' + t));
+      } else {
+        ok(page + '：' + titles.length + ' 个标题一个都没泄漏');
+      }
+    }
+  }
+}
+
 /* ------------------------------------------- 8.6 清单里的 URL 必须能打开 */
 head('8.6 清单 URL 与产物对照（点开不能 404）');
 {

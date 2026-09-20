@@ -1,0 +1,419 @@
+---
+/**
+ * 日记 —— yuuu.love/diary/
+ *
+ * ⚠️ 这一页最容易犯的错：**把日记标题渲染进静态 HTML**。
+ * dist/ 下的一切都是公开可下载的，标题一旦写进页面，口令就形同虚设。
+ * 所以这里公开的只有一个**空壳 + 口令框**；清单在输对密码后由 Worker 返回
+ * （和 /private/ 用同一个接口、同一套 ticket —— 一边登过另一边不用再登）。
+ *
+ * 三个视图（年 → 月 → 该月列表）都在这一页里，位置记在 hash 上
+ * （/diary/#2026/08），所以浏览器后退键能用、也能收藏某一级。
+ * 不做成三个静态页正是因为静态页会把标题写进 HTML。
+ *
+ * 只收录 category: 日记 且非草稿的文章；年份从 2024 起；月份固定 1–12。
+ * 不做任何"自动生成" —— 列表里只有真实写过的。
+ */
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+const START_YEAR = 2024;
+---
+
+<BaseLayout title="日记" description="按年月翻看的日记" noindex>
+  <section class="dg-wrap">
+    <!-- ══════════ 口令 ══════════ -->
+    <div class="dg-login" id="dgLogin">
+      <h1 class="dg-title">日记</h1>
+      <p class="dg-desc">按年份、月份翻看。需要口令，和私人角落是同一个。</p>
+      <form id="dgForm" autocomplete="off">
+        <input id="dgPwd" type="password" placeholder="口令" aria-label="口令" autocomplete="current-password" enterkeyhint="go" />
+        <button id="dgGo" type="submit">进入</button>
+      </form>
+      <p class="dg-msg" id="dgMsg" role="status"></p>
+    </div>
+
+    <!-- ══════════ 三个视图 ══════════ -->
+    <div class="dg-app" id="dgApp" hidden>
+      <nav class="dg-crumb" id="dgCrumb" aria-label="位置"></nav>
+
+      <!-- 年 -->
+      <div class="dg-years" id="dgYears"></div>
+
+      <!-- 月（固定 1–12） -->
+      <div class="dg-months" id="dgMonths" hidden></div>
+
+      <!-- 该月列表 -->
+      <div class="dg-month-head" id="dgMonthHead" hidden>
+        <span class="dg-month-label" id="dgMonthLabel"></span>
+        <button class="dg-write" id="dgWriteBtn" type="button">✍ 写这一天</button>
+      </div>
+      <ul class="dg-list" id="dgList" hidden></ul>
+      <p class="dg-empty" id="dgEmpty" hidden></p>
+
+      <!-- 选日子（写日记用；只在点「写这一天」后出现） -->
+      <div class="dg-days" id="dgDays" hidden>
+        <p class="dg-days-hint" id="dgDaysHint"></p>
+        <div class="dg-day-grid" id="dgDayGrid"></div>
+      </div>
+
+      <p class="dg-again"><button type="button" id="dgAgain">退出</button></p>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .dg-wrap { max-width: 720px; margin: 0 auto; padding: 28px 18px 80px; }
+  .dg-login { max-width: 380px; margin: 8vh auto 0; text-align: center; }
+  .dg-title { font-size: 24px; letter-spacing: 0.16em; color: var(--ink); margin: 0 0 8px; }
+  .dg-desc { font-size: 13.5px; color: var(--muted); margin: 0 0 22px; line-height: 1.7; }
+  .dg-login form { display: flex; gap: 8px; }
+  .dg-login input {
+    flex: 1; min-width: 0; padding: 11px 14px; border-radius: 12px;
+    border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 16px;
+  }
+  .dg-login input:focus { outline: none; border-color: var(--accent); }
+  .dg-login button {
+    padding: 11px 20px; border-radius: 12px; border: none; cursor: pointer;
+    background: var(--accent); color: var(--accent-ink); font-size: 14px;
+  }
+  .dg-msg { min-height: 20px; margin: 12px 0 0; font-size: 13px; color: var(--muted); }
+  .dg-msg.is-error { color: var(--danger); }
+
+  .dg-crumb { font-size: 13px; color: var(--muted); margin-bottom: 18px; }
+  .dg-crumb a { color: var(--accent); text-decoration: none; }
+  .dg-crumb a:hover { text-decoration: underline; }
+  .dg-crumb b { color: var(--ink); font-weight: 600; }
+
+  .dg-years, .dg-months { display: grid; gap: 10px; }
+  .dg-years { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .dg-months { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+  .dg-cell {
+    display: flex; flex-direction: column; gap: 3px;
+    padding: 14px 16px; border-radius: var(--radius, 14px);
+    border: 1px solid var(--line); background: var(--surface);
+    color: var(--ink); text-decoration: none; cursor: pointer;
+    transition: border-color 0.18s ease, transform 0.12s ease, color 0.18s ease;
+  }
+  .dg-cell:hover { border-color: var(--accent); color: var(--accent); }
+  .dg-cell:active { transform: scale(0.98); }
+  .dg-cell b { font-size: 17px; font-weight: 600; }
+  .dg-cell span { font-size: 11.5px; color: var(--muted); }
+  .dg-cell.is-zero { opacity: 0.5; }
+
+  .dg-month-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 14px; }
+  .dg-month-label { font-size: 15px; color: var(--ink); font-weight: 600; }
+  .dg-write {
+    padding: 8px 14px; border-radius: 10px; border: 1px solid var(--accent);
+    background: transparent; color: var(--accent); font-size: 12.5px; cursor: pointer;
+  }
+  .dg-write:hover { background: var(--accent); color: var(--accent-ink); }
+
+  .dg-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .dg-item {
+    display: flex; align-items: baseline; gap: 12px;
+    padding: 13px 16px; border-radius: 12px; border: 1px solid var(--line);
+    background: var(--surface); text-decoration: none; color: var(--ink);
+    transition: border-color 0.18s ease, color 0.18s ease;
+  }
+  .dg-item:hover { border-color: var(--accent); color: var(--accent); }
+  .dg-item time { font-size: 12px; color: var(--muted); flex: none; font-variant-numeric: tabular-nums; }
+  .dg-item span { font-size: 14.5px; min-width: 0; }
+  .dg-empty { color: var(--muted); font-size: 13.5px; padding: 20px 2px; }
+
+  .dg-days { margin-top: 18px; padding: 14px 16px; border-radius: 12px; border: 1px dashed var(--line); }
+  .dg-days-hint { margin: 0 0 10px; font-size: 12.5px; color: var(--muted); }
+  .dg-day-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); gap: 6px; }
+  .dg-day {
+    padding: 8px 0; border-radius: 9px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink); font-size: 13px; cursor: pointer;
+    font-variant-numeric: tabular-nums;
+  }
+  .dg-day:hover { border-color: var(--accent); color: var(--accent); }
+  .dg-day.is-written { border-color: var(--gold); color: var(--gold); }
+  .dg-day.is-future { opacity: 0.35; }
+
+  .dg-again { margin: 30px 0 0; text-align: center; }
+  .dg-again button {
+    background: none; border: none; color: var(--muted); font-size: 12.5px;
+    text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+  }
+</style>
+
+<script>
+  /*
+   * 门禁与数据来源和 /private/ 完全一致：
+   *   POST oauth.yuuu.love/hidden  {password, from}  →  { ticket, posts }
+   * posts 是「隐藏文章」清单（只有元信息，没有正文）。
+   * ticket 与 /private/、/admin/* 共用一套，登一次到处能用。
+   */
+  const API = 'https://oauth.yuuu.love';
+  const KEY = 'yuuu-private';       /* 和私人角落同一个键 —— 这就是「登一次两边通用」 */
+  const START_YEAR = 2024;
+
+  const $ = (id: string) => document.getElementById(id) as HTMLElement;
+  const loginBox = $('dgLogin');
+  const app = $('dgApp');
+  const form = $('dgForm') as HTMLFormElement;
+  const pwd = $('dgPwd') as HTMLInputElement;
+  const go = $('dgGo') as HTMLButtonElement;
+  const msg = $('dgMsg');
+  const crumb = $('dgCrumb');
+  const yearsBox = $('dgYears');
+  const monthsBox = $('dgMonths');
+  const monthHead = $('dgMonthHead');
+  const monthLabel = $('dgMonthLabel');
+  const listBox = $('dgList');
+  const emptyBox = $('dgEmpty');
+  const daysBox = $('dgDays');
+  const daysHint = $('dgDaysHint');
+  const dayGrid = $('dgDayGrid');
+  const writeBtn = $('dgWriteBtn') as HTMLButtonElement;
+  const again = $('dgAgain') as HTMLButtonElement;
+
+  type Post = { slug: string; title: string; date: string; category?: string; draft?: boolean };
+  let diary: Post[] = [];       /* 只含 category === 日记 且非草稿 */
+  let ticket: string | null = null;
+  let enteredAt = 0;
+
+  const say = (t: string, isErr?: boolean) => {
+    msg.textContent = t || '';
+    msg.classList.toggle('is-error', !!isErr);
+  };
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const dateOf = (p: Post) => String(p.date || '').slice(0, 10);
+
+  /* 离开页面时告诉 Worker，用于统计停留时长（和私人角落一样） */
+  const flush = () => {
+    if (!ticket) return;
+    const secs = Math.round((Date.now() - enteredAt) / 1000);
+    try { navigator.sendBeacon(API + '/hidden/leave', JSON.stringify({ ticket, seconds: secs })); } catch (e) {}
+    ticket = null;
+  };
+  window.addEventListener('pagehide', flush);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
+
+  const readSession = () => {
+    try { return JSON.parse(sessionStorage.getItem(KEY) || 'null'); } catch (e) { return null; }
+  };
+
+  /* ---------------------------------------------------------------- 数据 */
+
+  async function verify(pass: string, from: string) {
+    const res = await fetch(API + '/hidden', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pass, from }),
+    });
+    const data = await res.json().catch(() => ({} as { message?: string; posts?: Post[]; ticket?: string }));
+    if (res.status === 429) throw new Error(data.message || '试得太频繁，等一会儿再来');
+    if (!res.ok) throw new Error(data.message || '口令不对');
+    return data;
+  }
+
+  /** 进站：只留「日记」分类、非草稿；按日期倒序 */
+  function enter(data: { ticket?: string; posts?: Post[] }) {
+    ticket = data.ticket || null;
+    enteredAt = Date.now();
+    diary = (data.posts || [])
+      .filter((p) => p && p.category === '日记' && !p.draft)
+      .sort((a, b) => dateOf(b).localeCompare(dateOf(a)));
+    loginBox.hidden = true;
+    app.hidden = false;
+    say('');
+    route();
+  }
+
+  /* ---------------------------------------------------------------- 视图 */
+
+  /** 年份：从 START_YEAR 到今年，每年显示篇数 */
+  function renderYears() {
+    const thisYear = new Date().getFullYear();
+    const to = Math.max(thisYear, START_YEAR);
+    yearsBox.innerHTML = '';
+    for (let y = to; y >= START_YEAR; y--) {
+      const n = diary.filter((p) => dateOf(p).startsWith(String(y) + '-')).length;
+      const a = document.createElement('a');
+      a.className = 'dg-cell' + (n ? '' : ' is-zero');
+      a.href = '#/' + y;
+      a.innerHTML = '';
+      const b = document.createElement('b');
+      b.textContent = String(y);
+      const s = document.createElement('span');
+      s.textContent = n ? n + ' 篇' : '还没有';
+      a.append(b, s);
+      yearsBox.appendChild(a);
+    }
+  }
+
+  function renderMonths(year: number) {
+    monthsBox.innerHTML = '';
+    for (let m = 1; m <= 12; m++) {
+      const key = year + '-' + pad(m);
+      const n = diary.filter((p) => dateOf(p).startsWith(key)).length;
+      const a = document.createElement('a');
+      a.className = 'dg-cell' + (n ? '' : ' is-zero');
+      a.href = '#/' + year + '/' + pad(m);
+      const b = document.createElement('b');
+      b.textContent = m + ' 月';
+      const s = document.createElement('span');
+      s.textContent = n ? n + ' 篇' : '空';
+      a.append(b, s);
+      monthsBox.appendChild(a);
+    }
+  }
+
+  function renderMonthList(year: number, month: number) {
+    const key = year + '-' + pad(month);
+    const items = diary.filter((p) => dateOf(p).startsWith(key));
+    monthLabel.textContent = year + ' 年 ' + month + ' 月 · ' + items.length + ' 篇';
+    listBox.innerHTML = '';
+    items.forEach((p) => {
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.className = 'dg-item';
+      a.href = '/posts/' + encodeURIComponent(p.slug) + '/';
+      const t = document.createElement('time');
+      t.textContent = dateOf(p).slice(8) || dateOf(p);
+      const s = document.createElement('span');
+      s.textContent = p.title || p.slug;
+      a.append(t, s);
+      li.appendChild(a);
+      listBox.appendChild(li);
+    });
+    emptyBox.hidden = items.length !== 0;
+    emptyBox.textContent = year + ' 年 ' + month + ' 月还没有日记。点右上角「写这一天」。';
+    daysBox.hidden = true;
+  }
+
+  /** 选日子（写日记用）：一天只能一篇 —— 已有的日子标出来，点了直接去那一篇 */
+  function openDayPicker(year: number, month: number) {
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const today = new Date();
+    daysHint.textContent =
+      '写 ' + year + ' 年 ' + month + ' 月哪一天？金色的是已经写过的（点它会打开那一篇）。一天只写一篇。';
+    dayGrid.innerHTML = '';
+    for (let d = 1; d <= daysInMonth; d++) {
+      const key = year + '-' + pad(month) + '-' + pad(d);
+      const exists = diary.find((p) => dateOf(p) === key);
+      const future = new Date(year, month - 1, d) > today;
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'dg-day' + (exists ? ' is-written' : '') + (future ? ' is-future' : '');
+      b.textContent = String(d);
+      b.addEventListener('click', () => {
+        if (exists) {
+          /* 一天一篇：当天已有就跳去那一篇，并说清楚 */
+          sessionStorage.setItem('yuuu-diary-note', year + ' 年 ' + month + ' 月 ' + d + ' 日已经写过一篇了，打开的是那一篇');
+          location.href = '/admin/m/?edit=' + encodeURIComponent(exists.slug);
+          return;
+        }
+        location.href = '/admin/m/?cat=' + encodeURIComponent('日记') + '&date=' + key;
+      });
+      dayGrid.appendChild(b);
+    }
+    daysBox.hidden = false;
+  }
+
+  /** 面包屑：日记 / 2026 / 8 月 */
+  function renderCrumb(year?: number, month?: number) {
+    crumb.innerHTML = '';
+    const home = document.createElement('a');
+    home.href = '#/';
+    home.textContent = '日记';
+    crumb.appendChild(home);
+    if (year) {
+      crumb.append(' / ');
+      if (month) {
+        const a = document.createElement('a');
+        a.href = '#/' + year;
+        a.textContent = String(year);
+        crumb.appendChild(a);
+        crumb.append(' / ');
+        const b = document.createElement('b');
+        b.textContent = month + ' 月';
+        crumb.appendChild(b);
+      } else {
+        const b = document.createElement('b');
+        b.textContent = String(year);
+        crumb.appendChild(b);
+      }
+    }
+  }
+
+  /** 路由：#/  年视图；#/2026  月视图；#/2026/08  该月列表 */
+  function route() {
+    const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+    const year = parts[0] ? Number(parts[0]) : 0;
+    const month = parts[1] ? Number(parts[1]) : 0;
+
+    yearsBox.hidden = !!(year && year >= START_YEAR);
+    monthsBox.hidden = !(year && !month);
+    monthHead.hidden = !(year && month);
+    listBox.hidden = !(year && month);
+    emptyBox.hidden = true;
+    daysBox.hidden = true;
+
+    if (!year) {
+      renderCrumb();
+      renderYears();
+    } else if (!month) {
+      renderCrumb(year);
+      renderMonths(year);
+    } else {
+      renderCrumb(year, month);
+      renderMonthList(year, month);
+    }
+    window.scrollTo({ top: 0 });
+  }
+
+  window.addEventListener('hashchange', route);
+
+  /* ---------------------------------------------------------------- 事件 */
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pass = pwd.value;
+    if (!pass) { say('先输口令', true); return; }
+    go.disabled = true;
+    say('正在校验…');
+    try {
+      const data = await verify(pass, 'diary');
+      try { sessionStorage.setItem(KEY, JSON.stringify({ pass, posts: data.posts || [] })); } catch (err) {}
+      pwd.value = '';
+      enter(data);
+    } catch (err) {
+      say((err as Error).message || '校验失败', true);
+      pwd.select();
+    } finally {
+      go.disabled = false;
+    }
+  });
+
+  writeBtn.addEventListener('click', () => {
+    const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+    if (parts.length < 2) return;
+    const box = daysBox.hidden;
+    if (box) openDayPicker(Number(parts[0]), Number(parts[1]));
+    else daysBox.hidden = true;
+  });
+
+  again.addEventListener('click', () => {
+    flush();
+    try { sessionStorage.removeItem(KEY); } catch (e) {}
+    app.hidden = true;
+    loginBox.hidden = false;
+    location.hash = '';
+    say('已退出');
+  });
+
+  /* 启动：sessionStorage 里有就直接进（返回/刷新不用重输；关标签页即失效） */
+  (function boot() {
+    const saved = readSession();
+    if (saved && saved.posts) {
+      enter({ posts: saved.posts });
+      return;
+    }
+    loginBox.hidden = false;
+    pwd.focus();
+  })();
+</script>

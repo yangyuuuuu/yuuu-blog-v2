@@ -293,9 +293,29 @@ if (el.fBreaks) {
     renderCount();
   }));
 
-async function openNew() {
+/**
+ * 新建。可以带参数（从日记页点「写这一天」过来的）：
+ *   ?cat=日记&date=2026-08-15
+ * 日记一天只写一篇 —— 那天已经有就直接打开那一篇并说明原因。
+ */
+async function openNew(params) {
+  const cat = params ? (params.get('cat') || '') : '';
+  const wantDate = params ? (params.get('date') || '') : '';
+  if (cat === '日记' && wantDate) {
+    const exists = posts.find(
+      (p) => p.category === '日记' && String(p.date || '').slice(0, 10) === wantDate,
+    );
+    if (exists) {
+      toast(wantDate + ' 已经写过一篇了，打开的是那一篇（一天一篇）', 7000);
+      return openPost(exists);
+    }
+  }
   setEditing(null);
-  fillForm({ date: new Date().toISOString().slice(0, 10), tags: [] });
+  fillForm({
+    date: wantDate || new Date().toISOString().slice(0, 10),
+    tags: [],
+    ...(cat ? { category: cat } : {}),
+  });
   say(el.saveMsg, '');
   show('edit');
   setTimeout(() => el.fTitle.focus(), 120);
@@ -416,13 +436,27 @@ window.__READY = true;
  * 而不是「登录 → 再从列表里翻一遍」。
  */
 async function openRequested() {
-  const slug = new URLSearchParams(location.search).get('edit');
-  if (!slug) return;
-  const hit = posts.find((p) => p.slug === slug);
-  if (!hit) { toast('没找到这篇文章（可能刚被改名）'); return; }
-  /* 清掉参数，免得刷新时又跳一次 */
-  history.replaceState(null, '', location.pathname);
-  await openPost(hit);
+  const params = new URLSearchParams(location.search);
+  const slug = params.get('edit');
+  /* 日记页跳过来时会留一句话（比如「那天已经写过一篇」），读完就清掉 */
+  const note = sessionStorage.getItem('yuuu-diary-note');
+  if (note) sessionStorage.removeItem('yuuu-diary-note');
+
+  if (slug) {
+    const hit = posts.find((p) => p.slug === slug);
+    if (!hit) { toast('没找到这篇文章（可能刚被改名）'); return; }
+    /* 清掉参数，免得刷新时又跳一次 */
+    history.replaceState(null, '', location.pathname);
+    await openPost(hit);
+    if (note) toast(note, 7000);
+    return;
+  }
+  if (params.get('cat') || params.get('date')) {
+    history.replaceState(null, '', location.pathname);
+    await openNew(params);
+    return;
+  }
+  if (note) toast(note, 7000);
 }
 
 /* ------------------------------------------------------------------ 启动 */
