@@ -125,6 +125,22 @@ const description = hidden ? 'yuuu 的一篇私人记录' : d.summary ?? d.title
       </div>
     </article>
 
+    <!--
+      一对跳转按钮：回到文章开头 / 跳到文章末尾。
+      位置取自 article 元素本身，所以是「文章的开头/末尾」，不是整页的首尾。
+      平滑滚动交给 CSS 的 scroll-behavior（global.css 里已有，
+      而且在 prefers-reduced-motion 下会自动变回瞬时跳转 —— 不必在 JS 里再判断一次）。
+      桌面上放左下角：右上那边是目录，放右下会压住它。
+    -->
+    <div class="post-jump" id="postJump">
+      <button type="button" id="jumpTop" aria-label="回到文章开头">
+        <i aria-hidden="true">↑</i><span>开头</span>
+      </button>
+      <button type="button" id="jumpEnd" aria-label="跳到文章末尾">
+        <i aria-hidden="true">↓</i><span>末尾</span>
+      </button>
+    </div>
+
     <aside class="lg:sticky lg:top-[92px]" id="toc">
       <div class="t-surface t-backdrop rounded-card border border-line bg-surface p-5 backdrop-blur-md shadow-[var(--shadow-soft)]">
         <p class="mb-3 text-[11px] tracking-[0.36em] text-accent uppercase">目录</p>
@@ -177,6 +193,49 @@ const description = hidden ? 'yuuu 的一篇私人记录' : d.summary ?? d.title
         var h = document.documentElement.scrollHeight - window.innerHeight;
         var p = h > 0 ? window.scrollY / h : 0;
         bar.style.transform = 'scaleX(' + Math.min(1, Math.max(0, p)).toFixed(4) + ')';
+      }
+      window.addEventListener('scroll', function () {
+        if (!raf) raf = requestAnimationFrame(update);
+      }, { passive: true });
+      window.addEventListener('resize', update);
+      update();
+    })();
+
+    /* 回到文章开头 / 跳到文章末尾 */
+    (function () {
+      var btnTop = document.getElementById('jumpTop');
+      var btnEnd = document.getElementById('jumpEnd');
+      var article = document.querySelector('article');
+      if (!btnTop || !btnEnd || !article) return;
+
+      /* 72px 是给顶栏留的余量，别让标题被固定导航挡住 */
+      function articleTop() {
+        return article.getBoundingClientRect().top + window.scrollY - 72;
+      }
+      /* 末尾对齐到视口底部，再留一点呼吸空间 */
+      function articleEnd() {
+        return article.getBoundingClientRect().bottom + window.scrollY - window.innerHeight + 96;
+      }
+      function maxScroll() {
+        return document.documentElement.scrollHeight - window.innerHeight;
+      }
+      btnTop.addEventListener('click', function () {
+        window.scrollTo({ top: Math.max(0, articleTop()) });
+      });
+      btnEnd.addEventListener('click', function () {
+        window.scrollTo({ top: Math.min(maxScroll(), articleEnd()) });
+      });
+
+      /* 已经在开头/末尾就把对应按钮置灰 —— 否则点了没反应，会以为坏了 */
+      var raf = 0;
+      function update() {
+        raf = 0;
+        var y = window.scrollY;
+        /* 拿「文章」的首尾比，不是整页的首尾 ——
+           文章后面还有标签、上下篇和页脚，滚到页面底并不等于到了文章末尾。
+           判据就是「再点一下还会不会动」。 */
+        btnTop.disabled = y <= Math.max(0, articleTop()) + 4;
+        btnEnd.disabled = y >= Math.min(maxScroll(), articleEnd()) - 4;
       }
       window.addEventListener('scroll', function () {
         if (!raf) raf = requestAnimationFrame(update);

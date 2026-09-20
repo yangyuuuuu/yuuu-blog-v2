@@ -1164,6 +1164,42 @@ html[data-theme='light'] .g-sun { opacity: 1; transform: rotate(0deg) scale(1); 
   color: var(--muted);
   text-transform: uppercase;
 }
+/* 明暗自动切换的开关 + 白天区间（设置面板里） */
+.theme-auto {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-bottom: 9px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.theme-auto input { margin: 1px 0 0; accent-color: var(--accent); flex: none; }
+.theme-auto em {
+  display: block;
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.theme-day {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 15px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.theme-day[hidden] { display: none; }
+.theme-day select {
+  padding: 5px 7px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--hover);
+  color: var(--ink);
+  font-size: 12.5px;
+  cursor: pointer;
+}
 .theme-modes { display: flex; gap: 6px; margin-bottom: 15px; }
 .theme-modes button {
   flex: 1;
@@ -1284,6 +1320,44 @@ html[data-theme='light'] .g-sun { opacity: 1; transform: rotate(0deg) scale(1); 
 /* --------------------------------------------------------------------------
    动效偏好
    -------------------------------------------------------------------------- */
+/* 文章页的「回到开头 / 跳到末尾」一对按钮 */
+.post-jump {
+  position: fixed;
+  left: 14px;
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.post-jump button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  box-shadow: var(--shadow-soft);
+  transition: color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.12s ease;
+}
+.post-jump button i { font-style: normal; font-size: 15px; line-height: 1; }
+.post-jump button span { font-size: 9px; letter-spacing: 0.06em; }
+.post-jump button:hover:not([disabled]) { color: var(--accent); border-color: var(--accent); }
+.post-jump button:active:not([disabled]) { transform: scale(0.94); }
+.post-jump button[disabled] { opacity: 0.34; cursor: default; }
+/* 手机上换到右下角：拇指够得着；桌面右边是目录，所以留左边 */
+@media (max-width: 1023px) {
+  .post-jump { left: auto; right: 14px; }
+  .post-jump button { width: 44px; height: 44px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after {

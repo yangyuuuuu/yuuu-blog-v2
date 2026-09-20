@@ -80,7 +80,7 @@ button { cursor: pointer; }
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
-  animation: screen-in 0.22s ease both;
+  animation: screen-in 0.22s ease backwards;
 }
 .screen[hidden] { display: none; }
 

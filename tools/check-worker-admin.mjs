@@ -592,6 +592,81 @@ console.log('=== 6.7 批处理：一次提交改多张图 ===');
   ok(unknown.status === 400, '未知操作被拦');
 }
 
+console.log('=== 6.8 统一提交：攒一批改动，一次推到 GitHub ===');
+{
+  const pngHex = '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082';
+  const png = Buffer.from(pngHex, 'hex');
+  const metaOf = () => JSON.parse(gh.files.get('public/uploads/categories.json')?.base64
+    ? Buffer.from(gh.files.get('public/uploads/categories.json').base64, 'base64').toString('utf8')
+    : '{}');
+
+  /* 三张图：一张改名、一张换分类、一张删除；外加一篇引用了第一张的文章 */
+  for (const n of ['甲.jpg', '乙.jpg', '丙.jpg']) {
+    gh.files.set('public/uploads/' + n, { base64: png.toString('base64'), sha: 's-' + n });
+  }
+  gh.files.set('public/uploads/categories.json', { base64: Buffer.from(JSON.stringify({ '甲.jpg': '旧分类' })).toString('base64'), sha: 's-meta' });
+  gh.files.set('src/content/posts/2026-02-02-use.md', {
+    base64: Buffer.from('---\ntitle: 用了甲\n---\n\n![](/uploads/甲.jpg)\n').toString('base64'), sha: 's-p',
+  });
+  gh.batchCommits = 0;
+
+  const r = await call('/admin/images/commit', {
+    ticket: 'good-ticket',
+    ops: [
+      { from: 'public/uploads/甲.jpg', to: 'public/uploads/甲-新名.jpg', dir: '新分类' },
+      { from: 'public/uploads/乙.jpg', from2: null, dir: '另一类' },
+      { from: 'public/uploads/丙.jpg', delete: true },
+    ],
+  });
+  ok(r.status === 200, '批量提交成功', JSON.stringify(r.data));
+  ok(gh.batchCommits === 1, '★ 三项改动只产生 1 条提交', '实际 ' + gh.batchCommits);
+  ok(r.data?.moved === 1 && r.data?.deleted === 1, '报告里改名 1 / 删除 1', JSON.stringify(r.data));
+
+  ok(gh.files.has('public/uploads/甲-新名.jpg') && !gh.files.has('public/uploads/甲.jpg'), '★ 改名生效（新名在、旧名没了）');
+  ok(Buffer.from(gh.files.get('public/uploads/甲-新名.jpg').base64, 'base64').equals(png), '★ 字节一字未改');
+  ok(!gh.files.has('public/uploads/丙.jpg'), '★ 删除生效');
+  ok(gh.files.has('public/uploads/乙.jpg'), '只换分类的文件仍在原处（不搬）');
+
+  const meta = metaOf();
+  ok(meta['甲-新名.jpg'] === '新分类' && !meta['甲.jpg'], '★ 改名的分类跟着走', JSON.stringify(meta));
+  ok(meta['乙.jpg'] === '另一类', '★ 换分类写进索引', JSON.stringify(meta));
+  ok(!meta['丙.jpg'], '★ 删除的索引记录也清掉', JSON.stringify(meta));
+
+  const post = Buffer.from(gh.files.get('src/content/posts/2026-02-02-use.md').base64, 'base64').toString('utf8');
+  ok(post.includes('/uploads/甲-新名.jpg') || post.includes(encodeURIComponent('甲-新名')), '★ 文章引用一起改了', post.split('\n').filter(Boolean).pop());
+  ok(r.data?.refsUpdated === 1, '报告更新了 1 篇引用', String(r.data?.refsUpdated));
+
+  /* 提交里到底动了什么：只该有 2 个写入（新名 + 索引）+ 文章，删除 2 个 */
+  const items = (gh.lastTree && gh.lastTree.tree) || [];
+  const puts = items.filter((x) => x.sha !== null).map((x) => x.path);
+  const dels = items.filter((x) => x.sha === null).map((x) => x.path);
+  ok(!puts.includes('public/uploads/乙.jpg'), '没改文件的不进提交（只改索引）', puts.join(', '));
+  ok(dels.includes('public/uploads/丙.jpg') && dels.includes('public/uploads/甲.jpg'), '两个旧路径被删除', dels.join(', '));
+
+  /* 拦截 */
+  const empty = await call('/admin/images/commit', { ticket: 'good-ticket', ops: [] });
+  ok(empty.status === 400, '空队列被拦');
+  const outside = await call('/admin/images/commit', { ticket: 'good-ticket', ops: [{ from: 'src/content/posts/x.md', dir: 'a' }] });
+  ok(outside.status === 400, '越界路径被拦');
+  const many = await call('/admin/images/commit', {
+    ticket: 'good-ticket',
+    ops: Array.from({ length: 81 }, (_, i) => ({ from: 'public/uploads/x' + i + '.png', dir: 'a' })),
+  });
+  ok(many.status === 400, '超过 80 项被拦');
+  /* 改名撞车：整批拒绝，不能悄悄覆盖 */
+  gh.files.set('public/uploads/撞.jpg', { base64: png.toString('base64'), sha: 's-z' });
+  const clash = await call('/admin/images/commit', {
+    ticket: 'good-ticket',
+    ops: [{ from: 'public/uploads/乙.jpg', to: 'public/uploads/撞.jpg' }],
+  });
+  ok(clash.status === 409, '★ 改名撞上已有文件 → 整批拒绝（不覆盖）', 'status=' + clash.status);
+  ok(gh.files.get('public/uploads/乙.jpg').base64 === png.toString('base64'), '被拒绝后原文件没被动过');
+  /* 无实际改动时应直接返回，不产生空提交 */
+  gh.batchCommits = 0;
+  const noop = await call('/admin/images/commit', { ticket: 'good-ticket', ops: [{ from: 'public/uploads/乙.jpg' }] });
+  ok(noop.status === 200 && noop.data?.applied === 0 && gh.batchCommits === 0, '★ 没有实际改动时不产生空提交', JSON.stringify(noop.data));
+}
+
 console.log('=== 6.9 后台搜索索引的构建与读取 ===');
 {
   /*

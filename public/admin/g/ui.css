@@ -76,11 +76,19 @@ button { cursor: pointer; }
 
 /* ───────────────────────── 屏幕切换 ───────────────────────── */
 
+/*
+ * ⚠️ fill-mode 必须是 backwards，**不能是 both**。
+ * .screen 里面装着 position: fixed 的悬浮按钮（＋ / 保存）和 toast。
+ * 一个带 transform 动画、且 fill 保留末态的元素会成为后代的**包含块** ——
+ * 那些 fixed 元素就改成相对 .screen 定位（= 整个页面高度），于是被推到最底部，
+ * 文章一多就得滚到页尾才看得到按钮（用户报过，实测 top=4336 / 视口只有 844）。
+ * backwards 只在动画开始前应用首帧，结束之后不留任何 transform，问题消失。
+ */
 .screen {
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
-  animation: screen-in 0.22s ease both;
+  animation: screen-in 0.22s ease backwards;
 }
 .screen[hidden] { display: none; }
 
@@ -664,3 +672,43 @@ body.is-batch .grid-pad { height: calc(160px + var(--safe-b)); }
 }
 .lightbox-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
 .lightbox-bar span { color: #cfd6e4; font-size: 12.5px; word-break: break-all; max-width: 100%; }
+
+/* ══════════ 待提交队列 ══════════ */
+.queuebar {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(12px + var(--safe-b));
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.queuebar[hidden] { display: none; }
+.queue-info { flex: 1; min-width: 140px; font-size: 13.5px; color: var(--ink); }
+.queue-info b { color: var(--accent); font-size: 15px; }
+.queue-hint { display: block; font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+.queue-actions { display: flex; gap: 8px; }
+.queue-actions .btn { padding: 8px 14px; font-size: 13px; }
+
+/* 卡片上的待提交标记 */
+.card.is-queued { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: -2px; }
+.card.is-queued-del { outline: 2px solid color-mix(in srgb, var(--danger) 60%, transparent); outline-offset: -2px; }
+.card.is-queued-del img { opacity: 0.4; filter: grayscale(0.7); }
+.card-pending {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 10.5px;
+  line-height: 1.5;
+}

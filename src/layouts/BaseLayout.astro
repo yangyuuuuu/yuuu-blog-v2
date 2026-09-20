@@ -62,34 +62,59 @@ const ogImage = new URL(image, site).href;
     {publishedTime && <meta property="article:published_time" content={publishedTime.toISOString()} />}
     {modifiedTime && <meta property="article:modified_time" content={modifiedTime.toISOString()} />}
 
-    {/* 主题必须在首屏绘制前应用，否则会闪一下浅色 */}
+    <!--
+      首屏主题 / 皮肤 / 特效 / 列数：必须在首次绘制前定好，否则会闪一下默认样式。
+
+      ⚠️ 这些说明故意写在 <script> **外面**。
+      这是 is:inline 脚本，里面的中文注释一个汉字占 3 字节，
+      会直接吃掉 PRD 那条「首屏行内 JS < 10KB」的红线（实测：注释搬出来省了 1.2KB）。
+      以后改这里的代码也请保持精简，别把说明搬回脚本里。
+
+      · 明暗：localStorage['yuuu-theme'] = auto | light | dark，默认 auto。
+        auto 按小时判断，白天区间取 localStorage['yuuu-day']（默认 "7-19"，
+        支持跨夜如 "20-6"）。函数挂在 window.__yuuuTheme 上 ——
+        设置面板和顶栏按钮都调它，省得三处各写一份判断。
+      · auto 模式下每分钟对一次表、切回标签页时也对一次，页面一直开着也能到点自动切。
+      · 皮肤：localStorage['yuuu-skin'] 同样要在绘制前应用，否则会闪默认配色。
+      · js 标记：首屏「下沉」和卡片「滚动进出」的初始态只在有 JS 时才生效 ——
+        这样脚本挂了内容也不会永远隐身（旧版踩过这个坑）。
+      · 显示设置默认全开；只有加了 fx-* 类才有对应效果，
+        所以「脚本挂了」= 效果关闭 + 内容可见，是安全的失败方向。
+      · 主页列数在首屏前设好，避免从 3 列跳变。
+    -->
     <script is:inline>
       (function () {
-        try {
-          var t = localStorage.getItem('yuuu-theme');
-          if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
-          /* 皮肤也要在首屏绘制前应用，否则会闪一下默认配色 */
-          var s = localStorage.getItem('yuuu-skin');
-          if (s === 'opera' || s === 'abyss' || s === 'fontaine') {
-            document.documentElement.setAttribute('data-skin', s);
-          }
-        } catch (e) {}
-        /* 打上 js 标记，首屏「下沉」和卡片「滚动进出」的初始态只在有 JS 时才生效。
-           这样脚本挂了内容也不会永远隐身 —— 旧版踩过这个坑。 */
         var de = document.documentElement;
+        window.__yuuuTheme = function () {
+          var t = localStorage.getItem('yuuu-theme') || 'auto';
+          if (t === 'light' || t === 'dark') { de.setAttribute('data-theme', t); return; }
+          var a = 7, b = 19;
+          try {
+            var p = String(localStorage.getItem('yuuu-day') || '7-19').split('-');
+            var x = +p[0], y = +p[1];
+            if (x >= 0 && x <= 23) a = x;
+            if (y >= 0 && y <= 23) b = y;
+          } catch (e) {}
+          var h = new Date().getHours();
+          de.setAttribute('data-theme', (a <= b ? h >= a && h < b : h >= a || h < b) ? 'light' : 'dark');
+        };
+        window.__yuuuTheme();
+        try {
+          var s = localStorage.getItem('yuuu-skin');
+          if (s === 'opera' || s === 'abyss' || s === 'fontaine') de.setAttribute('data-skin', s);
+        } catch (e) {}
         de.classList.add('js');
-
-        /* 显示设置：默认全开。只有加了 fx-* 类才有对应效果，
-           所以「脚本挂了」= 效果关闭 + 内容可见，是安全的失败方向。 */
         var fx = JSON.parse(localStorage.getItem('yuuu-fx') || '{}');
         if (fx.reveal !== false) de.classList.add('fx-reveal');
         if (fx.sink !== false) de.classList.add('fx-sink');
         if (fx.glass !== false) de.classList.add('fx-glass');
         if (fx.scrollBlur !== false) de.classList.add('fx-scrollblur');
-
-        /* 主页列数：首屏前就设好，避免从 3 列跳变 */
-        var cols = Number(localStorage.getItem('yuuu-cols') || 3);
+        var cols = +localStorage.getItem('yuuu-cols') || 3;
         if (cols >= 2 && cols <= 6) de.style.setProperty('--home-cols', String(cols));
+        setInterval(window.__yuuuTheme, 60000);
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) window.__yuuuTheme();
+        });
       })();
     </script>
   </head>

@@ -78,7 +78,21 @@ if (postPages.length >= 12) ok('文章详情页 ' + postPages.length + ' 个');
 else bad('文章详情页只有 ' + postPages.length + ' 个（应有 12）');
 
 /* ---------------------------------------------------------------- 2. 首屏 JS */
-head('2. 首屏 JS 预算（PRD 红线 < 10KB）');
+/*
+ * 首屏行内 JS 预算。
+ *
+ * PRD 定的红线是 10 KB。2026-09-19 站主明确放宽到 12 KB：
+ * 「超了 10KB 没事，体验好就行了」—— 起因是「明暗随时间自动切换」
+ * 需要在首屏绘制前算好主题（否则会闪一下另一种颜色），
+ * 只能放在 is:inline 脚本里，省不掉。
+ *
+ * 所以这个检查**保留**，但阈值改成 12 KB：
+ * 它的作用从「守死红线」变成「防止以后失控膨胀」——
+ * 首屏行内 JS 每多一 KB 都是用户每次打开页面都要下载并解析的字节。
+ * 再加东西前先看看这里还剩多少。
+ */
+const INLINE_BUDGET = 12 * 1024;
+head('2. 首屏 JS 预算（站主放宽到 < 12KB，原 PRD 红线 10KB）');
 const indexHtml = read('index.html');
 
 const inlineTags = [...indexHtml.matchAll(/<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g)];
@@ -142,8 +156,8 @@ for (const [f, label, isDeferred] of lazy) {
   console.log('    ' + (isDeferred ? '按需 ' : '静态 ') + f.padEnd(46) + kb(size(f)) + '  ' + label);
 }
 const totalGz = inline + extGz;
-if (inline < 10 * 1024) ok('首屏行内 JS ' + kb(inline) + ' < 10 KB');
-else bad('首屏行内 JS ' + kb(inline) + ' 超过 10 KB');
+if (inline < INLINE_BUDGET) ok('首屏行内 JS ' + kb(inline) + ' < 12 KB');
+else bad('首屏行内 JS ' + kb(inline) + ' 超过 12 KB');
 ok('首屏 JS 实际传输（含 gzip 外部包）约 ' + kb(totalGz));
 if (totalGz < 10 * 1024) ok('总计 ' + kb(totalGz) + ' < 10 KB 红线');
 else wrn('总计 ' + kb(totalGz) + ' 超过 10 KB，按 PRD 需要砍功能');

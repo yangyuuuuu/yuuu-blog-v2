@@ -379,6 +379,7 @@ const ADMIN_POST_PATHS: readonly string[] = [
   '/admin/image/delete',
   '/admin/image/rename',
   '/admin/images/batch',
+  '/admin/images/commit',
 ];
 
 /** 图库那组共用同一套上下文（repo / 路径工具）的端点 */
@@ -388,6 +389,7 @@ const GALLERY_PATHS: readonly string[] = [
   '/admin/image/move',
   '/admin/image/delete',
   '/admin/image/rename',
+  '/admin/images/commit',
 ];
 
 /** 图片目录 */
@@ -605,6 +607,57 @@ function legacyDirOf(relPath: string): string {
   const inside = relPath.replace(new RegExp('^' + UPLOAD_DIR + '/?'), '');
   const cut = inside.lastIndexOf('/');
   return cut < 0 ? '' : inside.slice(0, cut);
+}
+
+/**
+ * 找出「引用了这些图片的文章」，返回需要改写的文件条目（base64）与被改的文章名。
+ *
+ * 改名时用到：图往往已经被文章引用了，只改文件名 → 文章里的
+ * ![](/uploads/旧名.jpg) 立刻变破图。把改引用和改名放进**同一次提交**，
+ * 要么都成功、要么都没发生。
+ *
+ * 中文名在 markdown 里可能原样、也可能被百分号编码，两种都换。
+ */
+async function collectRefRewrites(
+  env: Env,
+  repo: string,
+  renames: { from: string; to: string }[],
+): Promise<{ files: { path: string; base64: string }[]; touched: string[] }> {
+  const files: { path: string; base64: string }[] = [];
+  const touched: string[] = [];
+  if (!renames.length) return { files, touched };
+
+  const treeRes = await fetch(
+    `${GH_API}/repos/${repo}/git/trees/${branchOf(env)}:${CONTENT_DIR.split('/').map(encodeURIComponent).join('/')}?recursive=1`,
+    { headers: ghHeaders(env) },
+  );
+  if (!treeRes.ok) return { files, touched };
+  const tree = ((await treeRes.json()) as { tree?: { path: string; type: string }[] }).tree || [];
+  const posts = tree.filter((e) => e.type === 'blob' && e.path.endsWith('.md')).map((e) => e.path);
+
+  for (const rel of posts.slice(0, 60)) {
+    const full = CONTENT_DIR + '/' + rel;
+    const f = await ghGetFile(env, full);
+    if (!f) continue;
+    let text = f.text;
+    let hit = false;
+    for (const r of renames) {
+      const oldName = r.from.split('/').pop() || '';
+      const newName = r.to.split('/').pop() || '';
+      const pairs: [string, string][] = [
+        ['/uploads/' + oldName, '/uploads/' + newName],
+        ['/uploads/' + encodeURIComponent(oldName), '/uploads/' + encodeURIComponent(newName)],
+      ];
+      for (const [a, z] of pairs) {
+        if (text.includes(a)) { text = text.split(a).join(z); hit = true; }
+      }
+    }
+    if (hit) {
+      files.push({ path: full, base64: toBase64(text) });
+      touched.push(rel);
+    }
+  }
+  return { files, touched };
 }
 
 /** 从 GitHub 取一个文件：返回正文与 sha（不存在则 sha 为空） */
@@ -930,35 +983,9 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
         /* 顺带把文章里的引用改掉（默认开；用户可以在界面上关掉） */
         let touched: string[] = [];
         if (b.updateRefs !== false) {
-          const oldPath = '/uploads/' + oldName;
-          const newPath = '/uploads/' + newName;
-          /* 中文名在 markdown 里可能是原样，也可能是百分号编码 —— 两种都换 */
-          const pairs: [string, string][] = [
-            [oldPath, newPath],
-            ['/uploads/' + encodeURIComponent(oldName), '/uploads/' + encodeURIComponent(newName)],
-          ];
-          const treeRes = await fetch(
-            `${GH_API}/repos/${repo}/git/trees/${branchOf(env)}:${CONTENT_DIR.split('/').map(encodeURIComponent).join('/')}?recursive=1`,
-            { headers: ghHeaders(env) },
-          );
-          if (treeRes.ok) {
-            const tree = ((await treeRes.json()) as { tree?: { path: string; type: string }[] }).tree || [];
-            const posts = tree.filter((e) => e.type === 'blob' && e.path.endsWith('.md')).map((e) => e.path);
-            for (const rel of posts.slice(0, 60)) {
-              const full = CONTENT_DIR + '/' + rel;
-              const f = await ghGetFile(env, full);
-              if (!f) continue;
-              let text = f.text;
-              let hit = false;
-              for (const [a, z] of pairs) {
-                if (text.includes(a)) { text = text.split(a).join(z); hit = true; }
-              }
-              if (hit) {
-                files.push({ path: full, base64: toBase64(text) });
-                touched.push(rel);
-              }
-            }
-          }
+          const rw = await collectRefRewrites(env, repo, [{ from, to }]);
+          files.push(...rw.files);
+          touched = rw.touched;
         }
 
         await ghCommitMany(env, files, removes, 'media: 改名 ' + oldName + ' → ' + newName + (touched.length ? '（同时更新 ' + touched.length + ' 篇文章的引用）' : ''));
@@ -969,6 +996,106 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
           dir: keptDir || '',
           url: '/uploads/' + encodeURIComponent(newName),
           refsUpdated: touched.length,
+        }, 200, request, env);
+      }
+
+      /*
+       * 统一提交：把图库里攒下的所有改动**一次**推到 GitHub。
+       *
+       * 为什么要有它：改一次名字 / 换一次分类原本各要 1~2 次提交，
+       * 每次都要等 GitHub 一两秒 —— 连着改十张图就要等十几秒，非常难受。
+       * 现在界面上先攒成一个队列（见 public/admin/g/ui.js 的 pending），
+       * 点「提交」时把 N 项改动一次发过来，这里用**一次 tree 提交**全部落地。
+       *
+       * 每项的语义是「这个文件最终应该是什么样」：
+       *   { from, to, dir }  → to 与 from 不同就是改名；dir 是最终分类（'' = 未分类）
+       *   { from, delete:1 } → 删除
+       * 传的是最终状态而不是一串动作，所以「先改名再改分类」天然被合并成一项，
+       * 不会出现两个操作打架的情况。
+       */
+      if (pathname === '/admin/images/commit') {
+        const raw = Array.isArray((body as { ops?: unknown }).ops) ? ((body as { ops: unknown[] }).ops) : [];
+        if (!raw.length) return json({ message: '没有待提交的改动' }, 400, request, env);
+        if (raw.length > 80) return json({ message: '一次最多提交 80 项（你提交了 ' + raw.length + ' 项）' }, 400, request, env);
+
+        const ops: { from: string; to: string; dir?: string; del: boolean }[] = [];
+        for (const item of raw) {
+          const o = (item || {}) as { from?: string; to?: string; dir?: unknown; delete?: unknown };
+          const from = String(o.from || '');
+          if (!from.startsWith(UPLOAD_DIR + '/') || from.includes('..')) {
+            return json({ message: '路径不合法：' + from }, 400, request, env);
+          }
+          const del = o.delete === true || o.delete === 1;
+          const to = String(o.to || from);
+          if (!del) {
+            if (!to.startsWith(UPLOAD_DIR + '/') || to.includes('..')) {
+              return json({ message: '目标路径不合法：' + to }, 400, request, env);
+            }
+          }
+          const dir = o.dir === undefined || o.dir === null
+            ? undefined
+            : String(o.dir).replace(/[\\/:*?"<>|]/g, '').slice(0, 30);
+          if (!del && to === from && dir === undefined) continue;   /* 什么都没改，跳过 */
+          ops.push({ from, to, dir, del });
+        }
+        if (!ops.length) return json({ ok: true, applied: 0, refsUpdated: 0, note: '没有实际改动' }, 200, request, env);
+
+        const meta = await readMediaMeta(env);
+        const files: { path: string; base64: string }[] = [];
+        const removes: string[] = [];
+        const renames: { from: string; to: string }[] = [];
+        let moved = 0;
+        let deleted = 0;
+        let recategorized = 0;
+
+        for (const op of ops) {
+          const oldName = op.from.split('/').pop() || '';
+          if (op.del) {
+            if (!(await ghGetBlob(env, op.from))) continue;   /* 仓库里已经没了，跳过 */
+            removes.push(op.from);
+            delete meta[oldName];
+            deleted++;
+            continue;
+          }
+          const newName = op.to.split('/').pop() || oldName;
+          if (op.to !== op.from) {
+            const blob = await ghGetBlob(env, op.from);
+            if (!blob) continue;
+            /* 改名后撞上别的图 → 整批拒绝，别悄悄覆盖 */
+            if (await ghGetBlob(env, op.to)) {
+              return json({ message: '已经有叫「' + newName + '」的图了，换个名字再提交' }, 409, request, env);
+            }
+            files.push({ path: op.to, base64: blob.base64 });
+            removes.push(op.from);
+            delete meta[oldName];
+            renames.push({ from: op.from, to: op.to });
+            moved++;
+          }
+          if (op.dir !== undefined) {
+            if (op.dir) meta[newName] = op.dir; else delete meta[newName];
+            recategorized++;
+          }
+        }
+
+        files.push({ path: MEDIA_META, base64: mediaMetaBase64(meta) });
+        /* 改名带来的文章引用改写，和上面这些放进同一次提交 */
+        const rw = await collectRefRewrites(env, repo, renames);
+        files.push(...rw.files);
+
+        const parts: string[] = [];
+        if (moved) parts.push('改名 ' + moved);
+        if (recategorized) parts.push('归类 ' + recategorized);
+        if (deleted) parts.push('删除 ' + deleted);
+        if (rw.touched.length) parts.push('更新 ' + rw.touched.length + ' 篇引用');
+        await ghCommitMany(env, files, removes, 'media: 批量改动 ' + ops.length + ' 项（' + parts.join('，') + '）');
+
+        return json({
+          ok: true,
+          applied: ops.length,
+          moved,
+          recategorized,
+          deleted,
+          refsUpdated: rw.touched.length,
         }, 200, request, env);
       }
 

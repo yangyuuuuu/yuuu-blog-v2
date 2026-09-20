@@ -76,11 +76,19 @@ button { cursor: pointer; }
 
 /* ───────────────────────── 屏幕切换 ───────────────────────── */
 
+/*
+ * ⚠️ fill-mode 必须是 backwards，**不能是 both**。
+ * .screen 里面装着 position: fixed 的悬浮按钮（＋ / 保存）和 toast。
+ * 一个带 transform 动画、且 fill 保留末态的元素会成为后代的**包含块** ——
+ * 那些 fixed 元素就改成相对 .screen 定位（= 整个页面高度），于是被推到最底部，
+ * 文章一多就得滚到页尾才看得到按钮（用户报过，实测 top=4336 / 视口只有 844）。
+ * backwards 只在动画开始前应用首帧，结束之后不留任何 transform，问题消失。
+ */
 .screen {
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
-  animation: screen-in 0.22s ease both;
+  animation: screen-in 0.22s ease backwards;
 }
 .screen[hidden] { display: none; }
 

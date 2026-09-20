@@ -33,7 +33,93 @@ export function init(): void {
     FX.forEach((k) => html.classList.toggle('fx-' + k, o[k] !== false));
   }
 
+  /*
+   * ---------- 明暗：随时间自动 ----------
+   *
+   * 规则：localStorage['yuuu-theme'] 为 'auto'（或不存）→ 按小时自动；
+   *       为 'light'/'dark' → 手动钉死（点顶栏那个按钮就会钉死）。
+   * 白天区间存 localStorage['yuuu-day'] = "7-19"，支持跨夜（如 "20-6"）。
+   * 真正的应用在 BaseLayout 的首屏脚本里（window.__yuuuTheme）——
+   * 主题必须在首屏绘制前定好；这里只负责面板上的交互。
+   */
+  const themeAuto = menu.querySelector<HTMLInputElement>('[data-theme-auto]');
+  const themeDayBox = menu.querySelector<HTMLElement>('[data-theme-day]');
+  const dayFrom = menu.querySelector<HTMLSelectElement>('[data-day-from]');
+  const dayTo = menu.querySelector<HTMLSelectElement>('[data-day-to]');
+  const themeNow = menu.querySelector<HTMLElement>('[data-theme-now]');
+
+  const DAY_DEFAULT = '7-19';
+  function dayRange(): [number, number] {
+    const parts = read('yuuu-day', DAY_DEFAULT).split('-');
+    const a = Number(parts[0]);
+    const b = Number(parts[1]);
+    return [a >= 0 && a <= 23 ? a : 7, b >= 0 && b <= 23 ? b : 19];
+  }
+  function applyTheme(): void {
+    const f = (window as unknown as { __yuuuTheme?: () => void }).__yuuuTheme;
+    if (f) f();
+  }
+  function isAuto(): boolean {
+    const t = read('yuuu-theme', 'auto');
+    return t !== 'light' && t !== 'dark';
+  }
+  /* 两个下拉：0~23 点 */
+  for (const sel of [dayFrom, dayTo]) {
+    if (!sel) continue;
+    for (let h = 0; h < 24; h++) {
+      const o = document.createElement('option');
+      o.value = String(h);
+      o.textContent = h + ':00';
+      sel.appendChild(o);
+    }
+  }
+  function paintTheme(): void {
+    const auto = isAuto();
+    if (themeAuto) themeAuto.checked = auto;
+    if (themeDayBox) themeDayBox.hidden = !auto;
+    const [a, b] = dayRange();
+    if (dayFrom) dayFrom.value = String(a);
+    if (dayTo) dayTo.value = String(b);
+    if (themeNow) {
+      const h = new Date().getHours();
+      const day = a <= b ? (h >= a && h < b) : (h >= a || h < b);
+      const nowLight = document.documentElement.getAttribute('data-theme') === 'light';
+      themeNow.textContent = auto
+        ? '现在 ' + String(h).padStart(2, '0') + ' 点 → ' + (day ? '亮色' : '暗色')
+        : '已手动固定为' + (nowLight ? '亮色' : '暗色');
+    }
+  }
+  themeAuto?.addEventListener('change', () => {
+    const htmlEl = document.documentElement;
+    htmlEl.classList.add('theme-switching');
+    try {
+      localStorage.setItem(
+        'yuuu-theme',
+        themeAuto.checked ? 'auto' : (htmlEl.getAttribute('data-theme') === 'light' ? 'light' : 'dark'),
+      );
+    } catch { /* 隐私模式忽略 */ }
+    applyTheme();
+    paintTheme();
+    window.setTimeout(() => htmlEl.classList.remove('theme-switching'), 560);
+  });
+  const onDayChange = (): void => {
+    const a = Number(dayFrom?.value ?? 7);
+    const b = Number(dayTo?.value ?? 19);
+    try {
+      localStorage.setItem('yuuu-day', a + '-' + b);
+      /* 改区间当然是要自动模式 —— 顺手打开，省得用户再勾一次 */
+      localStorage.setItem('yuuu-theme', 'auto');
+    } catch { /* 忽略 */ }
+    applyTheme();
+    paintTheme();
+  };
+  dayFrom?.addEventListener('change', onDayChange);
+  dayTo?.addEventListener('change', onDayChange);
+  /* 顶栏按钮点过后，这里的开关要跟着变 —— 否则两边显示不一致 */
+  window.addEventListener('yuuu-theme-change', () => paintTheme());
+
   function paint(): void {
+    paintTheme();
     const cols = Number(read('yuuu-cols', '3')) || 3;
     q('[data-cols]').forEach((b) => b.classList.toggle('is-on', Number(b.dataset.cols) === cols));
     const s = read('yuuu-skin', 'fontaine');

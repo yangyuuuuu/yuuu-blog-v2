@@ -225,6 +225,29 @@ console.log('=== 4.8 图库逻辑（/admin/g/）===');
   ok(dataUrlBytes('不是dataurl') === 0, '非法输入给 0');
 }
 
+console.log('=== 4.85 图库的「待提交队列」接线 ===');
+{
+  /*
+   * 队列的意义：改名 / 改分类 / 删除先在本地攒着，点「提交」时一次发出去，
+   * 由 Worker 用**一次 Git 提交**全部落地（原子提交本身由 check:worker 的 6.8 节验证）。
+   * 这里盯的是界面侧有没有接错线 —— 尤其是「别又变成一操作一提交」。
+   */
+  const ui = readFileSync('public/admin/g/ui.js', 'utf8');
+  const html = readFileSync('public/admin/g/index.html', 'utf8');
+  ok(html.includes('id="queueBar"') && html.includes('id="queueCommitBtn"'), '图库页有队列条与提交按钮');
+  ok(/const pending = new Map\(\)/.test(ui), '有本地队列');
+  ok(ui.includes('function queueSet(') && ui.includes('function queueOps('), '有入队与出队（转成操作数组）的函数');
+  ok(ui.includes("post('/admin/images/commit'"), '★ 提交走的是新的统一提交接口');
+  /* 关键：这三个动作不能再各自打旧接口（那样就是一操作一提交了） */
+  for (const old of ["'/admin/image/move'", "'/admin/image/delete'", "'/admin/image/rename'", "'/admin/images/batch'"]) {
+    ok(!ui.includes(old), '★ 界面不再直接调用旧接口 ' + old + '（已改为入队）');
+  }
+  ok(ui.includes('beforeunload'), '★ 队列非空时离开页面会提醒');
+  ok(/上传不进队列/.test(ui), '注释里写明了「上传递归立刻提交」的原因');
+  /* 改名对话框里那个「同时更新引用」的勾选已经没意义（改名推迟到提交时） */
+  ok(!/renameRefs\.checked/.test(ui), '改名不再依赖那个已失效的「更新引用」勾选');
+}
+
 console.log('=== 4.9 文章管理页的搜索（/admin/p/）===');
 {
   const { filtersOf, applyFilter, searchPosts, snippet, query, postUrl } = await import('../public/admin/p/posts.js');
@@ -289,6 +312,31 @@ console.log('=== 4.9 文章管理页的搜索（/admin/p/）===');
   ok(combo.length === 1 && combo[0].post.slug === 'd', '★ 分类 + 关键词能叠加', JSON.stringify(combo.map((h) => h.post.slug)));
   const combo2 = query(posts, { filterId: 'draft', keyword: '热可可' });
   ok(combo2.length === 0, '草稿档里搜不到已发布的文章');
+}
+
+console.log('=== 4.95 悬浮按钮必须真的浮在视口上 ===');
+{
+  /*
+   * ★ 这条给一个很隐蔽的 CSS 陷阱设岗：
+   * .screen 里装着 position: fixed 的悬浮按钮（＋ / 保存）和 toast。
+   * 若 .screen 的入场动画写成 animation-fill-mode: both，
+   * 动画结束后元素上仍保留 transform 相关属性 → 它成为后代的**包含块**，
+   * fixed 就变成「相对 .screen 定位」→ 按钮掉到整个页面的最底部，
+   * 文章一多就得滚到页尾才看得到（实测 top=4336，而视口只有 844）。
+   * 所以：.screen 的动画只允许 backwards / none。
+   */
+  for (const dir of ['m', 'g', 'p']) {
+    const css = readFileSync('public/admin/' + dir + '/ui.css', 'utf8');
+    const m = /\.screen \{[^}]*animation:([^;]*);/.exec(css);
+    if (!m) { ok(false, dir + '/ui.css 里找不到 .screen 的 animation'); continue; }
+    const bad = /\bboth\b/.test(m[1]);
+    ok(!bad, '★ ' + dir + ' 的 .screen 动画不是 both（否则里面的悬浮按钮会被推到页面最底）', bad ? 'animation:' + m[1] : '');
+  }
+  /* 三个页面的悬浮按钮都该在 */
+  for (const [dir, id] of [['m', 'newBtn'], ['g', 'pickBtn'], ['p', 'newBtn']]) {
+    const html = readFileSync('public/admin/' + dir + '/index.html', 'utf8');
+    ok(html.includes('id="' + id + '"'), dir + ' 页有悬浮按钮 #' + id);
+  }
 }
 
 console.log('=== 5. 页面文件齐不齐 ===');

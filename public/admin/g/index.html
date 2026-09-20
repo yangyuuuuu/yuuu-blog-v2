@@ -69,6 +69,21 @@
         </div>
       </div>
 
+      <!--
+        待提交队列条：改名 / 改分类 / 删除先在本地攒着，点这里一次提交。
+        好处是「改十张只等一次」，而不是改一次等一次 GitHub。
+      -->
+      <div class="queuebar" id="queueBar" hidden>
+        <div class="queue-info">
+          <b id="queueCount">0</b> 项待提交
+          <span class="queue-hint">改完一起提交，只等一次</span>
+        </div>
+        <div class="queue-actions">
+          <button class="btn btn--ghost" id="queueUndoBtn" type="button">全部撤销</button>
+          <button class="btn btn--primary" id="queueCommitBtn" type="button">提交</button>
+        </div>
+      </div>
+
       <!-- 上传：右下角悬浮。选了图之后会先问归到哪个分类 -->
       <button class="fab" id="pickBtn" type="button" aria-label="上传图片">＋</button>
       <input id="fileInput" type="file" accept="image/*" multiple hidden />
@@ -107,10 +122,10 @@
         <p class="sheet-title">重命名图片</p>
         <p class="sheet-hint" id="renameHint"></p>
         <input id="renameInput" type="text" placeholder="新文件名，例如 芙芙-头像" autocomplete="off" maxlength="60" />
-        <label class="switch switch--row">
-          <input id="renameRefs" type="checkbox" checked />
-          <span>同时更新文章里的引用<em>不勾选的话，已经引用这张图的文章会变成破图</em></span>
-        </label>
+        <p class="sheet-hint">
+          改名会推迟到「提交」时一起做，并且**总会**把文章里的引用一起改掉 ——
+          否则已经引用这张图的文章会变成破图。
+        </p>
         <div class="sheet-actions">
           <button class="btn btn--ghost" id="renameCancel" type="button">取消</button>
           <button class="btn btn--primary" id="renameOk" type="button">改名</button>

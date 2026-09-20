@@ -47,6 +47,24 @@ const SKINS = [
       }
     </div>
 
+    <!--
+      明暗：默认「随白天/夜晚自动切换」，点顶栏那个按钮就变成手动钉死。
+      时间区间可改，存 localStorage['yuuu-day'] = "7-19"。
+      逻辑在 src/scripts/settings-panel.ts（懒加载，不进首屏预算）。
+    -->
+    <p class="theme-menu-label">明暗</p>
+    <label class="theme-auto">
+      <input type="checkbox" data-theme-auto />
+      <span>随白天 / 夜晚自动切换<em data-theme-now></em></span>
+    </label>
+    <div class="theme-day" data-theme-day hidden>
+      <span>白天</span>
+      <select data-day-from aria-label="白天开始时间"></select>
+      <span>点到</span>
+      <select data-day-to aria-label="白天结束时间"></select>
+      <span>点</span>
+    </div>
+
     <p class="theme-menu-label">主页列数</p>
     <div class="theme-cols">
       {[2, 3, 4, 5, 6].map((n) => <button type="button" data-cols={n}>{n}</button>)}

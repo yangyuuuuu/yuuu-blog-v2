@@ -38,7 +38,12 @@
       var next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
       root.classList.add('theme-switching');
       root.setAttribute('data-theme', next);
+      /*
+       * 手动点过就是「钉死」，不再跟时间走 —— 存成 light/dark 即代表 auto 关闭。
+       * 设置面板里那个开关会跟着变成关（靠这个事件同步，不然两边会显示不一致）。
+       */
       try { localStorage.setItem('yuuu-theme', next); } catch (e) {}
+      window.dispatchEvent(new Event('yuuu-theme-change'));
       window.setTimeout(function () { root.classList.remove('theme-switching'); }, 560);
     });
   })();

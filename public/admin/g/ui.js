@@ -20,7 +20,8 @@ const el = {
   cats: $('cats'), search: $('search'), grid: $('grid'), empty: $('empty'), count: $('count'),
   banner: $('banner'), bannerText: $('bannerText'), bannerAction: $('bannerAction'),
   renameSheet: $('renameSheet'), renameInput: $('renameInput'), renameHint: $('renameHint'),
-  renameRefs: $('renameRefs'), renameCancel: $('renameCancel'), renameOk: $('renameOk'),
+  renameCancel: $('renameCancel'), renameOk: $('renameOk'),
+  queueBar: $('queueBar'), queueCount: $('queueCount'), queueCommit: $('queueCommitBtn'), queueUndo: $('queueUndoBtn'),
   lightbox: $('lightbox'), lightboxImg: $('lightboxImg'), lightboxInfo: $('lightboxInfo'),
   lightboxRaw: $('lightboxRaw'), lightboxClose: $('lightboxClose'),
   refreshBtn: $('refreshBtn'), pickBtn: $('pickBtn'), fileInput: $('fileInput'),
@@ -55,6 +56,106 @@ function clearStaleThumbs(maxAgeMs = 3 * 60 * 1000) {
 
 /** 批量选择状态：mode 打开后卡片右上角出现勾选框 */
 const batch = { mode: false, paths: new Set() };
+
+/*
+ * ══════════ 待提交队列 ══════════
+ *
+ * 为什么要队列：改一次名字 / 换一次分类原本各要 1~2 次 GitHub 提交，
+ * 每次都要等一两秒 —— 连着整理十张图就要等十几秒，很难受。
+ * 现在这些操作先在本地攒着（Map: 原路径 → 期望的最终状态），
+ * 点「提交」时把 N 项一次发给 Worker，用**一次提交**全部落地。
+ *
+ * 只攒「改名 / 分类 / 删除」——**上传不进队列**：
+ * 图片必须立刻落到仓库，否则关掉页面图就丢了。
+ *
+ * 存的是「最终状态」而不是一串动作，所以「先改名再改分类」天然合并成一项，
+ * 不会出现两个操作打架。
+ */
+const pending = new Map();
+
+/** 把一张图改成期望状态；改回原样就把这条删掉，不攒无意义的改动 */
+function queueSet(img, patch) {
+  const cur = pending.get(img.path) || { name: img.name, dir: img.dir, origName: img.name, origDir: img.dir, deleted: false };
+  const next = Object.assign({}, cur, patch);
+  const same = next.name === cur.origName && next.dir === cur.origDir && !next.deleted;
+  if (same) pending.delete(img.path); else pending.set(img.path, next);
+  renderQueue();
+  renderGrid();
+}
+
+/** 一张图当前在队列里的期望状态（没进队列就是原样） */
+function queuedOf(img) {
+  const e = pending.get(img.path);
+  if (!e) return { name: img.name, dir: img.dir, deleted: false, queued: false };
+  return { name: e.name, dir: e.dir, deleted: !!e.deleted, queued: true };
+}
+
+function renderQueue() {
+  const n = pending.size;
+  if (el.queueBar) el.queueBar.hidden = n === 0;
+  if (el.queueCount) el.queueCount.textContent = String(n);
+}
+
+/** 队列 → Worker 要的操作数组（每项描述「这个文件最终应该是什么样」） */
+function queueOps() {
+  const ops = [];
+  for (const [from, e] of pending) {
+    if (e.deleted) { ops.push({ from, delete: true }); continue; }
+    const op = { from };
+    if (e.name !== e.origName) op.to = 'public/uploads/' + e.name;
+    if (e.dir !== e.origDir) op.dir = e.dir;
+    ops.push(op);
+  }
+  return ops;
+}
+
+/** 队列里有没有重名（两图改成同一个名字 / 撞上已有图）—— 提交前先拦，别等 Worker 报错 */
+function findNameClash() {
+  const wanted = new Map();
+  for (const [from, e] of pending) {
+    if (e.deleted) continue;
+    const owner = wanted.get(e.name);
+    if (owner && owner !== from) return e.name;
+    wanted.set(e.name, from);
+  }
+  for (const img of images) {
+    const q = pending.get(img.path);
+    const finalName = q ? (q.deleted ? null : q.name) : img.name;
+    if (!finalName) continue;
+    for (const [from, e] of pending) {
+      if (e.deleted || from === img.path) continue;
+      if (e.name === finalName && img.name !== e.name) return e.name;
+    }
+  }
+  return '';
+}
+
+async function commitQueue() {
+  if (!pending.size) return;
+  const clash = findNameClash();
+  if (clash) { toast('有两张图都想叫「' + clash + '」，改一个再提交', 5000); return; }
+  const ops = queueOps();
+  el.queueCommit.disabled = true;
+  toast('正在提交 ' + ops.length + ' 项改动…', 20000);
+  try {
+    const res = await post('/admin/images/commit', { ops });
+    pending.clear();
+    renderQueue();
+    const bits = [];
+    if (res.moved) bits.push('改名 ' + res.moved);
+    if (res.recategorized) bits.push('归类 ' + res.recategorized);
+    if (res.deleted) bits.push('删除 ' + res.deleted);
+    if (res.refsUpdated) bits.push('更新 ' + res.refsUpdated + ' 篇引用');
+    toast('已提交：' + (bits.join('，') || '无改动') + '（一次提交完成）', 5000);
+    hideBanner();
+    await load();
+  } catch (err) {
+    showBanner('提交失败：' + err.message + '（队列还在，改完再试）', '清空队列', () => { pending.clear(); renderQueue(); load(); hideBanner(); });
+    toast('提交失败：' + err.message, 8000);
+  } finally {
+    el.queueCommit.disabled = false;
+  }
+}
 let toastTimer = 0;
 
 /* ------------------------------------------------------------------ 小工具 */
@@ -163,6 +264,11 @@ async function load() {
     const data = await post('/admin/images', {});
     images = data.images || [];
     hideBanner();
+    /* 仓库里已经没有的图，队列里那条也要清掉（否则提交时会撞上找不到的路径） */
+    for (const from of [...pending.keys()]) {
+      if (!images.some((x) => x.path === from)) pending.delete(from);
+    }
+    renderQueue();
     renderCats();
     renderGrid();
   } catch (err) {
@@ -214,15 +320,25 @@ function renderGrid() {
       card.classList.add('is-missing');
       tag.textContent = dirLabel(img.dir) + ' · 还没构建好';
     });
+    /* 卡片上显示的是**队列里的期望状态** —— 不然改完分类还得等提交才看到变化 */
+    const q = queuedOf(img);
     const tag = document.createElement('span');
     tag.className = 'card-tag';
-    tag.textContent = dirLabel(img.dir);
+    tag.textContent = dirLabel(q.dir);
+    if (q.deleted) { card.classList.add('is-queued-del'); tag.textContent = '待删除'; }
+    else if (q.queued) card.classList.add('is-queued');
     /* 勾选框只在选择模式下显示（CSS 控制），始终渲染是为了切换时不闪 */
     const check = document.createElement('span');
     check.className = 'card-check';
     check.textContent = batch.paths.has(img.path) ? '✓' : '';
     card.classList.toggle('is-on', batch.paths.has(img.path));
     card.append(im, tag, check);
+    if (q.queued && !q.deleted) {
+      const dot = document.createElement('span');
+      dot.className = 'card-pending';
+      dot.textContent = q.name !== img.name ? '改名' : '改分类';
+      card.appendChild(dot);
+    }
     card.addEventListener('click', () => {
       if (batch.mode) toggleSelect(img.path);
       else openSheet(img);
@@ -230,6 +346,24 @@ function renderGrid() {
     el.grid.appendChild(card);
   });
 }
+
+el.queueCommit.addEventListener('click', () => commitQueue());
+el.queueUndo.addEventListener('click', () => {
+  if (!pending.size) return;
+  if (!confirm('撤销全部 ' + pending.size + ' 项待提交的改动？')) return;
+  pending.clear();
+  renderQueue();
+  renderGrid();
+  toast('已撤销全部改动');
+});
+
+/* 队列里还有没提交的改动时，关页面/刷新前提醒一次（只在浏览器允许时弹窗） */
+window.addEventListener('beforeunload', (e) => {
+  if (!pending.size) return;
+  e.preventDefault();
+  e.returnValue = '';
+  return '';
+});
 
 el.cats.addEventListener('click', (e) => {
   const b = e.target.closest('.chip');
@@ -282,35 +416,34 @@ el.clearSelBtn.addEventListener('click', () => {
 el.batchMoveBtn.addEventListener('click', () => {
   const paths = [...batch.paths];
   if (!paths.length) return;
-  pickDir((dir) => runBatch({ action: 'move', paths, dir }, '归类'));
+  pickDir((dir) => {
+    for (const p of paths) {
+      const img = images.find((x) => x.path === p);
+      if (img) queueSet(img, { dir });
+    }
+    setBatchMode(false);
+    toast('队列里已把 ' + paths.length + ' 张移到「' + dirLabel(dir) + '」，记得点提交', 4200);
+  });
 });
 
-el.batchDelBtn.addEventListener('click', async () => {
+el.batchDelBtn.addEventListener('click', () => {
   const paths = [...batch.paths];
   if (!paths.length) return;
-  if (!confirm('删除选中的 ' + paths.length + ' 张图？\n会从 GitHub 删掉这些文件，用到它们的文章会变成破图。')) return;
-  await runBatch({ action: 'delete', paths }, '删除');
+  if (!confirm('把选中的 ' + paths.length + ' 张图放进待删除队列？\n点「提交」后才会真的从 GitHub 删掉。')) return;
+  for (const p of paths) {
+    const img = images.find((x) => x.path === p);
+    if (img) queueSet(img, { deleted: true });
+  }
+  setBatchMode(false);
+  toast('队列里已标记删除 ' + paths.length + ' 张，记得点提交', 4200);
 });
 
-/** 批量请求：一次提交处理多张（Worker 走 Git tree 接口） */
-async function runBatch(payload, label) {
-  toast('正在' + label + ' ' + payload.paths.length + ' 张…', 20000);
-  try {
-    const res = await post('/admin/images/batch', payload);
-    toast(label + '完成：' + (res.count || 0) + ' 张' + (res.note ? '（' + res.note + '）' : ''));
-    setBatchMode(false);
-    await load();
-  } catch (err) {
-    /*
-     * 失败也要**把原因说清楚、并且刷新列表** ——
-     * 之前只丢一句 toast，用户看到"会发生错误"却不知道错在哪，
-     * 而且界面还停在操作前的样子，会以为图片丢了。
-     */
-    showBanner(label + '失败：' + err.message, '刷新列表', () => { hideBanner(); load(); });
-    toast(label + '失败：' + err.message, 8000);
-    await load();
-  }
-}
+/*
+ * 以前这里有个 runBatch()，直接打 /admin/images/batch 立刻提交。
+ * 现在所有批量动作都先进队列（见上面的 pending），
+ * 统一由 commitQueue() 一次提交 —— 所以这个函数删掉了。
+ * Worker 那边的 /admin/images/batch 还在（旧页面/脚本可能用到），不受影响。
+ */
 
 /* ------------------------------------------------------------------ 图片操作面板 */
 
@@ -327,9 +460,10 @@ function sheetButton(text, onClick, kind) {
 
 function openSheet(img) {
   sheetImage = img;
+  const q = queuedOf(img);
   el.sheetThumb.src = img.url;
-  el.sheetName.textContent = img.name;
-  el.sheetInfo.textContent = dirLabel(img.dir) + ' · ' + humanSize(img.size);
+  el.sheetName.textContent = q.name + (q.queued ? '（待提交）' : '');
+  el.sheetInfo.textContent = dirLabel(q.dir) + ' · ' + humanSize(img.size) + (q.deleted ? ' · 待删除' : '');
   el.sheetBody.innerHTML = '';
 
   const pathBox = document.createElement('div');
@@ -368,15 +502,14 @@ function openSheet(img) {
     el.sheet.hidden = true;
     openRename(img);
   }));
-  el.sheetBody.appendChild(sheetButton('删除这张图', async () => {
+  /* 删除也进队列：点「提交」才真的从 GitHub 删掉（提交前还能反悔） */
+  el.sheetBody.appendChild(sheetButton(q.deleted ? '撤销删除' : '删除这张图（进队列）', () => {
     el.sheet.hidden = true;
-    if (!confirm('删除《' + img.name + '》？\n会从 GitHub 删掉这个文件，用到它的文章会变成破图。')) return;
-    try {
-      await post('/admin/image/delete', { path: img.path });
-      toast('已删除');
-      await load();
-    } catch (err) { toast(err.message, 4000); }
-  }, 'danger'));
+    if (q.deleted) { queueSet(img, { deleted: false }); toast('已撤销删除'); return; }
+    if (!confirm('把《' + img.name + '》放进待删除队列？\n点「提交」后才会真的从 GitHub 删掉，用到它的文章会变成破图。')) return;
+    queueSet(img, { deleted: true });
+    toast('已放进待删除队列，记得点提交', 3600);
+  }, q.deleted ? undefined : 'danger'));
 
   el.sheetBody.appendChild(sheetButton('取消', () => { el.sheet.hidden = true; }));
   el.sheet.hidden = false;
@@ -428,7 +561,6 @@ function openRename(img) {
   const ext = (img.name.match(/\.[a-z0-9]+$/i) || [''])[0];
   el.renameHint.textContent = '当前：' + img.name + '（后缀 ' + ext + ' 保持不变）';
   el.renameInput.value = stem;
-  el.renameRefs.checked = true;
   el.renameSheet.hidden = false;
   /* 手机上自动聚焦 + 选中，改起来快 */
   setTimeout(() => { el.renameInput.focus(); el.renameInput.select(); }, 50);
@@ -438,23 +570,33 @@ async function doRename() {
   if (!renameTarget) return;
   const name = el.renameInput.value.trim();
   if (!name) { toast('新文件名不能为空', 3000); return; }
-  el.renameOk.disabled = true;
-  try {
-    const res = await post('/admin/image/rename', {
-      path: renameTarget.path,
-      name,
-      updateRefs: el.renameRefs.checked,
-    });
-    el.renameSheet.hidden = true;
-    const refs = res && res.refsUpdated ? '，同时更新了 ' + res.refsUpdated + ' 篇文章的引用' : '';
-    toast('已改名为 ' + (res && res.name ? res.name : name) + refs, 5000);
-    await load();
-  } catch (err) {
-    showBanner('改名失败：' + err.message, '关闭', hideBanner);
-    toast(err.message, 6000);
-  } finally {
-    el.renameOk.disabled = false;
+  const ext = (renameTarget.name.match(/\.[a-z0-9]+$/i) || [''])[0];
+  /* 只让改主名，后缀沿用原来的 —— 免得把 .jpg 写成 .png 之后浏览器按错类型解析 */
+  const safeBase = name.replace(/\.[a-z0-9]+$/i, '').replace(/[\\/:*?"<>|]+/g, '_').replace(/^_+|_+$/g, '');
+  if (!safeBase) { toast('新文件名不能为空', 3000); return; }
+  const newName = safeBase + ext;
+  if (newName === renameTarget.name) { el.renameSheet.hidden = true; return; }
+  /* 本地先查重名（队列里已有的 + 图库里现有的），别等提交时才被 Worker 拒绝 */
+  const clash = queueNameTaken(newName, renameTarget.path);
+  if (clash) { toast('已经有叫「' + newName + '」的图了，换个名字', 4000); return; }
+  el.renameSheet.hidden = true;
+  queueSet(renameTarget, { name: newName });
+  toast('队列里已改名为 ' + newName + '，记得点提交', 3600);
+}
+
+/** 新名字有没有被占（排除自己）——已有的图和队列里等着改名的都算 */
+function queueNameTaken(name, selfPath) {
+  for (const [from, e] of pending) {
+    if (from === selfPath || e.deleted) continue;
+    if (e.name === name) return true;
   }
+  for (const img of images) {
+    if (img.path === selfPath) continue;
+    const q = pending.get(img.path);
+    const finalName = q ? (q.deleted ? '' : q.name) : img.name;
+    if (finalName === name) return true;
+  }
+  return false;
 }
 
 el.renameOk.addEventListener('click', doRename);
@@ -499,17 +641,10 @@ el.useNewDir.addEventListener('click', () => {
 el.cancelDir.addEventListener('click', () => { el.dirSheet.hidden = true; });
 el.dirSheet.addEventListener('click', (e) => { if (e.target === el.dirSheet) el.dirSheet.hidden = true; });
 
-/** 给已有图片换分类 */
-async function changeDir(img, dir) {
-  try {
-    await post('/admin/image/move', { path: img.path, dir });
-    toast('已移到「' + dirLabel(dir) + '」');
-    await load();
-  } catch (err) {
-    showBanner('改分类失败：' + err.message, '刷新列表', () => { hideBanner(); load(); });
-    toast(err.message, 6000);
-    await load();
-  }
+/** 给已有图片换分类：只进队列，点「提交」才推到 GitHub */
+function changeDir(img, dir) {
+  queueSet(img, { dir });
+  toast('队列里已移到「' + dirLabel(dir) + '」，记得点提交', 3600);
 }
 
 /* ------------------------------------------------------------------ 上传 */
