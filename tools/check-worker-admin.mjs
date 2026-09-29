@@ -21,15 +21,25 @@ const ok = (cond, label, extra) => {
 
 /* ---------- 假环境 ---------- */
 const kvStore = new Map();
+/** put 时带的选项（expirationTtl）——「文章日志必须永久」这条要验 */
+const kvOpts = new Map();
 const env = {
   GITHUB_CLIENT_ID: 'x', GITHUB_CLIENT_SECRET: 'y',
   HIDDEN_PASSWORD: 'pw',
+  LOGS_TOKEN: 'logs-token',
   GITHUB_TOKEN: 'ghp_fake',
   LOGS: {
     get: async (k) => (kvStore.has(k) ? kvStore.get(k) : null),
-    put: async (k, v) => { kvStore.set(k, v); },
-    delete: async (k) => { kvStore.delete(k); },
-    list: async () => ({ keys: [] }),
+    put: async (k, v, o) => { kvStore.set(k, v); kvOpts.set(k, o || {}); },
+    delete: async (k) => { kvStore.delete(k); kvOpts.delete(k); },
+    /*
+     * 真的 KV list() 支持 prefix（而且只返回匹配的键）。
+     * 桩一开始只会返回空数组，于是任何靠 list 的功能都测不出来 ——
+     * 文章日志的「全部历史」正好走这条路，所以这里要像真的。
+     */
+    list: async (o = {}) => ({
+      keys: [...kvStore.keys()].filter((k) => !o.prefix || k.startsWith(o.prefix)).map((name) => ({ name })),
+    }),
   },
 };
 kvStore.set('ticket:good-ticket', 'log-1');
@@ -111,6 +121,19 @@ globalThis.fetch = async (input, init = {}) => {
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   }
 
+  /*
+   * 按 sha 读一个 blob（真接口：GET /git/blobs/<sha>）。
+   * worker 读「超过 1MB 的大文件」时走的就是这条路 ——
+   * 因为 Contents API 对大文件不返回内容（见下面 GET 分支的注释）。
+   */
+  /* sha 用 [^/?]+ 而不是 [0-9a-f]+ —— 测试里的假 sha 带连字符，写窄了会静默走到别的分支 */
+  const blobGet = /\/git\/blobs\/([^/?]+)$/.exec(url);
+  if (blobGet && method === 'GET') {
+    const content = (gh.blobs || new Map()).get(blobGet[1]);
+    if (content == null) return new Response(JSON.stringify({ message: 'Not Found' }), { status: 404 });
+    return new Response(JSON.stringify({ sha: blobGet[1], size: Buffer.from(content, 'base64').length, content, encoding: 'base64' }), { status: 200 });
+  }
+
   /* /git/blobs 上传二进制 */
   if (/\/git\/blobs$/.test(url) && method === 'POST') {
     const b = JSON.parse(init.body);
@@ -140,11 +163,25 @@ globalThis.fetch = async (input, init = {}) => {
      * 假的 GitHub 和真的行为一致：content 永远是 **base64**，
      * 不做 UTF-8 解码。之前这里把内容解码成文本再编码回去，
      * 于是「二进制损坏」这一类 bug 全被掩盖了 —— 图库那次就是这么漏过去的。
+     *
+     * ★ 另一条同样重要的是**大小**：真 GitHub 的 Contents API 对**超过 1MB**
+     * 的文件**不返回 content**（encoding: "none"，content: ""，但 size 是真的）。
+     * 桩原来一律返回内容，于是「大图被读成空串 → 写成 0 字节 → 原图被抹掉」
+     * 这个**真丢过图**的 bug 在测试里完全隐形（站主的 14.8MB 若娜瓦就这么没的）。
+     * 现在桩照真的来：大文件只给 sha/size，内容得自己走 /git/blobs 去取。
+     */
+    const inline = Buffer.from(f.base64, 'base64');
+    const big = inline.length > 1024 * 1024;
+    /*
+     * 大文件的内容**只从 gh.blobs 里取**（真 GitHub 就是这样：blob 由 sha 唯一决定）。
+     * 桩在这里**不自动补**，是为了让「内容取不到」这种情形能被测出来 ——
+     * 需要读大文件的用例要自己 gh.blobs.set(sha, base64)。
      */
     return new Response(JSON.stringify({
       sha: f.sha, path,
-      content: f.base64 + '\n',
-      encoding: 'base64',
+      size: inline.length,
+      content: big ? '' : f.base64 + '\n',
+      encoding: big ? 'none' : 'base64',
     }), { status: 200 });
   }
   if (method === 'PUT') {
@@ -160,16 +197,31 @@ globalThis.fetch = async (input, init = {}) => {
 };
 
 const worker = (await import('../workers/oauth/src/index.ts')).default;
-const call = async (path, body) => {
+const call = async (path, body, headers = {}) => {
   const res = await worker.fetch(new Request('https://oauth.yuuu.love' + path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: 'https://yuuu.love' },
+    headers: { 'Content-Type': 'application/json', Origin: 'https://yuuu.love', ...headers },
     body: JSON.stringify(body),
   }), env);
   let data = null;
   try { data = await res.json(); } catch { /* 可能不是 json */ }
   return { status: res.status, data };
 };
+
+/** GET 一个接口（日志类是 GET + Bearer 口令） */
+const get = async (path, tok) => {
+  const res = await worker.fetch(new Request('https://oauth.yuuu.love' + path, {
+    method: 'GET',
+    headers: { Origin: 'https://yuuu.love', ...(tok ? { Authorization: 'Bearer ' + tok } : {}) },
+  }), env);
+  let data = null;
+  try { data = await res.json(); } catch { /* 可能不是 json */ }
+  return { status: res.status, data };
+};
+
+/* 每个请求带一个可辨认的 IP，用来验「日志里记的是访客 IP」 */
+const IP = '203.0.113.9';
+const callAs = (path, body) => call(path, body, { 'CF-Connecting-IP': IP });
 
 const OLD = `---
 title: 老标题
@@ -464,6 +516,59 @@ console.log('=== 6.5 图库：列表 / 上传 / 归类 / 删除（分类存索�
     const still = (list4.data?.images || []).find((i) => i.name === '真图.png');
     ok(!!still && still.dir === '测试分类', '★ 归类后列表里仍能看到它，且分类正确', JSON.stringify(still));
   }
+
+  /*
+   * ★★★ 大图（> 1MB）：这是**真丢过图**的那一条，别再删掉 ★★★
+   *
+   * 事故经过：站主在手机图库里把 167155.jpg（14.8MB）改名成「若娜瓦-低眉.jpg」，
+   * 结果仓库里那张图变成了 **0 字节**，文章引用还指向它 ——
+   * 线上 404、图库里一直显示「还没构建好」。
+   *
+   * 根因：GitHub 的 **Contents API 对超过 1MB 的文件不返回 content**
+   * （encoding: "none"、content: ""、size 是真的）。老代码把空串当内容，
+   * 原样写回 → 0 字节覆盖。所有小图都正常，所以光看代码根本不觉得有问题。
+   *
+   * 桩现在照真 GitHub 的行为来（大文件不给内容），所以这一条能真的盯住它。
+   */
+  {
+    const bigBytes = Buffer.alloc(1024 * 1024 + 4096, 0xab);
+    bigBytes[0] = 0xff; bigBytes[1] = 0xd8;                 /* 假装是 JPEG */
+    bigBytes[bigBytes.length - 2] = 0xff; bigBytes[bigBytes.length - 1] = 0xd9;
+    gh.files.set('public/uploads/大图.jpg', { base64: bigBytes.toString('base64'), sha: 'sha-big' });
+    gh.blobs = gh.blobs || new Map();
+    gh.blobs.set('sha-big', bigBytes.toString('base64'));
+
+    /* 先确认桩真的在模拟「大文件不给内容」——否则这条测试是空的 */
+    /* 注意要走**桩**（globalThis.fetch 已被换掉），别用 realFetch 去连真 GitHub */
+    const probe = await globalThis.fetch('https://api.github.com/repos/x/y/contents/public%2Fuploads%2F%E5%A4%A7%E5%9B%BE.jpg?ref=main');
+    const pj = await probe.json();
+    ok(pj.content === '' && pj.encoding === 'none' && pj.size === bigBytes.length,
+      '桩确实在模拟真 GitHub：>1MB 的文件不返回内容（只给 size）', JSON.stringify({ content: pj.content, encoding: pj.encoding, size: pj.size }));
+
+    const rnBig = await call('/admin/image/rename', { ticket: 'good-ticket', path: 'public/uploads/大图.jpg', name: '大图-改名后' });
+    ok(rnBig.status === 200, '大图改名成功', JSON.stringify(rnBig.data).slice(0, 120));
+    const moved = gh.files.get('public/uploads/大图-改名后.jpg');
+    ok(!!moved, '改名后的文件在仓库里');
+    ok(moved && Buffer.from(moved.base64, 'base64').equals(bigBytes),
+      '★★★ 大图内容逐字节保住了（不是 0 字节）——修的就是这条',
+      moved ? '实际 ' + Buffer.from(moved.base64, 'base64').length + ' 字节' : '文件不在');
+    ok(!gh.files.has('public/uploads/大图.jpg'), '旧名字下的文件已删除');
+    const treeBig = (gh.lastTree && gh.lastTree.tree) || [];
+    ok(treeBig.some((x) => x.path === 'public/uploads/大图-改名后.jpg' && x.sha !== null),
+      '提交里写的是新路径（不是删除）', JSON.stringify(treeBig.map((x) => x.path)));
+
+    /* 拿不到真实内容时宁可失败，也不许写空文件 */
+    gh.files.set('public/uploads/坏图.jpg', { base64: bigBytes.toString('base64'), sha: 'sha-missing' });
+    const badBig = await call('/admin/image/rename', { ticket: 'good-ticket', path: 'public/uploads/坏图.jpg', name: '坏图-改名后' });
+    ok(badBig.status >= 400, '★ 大文件读不到内容时**明确报错**，不静默写空文件', 'status=' + badBig.status + ' ' + JSON.stringify(badBig.data).slice(0, 80));
+    ok(gh.files.has('public/uploads/坏图.jpg'), '★ 报错后原文件原封不动');
+    ok(!gh.files.has('public/uploads/坏图-改名后.jpg'), '★ 没有生成一个空的新文件');
+
+    /* 源文件真的不在仓库里（连 size 都没有）时，也要报「找不到」而不是写空的 */
+    const gone = await call('/admin/image/rename', { ticket: 'good-ticket', path: 'public/uploads/根本不存在.jpg', name: '随便' });
+    ok(gone.status === 404, '★ 源文件不存在时报 404（不是写一个 0 字节的文件）', 'status=' + gone.status);
+    ok(!gh.files.has('public/uploads/随便.jpg'), '★ 没写出任何文件');
+  }
 }
 
 console.log('=== 6.6 重命名图片（连同文章引用一起改）===');
@@ -733,6 +838,152 @@ console.log('=== 7. 服务端没配 GITHUB_TOKEN 时要给清楚提示 ===');
   const r = await call('/admin/posts', { ticket: 'good-ticket' });
   ok(r.status === 500 && /GITHUB_TOKEN/.test(r.data?.message || ''), '提示里点名了缺哪个 secret', r.data?.message);
   env.GITHUB_TOKEN = saved;
+}
+
+console.log('=== 6.95 文章增删改日志（新增 / 修改 / 删除，永久保留）===');
+{
+  /*
+   * 站主要的是「谁在什么时候动了哪篇文章」，所以每条必须有：动作、标题、链接、IP。
+   * 三条硬要求，各自钉一条断言：
+   *   ① 只记增删改，不记浏览
+   *   ② **永久保留** —— put 时绝不能带 expirationTtl（访问日志才有 90 天 TTL）
+   *   ③ 删除的文章没有链接（文章都没了，链接点了是 404）
+   */
+  for (const k of [...kvStore.keys()]) if (k.startsWith('plog:')) kvStore.delete(k);
+  for (const k of [...kvOpts.keys()]) if (k.startsWith('plog:')) kvOpts.delete(k);
+  const put = (file, text) => gh.files.set(file, { base64: Buffer.from(text, 'utf8').toString('base64'), sha: 's-' + file });
+  const mk = (title) => ['---', 'title: ' + title, 'date: 2024-05-05', 'category: 随笔', 'tags: []', '---', '', '正文。', ''].join('\n');
+
+  /* ① 新增 */
+  const add = await callAs('/admin/save', { ticket: 'good-ticket', title: '日志里的新文章', body: '正文。' });
+  ok(add.status === 200, '新增一篇成功', JSON.stringify(add.data));
+  const addUrl = add.data?.url || '';
+
+  /* ② 修改（顺带验「改之前的标题」也记进去了） */
+  put('src/content/posts/2024-05-05-log-old.md', mk('日志里的老标题'));
+  const mod = await callAs('/admin/save', {
+    ticket: 'good-ticket', path: 'src/content/posts/2024-05-05-log-old.md', title: '日志里的新标题', body: '正文。',
+  });
+  ok(mod.status === 200, '修改一篇成功');
+
+  /* ③ 删除 */
+  put('src/content/posts/2024-05-05-log-del.md', mk('要被删掉的文章'));
+  const del = await callAs('/admin/delete', { ticket: 'good-ticket', path: 'src/content/posts/2024-05-05-log-del.md' });
+  ok(del.status === 200, '删除一篇成功');
+
+  /* 读取（真的走 KV list，桩支持 prefix） */
+  const logs = await get('/admin/post-logs', 'logs-token');
+  ok(logs.status === 200, '文章日志能读出来', JSON.stringify(logs.data).slice(0, 120));
+  const rows = logs.data?.logs || [];
+  ok(rows.length === 3, '三条动作各记了一条', '实际 ' + rows.length);
+  const byAction = {};
+  for (const r of rows) byAction[r.action] = r;
+  ok(!!byAction['新增'], '记了「新增」');
+  ok(!!byAction['修改'], '记了「修改」');
+  ok(!!byAction['删除'], '记了「删除」');
+  ok(byAction['新增']?.title === '日志里的新文章', '新增那条记的是文章标题', JSON.stringify(byAction['新增']));
+  ok(byAction['修改']?.title === '日志里的新标题', '修改那条记的是新标题');
+  ok(byAction['修改']?.was === '日志里的老标题', '★ 改标题时也记下了原来的标题（能看出「从什么改成什么」）', JSON.stringify(byAction['修改']));
+  ok(!byAction['新增']?.was, '标题没变时不写多余的字段');
+  ok(!!byAction['新增']?.url && byAction['新增'].url === addUrl, '新增那条带了可点开的链接', String(byAction['新增']?.url));
+  ok(!!byAction['修改']?.url, '修改那条带了链接');
+  ok(!byAction['删除']?.url, '★ 删除那条没有链接（文章已经不在了）', String(byAction['删除']?.url));
+  ok(rows.every((r) => r.ip === IP), '★ 每条都记了访客 IP', JSON.stringify(rows.map((r) => r.ip)));
+  ok(rows.every((r) => typeof r.atLocal === 'string' && r.atLocal.includes('+08:00')), '时间按 +08:00 记');
+
+  /* ★ 永久保留：plog 的每一个键都不能带 expirationTtl */
+  const plogKeys = [...kvOpts.keys()].filter((k) => k.startsWith('plog:'));
+  ok(plogKeys.length >= 4, 'plog 键写进去了（3 条流水 + 1 份近期缓存）', '实际 ' + plogKeys.length);
+  ok(plogKeys.every((k) => !kvOpts.get(k)?.expirationTtl), '★ 文章日志没有 TTL（永久保留，和访问日志的 90 天区分开）',
+    JSON.stringify(plogKeys.map((k) => k + '→' + JSON.stringify(kvOpts.get(k)))));
+
+  /* 访问日志（走的是另一条路）保持原样，别被顺手改了 */
+  kvStore.set('log:x', JSON.stringify({ id: 'x', at: '2024-01-01T00:00:00.000Z', ok: true }));
+  const visit = await get('/hidden/logs', 'logs-token');
+  ok(visit.status === 200 && (visit.data?.logs || []).length === 1, '访问日志仍然读得到（两条路互不影响）');
+
+  /* 只显示最新的一部分：窗口过滤 + 条数上限 */
+  const limited = await get('/admin/post-logs?days=1&limit=2', 'logs-token');
+  ok(limited.status === 200 && (limited.data?.logs || []).length === 2, '★ 默认窗口只回最近的 N 条（不会一次全渲染）',
+    JSON.stringify(limited.data).slice(0, 120));
+  const all = await get('/admin/post-logs?all=1', 'logs-token');
+  ok(all.status === 200 && (all.data?.logs || []).length === 3, '「全部历史」把 3 条都读出来');
+  ok((all.data?.logs || []).every((r) => r.action !== undefined), '全部历史里没有混进访问日志');
+
+  /* 口令校验 */
+  const noTok = await get('/admin/post-logs');
+  ok(noTok.status === 401, '不带口令读日志被拒（401）', 'status=' + noTok.status);
+  /* 口令必须是 ASCII —— HTTP 头装不下中文（写成中文会直接抛 ByteString 错，测不成） */
+  const wrong = await get('/admin/post-logs', 'wrong-token');
+  ok(wrong.status === 401, '错口令读日志被拒（401）', 'status=' + wrong.status);
+}
+
+console.log('=== 6.97 上传时带缩略图 ===');
+{
+  /*
+   * 缺口：tools/make-thumbs.mjs 是离线跑的，只覆盖当时已经在仓库里的图。
+   * 新上传的图要等谁手动跑一次才有缩略图 —— 在那之前站点按原图显示。
+   * 现在上传时就把缩略图一起传，服务端写进 public/uploads/thumbs/，
+   * 而且必须**和主图在同一次提交里**（否则会留下「有图没缩略图」的中间态）。
+   */
+  gh.files.delete('public/uploads/categories.json');
+  gh.files.delete('public/uploads/thumbs/带缩略图的图.jpg');
+  gh.batchCommits = 0;
+
+  const main = 'data:image/png;base64,' + Buffer.from('MAIN-IMAGE').toString('base64');
+  const thumb = 'data:image/jpeg;base64,' + Buffer.from('THUMB-JPEG').toString('base64');
+  const up = await call('/admin/image/upload', {
+    ticket: 'good-ticket', name: '带缩略图的图.png', dataUrl: main, thumbDataUrl: thumb, dir: '测试',
+  });
+  ok(up.status === 200, '带缩略图的上传成功', JSON.stringify(up.data));
+  ok(gh.files.has('public/uploads/带缩略图的图.png'), '主图写进了仓库');
+  ok(gh.files.has('public/uploads/thumbs/带缩略图的图.jpg'), '★ 缩略图写进了 thumbs/（同名 .jpg）', up.data?.thumb);
+  ok(up.data?.thumb === 'public/uploads/thumbs/带缩略图的图.jpg', '响应里回了缩略图路径', up.data?.thumb);
+  ok(Buffer.from(gh.files.get('public/uploads/thumbs/带缩略图的图.jpg').base64, 'base64').toString('utf8') === 'THUMB-JPEG',
+    '★ 缩略图内容逐字节一致（没被当文本搞坏）');
+  ok(gh.batchCommits === 1, '★ 主图 + 缩略图 + 索引是同一次提交', '实际 ' + gh.batchCommits);
+  const items = (gh.lastTree && gh.lastTree.tree) || [];
+  const paths = items.map((x) => x.path);
+  ok(paths.includes('public/uploads/带缩略图的图.png') && paths.includes('public/uploads/thumbs/带缩略图的图.jpg'),
+    '★ 提交里同时有主图和缩略图', paths.join(', '));
+
+  /* 列表要能告诉界面「哪张还没有缩略图」（老图那个角标就靠它） */
+  const l1 = await call('/admin/images', { ticket: 'good-ticket' });
+  const one = (l1.data?.images || []).find((i) => i.name === '带缩略图的图.png');
+  ok(one && one.hasThumb === true, '★ 列表里标出这张已经有缩略图', JSON.stringify(one));
+  ok(!(l1.data?.images || []).some((i) => i.name.endsWith('.jpg') && i.path.includes('/thumbs/')),
+    '★ 缩略图不会被当成一张「图片」列出来');
+
+  /* 老图（没有缩略图）应当是 false */
+  gh.files.set('public/uploads/没有缩略图的老图.png', { base64: Buffer.from('OLD').toString('base64'), sha: 's-old2' });
+  const l2 = await call('/admin/images', { ticket: 'good-ticket' });
+  const oldOne = (l2.data?.images || []).find((i) => i.name === '没有缩略图的老图.png');
+  ok(oldOne && oldOne.hasThumb === false, '★ 没有缩略图的老图标成 false', JSON.stringify(oldOne));
+
+  /* 不带缩略图照样能传（老客户端 / 小图 / gif）—— 不让它失败 */
+  const up2 = await call('/admin/image/upload', { ticket: 'good-ticket', name: '没有缩略图.png', dataUrl: main });
+  ok(up2.status === 200 && !up2.data?.thumb, '不带缩略图时上传照样成功（thumb 为空）', JSON.stringify(up2.data));
+  ok(gh.files.has('public/uploads/没有缩略图.png'), '主图仍然写进去了');
+
+  /* 缩略图格式不对：忽略它，但不能连累主图 */
+  const up3 = await call('/admin/image/upload', {
+    ticket: 'good-ticket', name: '格式不对.png', dataUrl: main, thumbDataUrl: 'data:image/png;base64,AAAA',
+  });
+  ok(up3.status === 200 && !up3.data?.thumb, '★ 缩略图不是 JPEG 时忽略它，主图照样上传', JSON.stringify(up3.data));
+  ok(!gh.files.has('public/uploads/thumbs/格式不对.jpg'), '没有把非法缩略图写进仓库');
+
+  /* 重名时主图会加时间戳后缀，缩略图必须跟着改名 —— 否则站点找不到它 */
+  const up4 = await call('/admin/image/upload', {
+    ticket: 'good-ticket', name: '重名.png', dataUrl: main, thumbDataUrl: thumb,
+  });
+  const up5 = await call('/admin/image/upload', {
+    ticket: 'good-ticket', name: '重名.png', dataUrl: main, thumbDataUrl: thumb,
+  });
+  ok(up5.status === 200 && up5.data?.path !== up4.data?.path, '重名时主图换了名字', up5.data?.path);
+  const t5 = String(up5.data?.thumb || '');
+  ok(t5.endsWith('.jpg') && t5.includes(up5.data.path.split('/').pop().replace(/\.png$/, '')),
+    '★ 缩略图跟着主图的新名字走（站点按同名找得到）', up5.data?.path + ' → ' + t5);
+  ok(gh.files.has(up5.data.path) && gh.files.has(t5), '两张都写进了仓库');
 }
 
 console.log('');

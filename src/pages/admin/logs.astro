@@ -1,19 +1,31 @@
 ---
 /**
- * 访问日志查看 —— yuuu.love/admin/logs/
+ * 日志查看 —— yuuu.love/admin/logs/
+ *
+ * 两件事放在一页，但**主次分明**：
+ *   · 主：**文章增删改日志**（永久保留）—— 谁在什么时候加了/改了/删了哪篇文章
+ *   · 次：访问日志（90 天热数据 + 按天永久归档）—— 私人角落的开门记录
+ *
+ * 为什么分成两份：保留策略不一样。访问日志有 90 天 TTL（浏览记录，过期就过期），
+ * 文章改动日志是**永久**的（站主明确要求）。混在一张表里，
+ * 「这条会不会哪天消失」就说不清了。
  *
  * 口令（LOGS_TOKEN）存在 Worker 密钥里，**不在这页里**；这页只是把口令发给
  * Worker 换日志回来。所以：扒源码看不到口令，也没法绕过校验。
  */
 import BaseLayout from '../../layouts/BaseLayout.astro';
+
+/* 一屏最多渲染多少行 —— 日志是**越来越多**的东西，一次全渲染出来会卡 */
+const POST_LIMIT = 200;
+const VISIT_LIMIT = 300;
 ---
 
-<BaseLayout title="访问日志" description="私人角落的访问记录" noindex>
+<BaseLayout title="日志" description="文章改动与私人角落访问记录" noindex>
   <div class="lg-wrap">
-    <h1 class="lg-title">私人角落 · 访问日志</h1>
+    <h1 class="lg-title">后台日志</h1>
     <p class="lg-desc">
-      数据来自 Cloudflare KV。默认显示<b>最近 90 天</b>（读得快）；
-      点「全部历史」会把<b>永久归档</b>（每天一个文件、不过期）一起读出来。
+      数据来自 Cloudflare KV。文章日志<b>永久保留</b>；
+      访问日志保留最近 <b>90 天</b>（点「全部历史」才会去读永久归档）。
       口令就是你在 Worker 上设的 <code>LOGS_TOKEN</code>。
     </p>
 
@@ -23,30 +35,70 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     </form>
     <p class="lg-msg" id="lgMsg" role="status" aria-live="polite"></p>
 
-    <div id="lgStat" hidden>
-      <p class="lg-stat" id="lgCount"></p>
-      <button type="button" class="lg-btn" id="lgCsv">导出 CSV</button>
-      <button type="button" class="lg-btn" id="lgRefresh">刷新最近 90 天</button>
-      <button type="button" class="lg-btn" id="lgAll">全部历史</button>
-    </div>
-    <div class="lg-tablewrap" id="lgTableWrap" hidden>
-      <table class="lg-table" id="lgTable">
-        <thead>
-          <tr>
-            <th>时刻 (+08:00)</th><th>结果</th><th>IP</th><th>地区</th>
-            <th>设备</th><th>来源</th><th>停留</th><th>备注</th>
-          </tr>
-        </thead>
-        <tbody id="lgBody"></tbody>
-      </table>
-    </div>
+    <!-- ───────────────── 文章增删改（主） ───────────────── -->
+    <section id="plogSection" hidden>
+      <h2 class="lg-h2">文章增删改</h2>
+      <p class="lg-note">
+        只记<b>新增 / 修改 / 删除</b>三种动作，不记浏览，永久保留。
+        删除的文章链接已经没了，标题就不做成可点的。
+      </p>
+
+      <div class="lg-bar">
+        <span class="lg-stat" id="pStat"></span>
+        <button type="button" class="lg-btn" id="pCsv">导出 CSV</button>
+        <button type="button" class="lg-btn" id="pAll">全部历史</button>
+        <button type="button" class="lg-btn" id="pRecent">只看最近 30 天</button>
+      </div>
+
+      <div class="lg-tablewrap">
+        <table class="lg-table">
+          <thead>
+            <tr><th>时刻 (+08:00)</th><th>动作</th><th>文章</th><th>IP</th></tr>
+          </thead>
+          <tbody id="pBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ───────────────── 访问日志（次） ───────────────── -->
+    <section id="vlogSection" hidden>
+      <h2 class="lg-h2">私人角落访问</h2>
+      <p class="lg-note">
+        只显示最近 ${VISIT_LIMIT} 条。要看更早的走 <code>/private/</code> 那份
+        （热数据 90 天，归档按天永久保存）。
+      </p>
+
+      <div class="lg-bar">
+        <span class="lg-stat" id="vStat"></span>
+        <button type="button" class="lg-btn" id="vCsv">导出 CSV</button>
+        <button type="button" class="lg-btn" id="vRefresh">刷新最近 90 天</button>
+        <button type="button" class="lg-btn" id="vAll">全部历史</button>
+      </div>
+
+      <div class="lg-tablewrap">
+        <table class="lg-table">
+          <thead>
+            <tr>
+              <th>时刻 (+08:00)</th><th>结果</th><th>IP</th><th>地区</th>
+              <th>设备</th><th>来源</th><th>停留</th><th>备注</th>
+            </tr>
+          </thead>
+          <tbody id="vBody"></tbody>
+        </table>
+      </div>
+    </section>
   </div>
 
   <style>
     .lg-wrap { max-width: 1080px; margin: 0 auto; padding: 46px 20px 80px; }
     .lg-title { margin: 0 0 8px; font-size: clamp(20px, 2.6vw, 26px); color: var(--ink); }
+    .lg-h2 {
+      margin: 34px 0 8px; font-size: 16px; color: var(--ink);
+      padding-top: 18px; border-top: 1px solid var(--line);
+    }
     .lg-desc { margin: 0 0 20px; font-size: 13.5px; line-height: 1.8; color: var(--ink-2); }
-    .lg-desc code { padding: 1px 6px; border-radius: 5px; background: var(--hover); color: var(--accent); }
+    .lg-note { margin: 0 0 12px; font-size: 12.5px; line-height: 1.75; color: var(--ink-2); }
+    .lg-desc code, .lg-note code { padding: 1px 6px; border-radius: 5px; background: var(--hover); color: var(--accent); }
     #lgForm { display: flex; gap: 10px; flex-wrap: wrap; max-width: 560px; }
     #lgToken {
       flex: 1 1 220px; height: 42px; padding: 0 13px; border-radius: 10px;
@@ -59,51 +111,62 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     }
     .lg-msg { margin: 12px 0 0; min-height: 20px; font-size: 13px; color: var(--gold); }
     .lg-msg.is-error { color: #ff9a9a; }
-    .lg-stat { margin: 18px 0 8px; font-size: 13.5px; color: var(--ink-2); }
+    .lg-bar { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin: 14px 0 6px; }
+    .lg-stat { margin-right: auto; font-size: 13.5px; color: var(--ink-2); }
     .lg-btn {
-      margin: 0 8px 12px 0; padding: 7px 14px; border-radius: 9px; cursor: pointer;
+      margin: 0 8px 8px 0; padding: 7px 14px; border-radius: 9px; cursor: pointer;
       border: 1px solid var(--line); background: transparent; color: var(--ink-2); font-size: 12.5px;
     }
     .lg-btn:hover { border-color: var(--gold); color: var(--gold); }
     .lg-tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
     .lg-table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
     .lg-table th, .lg-table td { padding: 8px 10px; text-align: left; white-space: nowrap; }
+    /* 文章标题可以很长，让它换行、别把 IP 列挤没了 */
+    .lg-table td.lg-title-cell { white-space: normal; min-width: 220px; word-break: break-word; }
     .lg-table thead th { background: var(--hover); color: var(--ink); font-weight: 600; }
     .lg-table tbody tr { border-top: 1px solid var(--line); color: var(--ink-2); }
+    .lg-table a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+    .lg-was { color: var(--ink-2); opacity: 0.62; }
     .lg-ok { color: #7ee0a8; }
     .lg-no { color: #ff9a9a; }
+    .lg-add { color: #7ee0a8; }
+    .lg-mod { color: var(--gold); }
+    .lg-del { color: #ff9a9a; }
+    .lg-empty { padding: 18px 12px; color: var(--ink-2); }
   </style>
 
   <script>
     const API = 'https://oauth.yuuu.love';
+    const POST_API = API + '/admin/post-logs';
+    const VISIT_API = API + '/hidden/logs';
+    /*
+     * ⚠️ 这两个数字和 frontmatter 里的 POST_LIMIT / VISIT_LIMIT 是**同一条规则**，
+     * 但这里不能写成 ${POST_LIMIT} —— Astro 的 <script> 是当模块打包的，
+     * 模板插值只在标记里有效（写在这里会直接编译不过）。改一处别忘了另一处。
+     * （同样的写法在 src/pages/diary.astro 里也有一处。）
+     */
+    const POST_LIMIT = 200;    /* = frontmatter 的 POST_LIMIT */
+    const VISIT_LIMIT = 300;   /* = frontmatter 的 VISIT_LIMIT */
+
     const form = document.getElementById('lgForm');
     const tokenEl = document.getElementById('lgToken');
     const msg = document.getElementById('lgMsg');
-    const stat = document.getElementById('lgStat');
-    const tableWrap = document.getElementById('lgTableWrap');
-    const body = document.getElementById('lgBody');
-    const countEl = document.getElementById('lgCount');
-    let rows = [];
+
+    const pSection = document.getElementById('plogSection');
+    const pBody = document.getElementById('pBody');
+    const pStat = document.getElementById('pStat');
+
+    const vSection = document.getElementById('vlogSection');
+    const vBody = document.getElementById('vBody');
+    const vStat = document.getElementById('vStat');
+
+    /* 两份日志各自留一份原始数据：CSV 导出要用，而且用户可能来回切时间范围 */
+    let posts = [];
+    let visits = [];
     let token = '';
+    let postScope = 'recent';   /* recent（最近 30 天 / 最多 200 条） | all */
 
     const say = (t, isErr) => { msg.textContent = t || ''; msg.classList.toggle('is-error', !!isErr); };
-
-    async function load(tk, all) {
-      say(all ? '正在读永久归档（多等一会儿）…' : '正在取日志…');
-      const res = await fetch(API + '/hidden/logs' + (all ? '?all=1' : ''), {
-        headers: { Authorization: 'Bearer ' + tk },
-      });
-      if (res.status === 401) { say('口令不对', true); return false; }
-      if (!res.ok) { say('服务端出错（HTTP ' + res.status + '）', true); return false; }
-      const data = await res.json();
-      rows = data.logs || [];
-      if (all && data.total > rows.length) {
-        say('归档共 ' + data.total + ' 条，页面只显示最近 ' + rows.length + ' 条（导出的 CSV 也只有这些）');
-      }
-      render();
-      say('');
-      return true;
-    }
 
     function fmtSec(s) {
       if (s === null || s === undefined) return '—';
@@ -113,10 +176,95 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       return Math.floor(n / 60) + ' 分 ' + (n % 60) + ' 秒';
     }
 
-    function render() {
-      countEl.textContent = '共 ' + rows.length + ' 条记录';
-      body.innerHTML = '';
-      for (const r of rows) {
+    /** 清空一个 tbody 并塞一行「暂无记录」 */
+    function emptyRow(tbody, text) {
+      tbody.innerHTML = '';
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.className = 'lg-empty';
+      td.colSpan = 8;
+      td.textContent = text;
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    }
+
+    /* ---------------------------------------------------------- 文章日志 */
+
+    function renderPosts() {
+      pBody.innerHTML = '';
+      if (!posts.length) {
+        emptyRow(pBody, '还没有记录 —— 保存或删除一篇文章就会有了');
+        pStat.textContent = '0 条';
+        return;
+      }
+      /* 新的在最上面 —— 看日志都是想看最近发生了什么 */
+      for (const r of posts.slice().reverse()) {
+        const tr = document.createElement('tr');
+
+        const tdAt = document.createElement('td');
+        tdAt.textContent = r.atLocal || r.at || '';
+        tr.appendChild(tdAt);
+
+        const tdAct = document.createElement('td');
+        tdAct.textContent = r.action || '';
+        tdAct.className = r.action === '新增' ? 'lg-add' : r.action === '删除' ? 'lg-del' : 'lg-mod';
+        tr.appendChild(tdAct);
+
+        const tdTitle = document.createElement('td');
+        tdTitle.className = 'lg-title-cell';
+        /* 改过标题的话把旧标题也带上 —— 只记新标题会让人对不上记忆里的那篇 */
+        if (r.was && r.was !== r.title) {
+          const was = document.createElement('span');
+          was.className = 'lg-was';
+          was.textContent = r.was + ' → ';
+          tdTitle.appendChild(was);
+        }
+        if (r.url) {
+          /* 有链接说明文章还在 —— 做成可点的，点开就是那篇 */
+          const a = document.createElement('a');
+          a.href = 'https://yuuu.love' + r.url;
+          a.target = '_blank';
+          a.rel = 'noopener';
+          a.textContent = r.title || '(无标题)';
+          tdTitle.appendChild(a);
+        } else {
+          tdTitle.appendChild(document.createTextNode((r.title || '(无标题)') + (r.action === '删除' ? '（已删除）' : '')));
+        }
+        tr.appendChild(tdTitle);
+
+        const tdIp = document.createElement('td');
+        tdIp.textContent = r.ip || '';
+        tr.appendChild(tdIp);
+
+        pBody.appendChild(tr);
+      }
+      pStat.textContent = postScope === 'all'
+        ? '全部历史 ' + posts.length + ' 条'
+        : '最近 30 天 ' + posts.length + ' 条（最多 ' + POST_LIMIT + ' 条）';
+    }
+
+    async function loadPosts(all) {
+      const res = await fetch(POST_API + (all ? '?all=1' : ''), { headers: { Authorization: 'Bearer ' + token } });
+      if (res.status === 401) { say('口令不对', true); return false; }
+      if (!res.ok) { say('文章日志读不出来（HTTP ' + res.status + '）', true); return false; }
+      const data = await res.json();
+      posts = data.logs || [];
+      postScope = all ? 'all' : 'recent';
+      pSection.hidden = false;
+      renderPosts();
+      return true;
+    }
+
+    /* ---------------------------------------------------------- 访问日志 */
+
+    function renderVisits() {
+      vBody.innerHTML = '';
+      if (!visits.length) {
+        emptyRow(vBody, '还没有记录 —— 有人（或你）访问过 /private/ 就会有了');
+        vStat.textContent = '0 条';
+        return;
+      }
+      for (const r of visits.slice().reverse()) {
         const tr = document.createElement('tr');
         const cells = [
           r.atLocal || r.at,
@@ -134,44 +282,91 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           if (i === 1) td.className = r.ok ? 'lg-ok' : 'lg-no';
           tr.appendChild(td);
         });
-        body.appendChild(tr);
+        vBody.appendChild(tr);
       }
-      stat.hidden = false;
-      tableWrap.hidden = rows.length === 0;
-      if (!rows.length) say('还没有记录 —— 有人（或你）访问过 /private/ 就会有了');
+      vStat.textContent = '显示最近 ' + visits.length + ' 条';
     }
+
+    async function loadVisits(all) {
+      const res = await fetch(VISIT_API + (all ? '?all=1' : ''), { headers: { Authorization: 'Bearer ' + token } });
+      if (res.status === 401) { say('口令不对', true); return false; }
+      if (!res.ok) { say('访问日志读不出来（HTTP ' + res.status + '）', true); return false; }
+      const data = await res.json();
+      visits = (data.logs || []).slice(-VISIT_LIMIT);
+      vSection.hidden = false;
+      renderVisits();
+      return true;
+    }
+
+    /* ---------------------------------------------------------- 交互 */
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       token = tokenEl.value.trim();
       if (!token) { say('先输口令', true); return; }
-      try { await load(token); } catch (err) { say('连不上服务器', true); }
+      say('正在取日志…');
+      try {
+        const a = await loadPosts(false);
+        const b = await loadVisits(false);
+        if (a && b) say('');
+      } catch (err) { say('连不上服务器', true); }
     });
 
-    document.getElementById('lgRefresh').addEventListener('click', async () => {
-      if (!token) return;
-      try { await load(token, false); } catch (err) { say('刷新失败', true); }
-    });
-
-    document.getElementById('lgAll').addEventListener('click', async () => {
+    document.getElementById('pAll').addEventListener('click', async () => {
       if (!token) { say('先在上面输口令', true); return; }
-      try { await load(token, true); } catch (err) { say('读取归档失败', true); }
+      say('正在读永久流水…');
+      try { if (await loadPosts(true)) say(''); } catch (err) { say('读取失败', true); }
     });
 
-    document.getElementById('lgCsv').addEventListener('click', () => {
-      const head = ['时刻', '结果', 'IP', '地区', '设备', '来源', '停留秒数', '备注', 'User-Agent'];
+    document.getElementById('pRecent').addEventListener('click', async () => {
+      if (!token) { say('先在上面输口令', true); return; }
+      try { if (await loadPosts(false)) say(''); } catch (err) { say('读取失败', true); }
+    });
+
+    document.getElementById('vRefresh').addEventListener('click', async () => {
+      if (!token) return;
+      try { if (await loadVisits(false)) say(''); } catch (err) { say('刷新失败', true); }
+    });
+
+    document.getElementById('vAll').addEventListener('click', async () => {
+      if (!token) { say('先在上面输口令', true); return; }
+      say('正在读永久归档…');
+      try { if (await loadVisits(true)) say(''); } catch (err) { say('读取归档失败', true); }
+    });
+
+    /** 拼 CSV：导出的是**当前窗口的全部**，不是屏幕上那一屏 */
+    function toCsv(head, rows) {
       const lines = [head.join(',')];
-      for (const r of rows) {
-        const cells = [r.atLocal || r.at, r.ok ? '通过' : '失败', r.ip, r.country || '', r.device,
-          r.from, r.seconds ?? '', r.note || '', r.ua || ''];
-        lines.push(cells.map((v) => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(','));
+      for (const cells of rows) {
+        lines.push(cells.map((v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"').join(','));
       }
-      const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      return lines.join('\r\n');
+    }
+
+    function download(name, text) {
+      const blob = new Blob(['\ufeff' + text], { type: 'text/csv;charset=utf-8' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = 'yuuu-private-logs.csv';
+      a.download = name;
       a.click();
       URL.revokeObjectURL(a.href);
+    }
+
+    document.getElementById('pCsv').addEventListener('click', () => {
+      const head = ['时刻', '动作', '文章标题', '原标题', '链接', 'IP'];
+      const rows = posts.map((r) => [
+        r.atLocal || r.at, r.action, r.title, r.was || '', r.url ? 'https://yuuu.love' + r.url : '', r.ip,
+      ]);
+      download('yuuu-post-logs.csv', toCsv(head, rows));
+    });
+
+    document.getElementById('vCsv').addEventListener('click', () => {
+      const head = ['时刻', '结果', 'IP', '地区', '设备', '来源', '停留秒数', '备注', 'User-Agent'];
+      const rows = visits.map((r) => [
+        r.atLocal || r.at, r.ok ? '通过' : '失败', r.ip, r.country || '', r.device,
+        r.from, r.seconds ?? '', r.note || '', r.ua || '',
+      ]);
+      download('yuuu-private-logs.csv', toCsv(head, rows));
     });
   </script>
 </BaseLayout>

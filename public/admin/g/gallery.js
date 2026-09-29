@@ -83,3 +83,50 @@ export function shouldCompress({ type, size }) {
   if (!/^image\/(jpeg|jpg|png|webp)$/i.test(String(type || ''))) return false;
   return Number(size) > 400 * 1024;
 }
+
+/* ---------------------------------------------------------------- 缩略图 */
+
+/**
+ * 缩略图参数 —— ⚠️ 必须和 tools/make-thumbs.mjs 里那两个常量一模一样
+ * （WIDTH = 720 / QUALITY = 0.68）。两边不一致的话，手动跑的和上传时生成的
+ * 会呈现两种画质，用户一眼就看出来。
+ */
+export const THUMB_WIDTH = 720;
+export const THUMB_QUALITY = 0.68;
+
+/**
+ * 一张图**要不要再单独出一个缩略图**。
+ *
+ *   · gif / svg / avif 不做：gif 压成 jpg 就没了动画，svg 是矢量（本来就小）
+ *   · 比 720 还小的图不做：缩略图反而更大、还更糊（站点那边找不到缩略图会退回原图）
+ *   · 小文件（< 400KB）不做：这就是 shouldCompress 那条线，和上传时压不压保持一致
+ *     —— 主图既然原样上传，再配一张更糊的缩略图没有意义
+ */
+export function shouldMakeThumb({ type, size, width }) {
+  if (!/^image\/(jpeg|jpg|png|webp)$/i.test(String(type || ''))) return false;
+  if (Number(size) <= 400 * 1024) return false;
+  return Number(width) > THUMB_WIDTH;
+}
+
+/**
+ * 顺手生成一张缩略图（上传时一起传，服务端写进 public/uploads/thumbs/）。
+ *
+ * 为什么在浏览器里做：和 tools/make-thumbs.mjs 同一个理由 —— 不引新依赖。
+ * Cloudflare Pages 没有按需缩放，缩略图只能提前做好。
+ *
+ * 返回 JPEG 的 dataURL；不需要（或这个浏览器画不出来）时返回 null ——
+ * 缩略图是**锦上添花**，没有它上传照样要成功（老图、gif 就一直是原图直出）。
+ */
+export function makeThumbDataUrl(img) {
+  try {
+    const c = document.createElement('canvas');
+    c.width = THUMB_WIDTH;
+    c.height = Math.max(1, Math.round((img.naturalHeight || img.height) * THUMB_WIDTH / (img.naturalWidth || img.width)));
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', THUMB_QUALITY);
+  } catch {
+    return null;
+  }
+}

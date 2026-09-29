@@ -7,6 +7,7 @@
 import {
   groupByDir, categories, filterImages, humanSize, dirLabel, dirValue,
   toJpegName, dataUrlBytes, shouldCompress, MAX_EDGE, UNCATEGORIZED,
+  shouldMakeThumb, makeThumbDataUrl, THUMB_WIDTH,
 } from './gallery.js';
 
 const API = 'https://oauth.yuuu.love';
@@ -339,6 +340,18 @@ function renderGrid() {
       dot.textContent = q.name !== img.name ? '改名' : '改分类';
       card.appendChild(dot);
     }
+    /*
+     * 还没有缩略图的图（多半是老图 —— 上传时带缩略图是后来才加的）：
+     * 角上标一下，省得用户一篇篇翻过去才发现「这张打开特别慢」。
+     * 跑一次 npm run thumbs 就齐了。
+     */
+    if (img.hasThumb === false) {
+      const nt = document.createElement('span');
+      nt.className = 'card-nothumb';
+      nt.textContent = '原图';
+      nt.title = '这张图还没有缩略图（跑 npm run thumbs 可以补上）';
+      card.appendChild(nt);
+    }
     card.addEventListener('click', () => {
       if (batch.mode) toggleSelect(img.path);
       else openSheet(img);
@@ -470,6 +483,14 @@ function openSheet(img) {
   pathBox.className = 'path-box';
   pathBox.textContent = decodeURIComponent(img.url);
   el.sheetBody.appendChild(pathBox);
+
+  if (img.hasThumb === false) {
+    const note = document.createElement('p');
+    note.className = 'sheet-note';
+    note.textContent = '这张图还没有缩略图 —— 文章里会按原图显示（能看，就是慢）。'
+      + '在项目目录跑一次 npm run thumbs 就补上了。新上传的图会自动带缩略图。';
+    el.sheetBody.appendChild(note);
+  }
 
   /* 复制路径 —— 写文章时要往 Markdown 里贴的就是这个 */
   el.sheetBody.appendChild(sheetButton('复制图片路径', async () => {
@@ -661,12 +682,15 @@ el.fileInput.addEventListener('change', () => {
 /** 逐张上传（带进度提示）。分类在上传时就带上，不用再补一次归类 */
 async function uploadAll(files, dir) {
   const done = [];
+  /* 顺便生成缩略图的张数 —— 上传完成后要告诉用户「这次有没有带缩略图」 */
+  let thumbs = 0;
   for (let i = 0; i < files.length; i++) {
     toast('上传中 ' + (i + 1) + '/' + files.length + '…', 15000);
     try {
       const payload = await prepare(files[i]);
       const res = await post('/admin/image/upload', { ...payload, dir });
       done.push(res);
+      if (res && res.thumb) thumbs++;
       /*
        * 存下本地缩略图：站点要等 Cloudflare 构建（约 1 分钟）才有这张图，
        * 这期间用手机里的原文件显示，用户能立刻看到自己传的是哪张。
@@ -682,7 +706,9 @@ async function uploadAll(files, dir) {
 
   if (done.length) {
     /* 说清楚"现在看到的是本机预览，站点约 1 分钟后才有" */
-    toast('上传完成 ' + done.length + ' 张 → ' + dirLabel(dir) + '（缩略图是本机预览，站点约 1 分钟后生效）', 5000);
+    toast('上传完成 ' + done.length + ' 张 → ' + dirLabel(dir)
+      + (thumbs ? '，其中 ' + thumbs + ' 张带缩略图' : '（这些图都不需要额外缩略图）')
+      + '（本机预览，站点约 1 分钟后生效）', 5000);
   } else {
     toast('没有图片上传成功', 3000);
   }
@@ -700,7 +726,16 @@ async function uploadAll(files, dir) {
   }
 }
 
-/** 读取文件 → （必要时）压缩 → dataURL */
+/**
+ * 读取文件 → （必要时）压缩 → 顺手出一张缩略图 → dataURL
+ *
+ * 缩略图那一步是补上 #1 的遗留缺口：tools/make-thumbs.mjs 是**离线**跑的，
+ * 只覆盖当时已经在仓库里的图；新上传的图要等谁手动跑一次才有缩略图，
+ * 在那之前站点按**原图**显示。现在上传时就按同一套参数（720px / q68）生成一张，
+ * 跟主图一起交给 Worker 提交 —— 新图从第一天就有缩略图。
+ *
+ * 返回 { name, dataUrl, thumbDataUrl? }；不需要缩略图时就没有这个字段。
+ */
 async function prepare(file) {
   const raw = await new Promise((resolve, reject) => {
     const fr = new FileReader();
@@ -709,6 +744,7 @@ async function prepare(file) {
     fr.readAsDataURL(file);
   });
 
+  /* 不需要压、也不可能需要缩略图（小图/gif/svg）：原样传，别白解码一次 */
   if (!shouldCompress({ type: file.type, size: file.size })) {
     return { name: file.name, dataUrl: raw };
   }
@@ -719,14 +755,26 @@ async function prepare(file) {
     i.onerror = () => reject(new Error('这张图打不开'));
     i.src = raw;
   });
+
+  /*
+   * 缩略图的尺寸判断要用**原图**的宽高 —— 它比 720 大才值得出一张。
+   * 放在压缩之前算，因为压完之后 width 已经变了、判断就不准了。
+   */
+  const needThumb = shouldMakeThumb({ type: file.type, size: file.size, width: img.naturalWidth || img.width });
+  const thumbDataUrl = needThumb ? makeThumbDataUrl(img) : null;
+
   const scale = Math.min(1, MAX_EDGE / Math.max(img.width, img.height));
-  if (scale >= 1) return { name: file.name, dataUrl: raw };
+  if (scale >= 1) {
+    return thumbDataUrl ? { name: file.name, dataUrl: raw, thumbDataUrl } : { name: file.name, dataUrl: raw };
+  }
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(img.width * scale);
   canvas.height = Math.round(img.height * scale);
   canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
   const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-  return { name: toJpegName(file.name), dataUrl };
+  const out = { name: toJpegName(file.name), dataUrl };
+  if (thumbDataUrl) out.thumbDataUrl = thumbDataUrl;
+  return out;
 }
 
 /* ------------------------------------------------------------------ 启动 */

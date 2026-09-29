@@ -522,6 +522,26 @@ body.is-dirty .savebar .btn { display: none; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 「这张还没有缩略图」角标（左上角；右上角留给批量选择的勾选框） */
+.card-nothumb {
+  position: absolute;
+  left: 5px;
+  top: 5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: #fff;
+  background: color-mix(in srgb, var(--gold) 72%, #000);
+  backdrop-filter: blur(4px);
+}
+/* 信息面板里的说明文字 */
+.sheet-note {
+  margin: 2px 4px 4px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--muted);
+}
 .grid-pad { height: calc(90px + var(--safe-b)); }
 
 /* 图片信息面板 */

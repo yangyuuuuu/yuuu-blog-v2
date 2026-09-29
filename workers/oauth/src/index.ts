@@ -68,6 +68,20 @@ const LOCK_SEC = 15 * 60;
 const LOG_TTL_SEC = 90 * 24 * 60 * 60;
 
 /**
+ * 文章增删改日志（和上面的访问日志是两回事，别混）。
+ *   · 只记「新增 / 修改 / 删除」三种，不记浏览
+ *   · **永久保留** —— 所以 put 的时候绝不带 expirationTtl（访问日志才有 90 天 TTL）
+ *   · 每条记：动作、文章标题、可点击链接、IP、时间
+ *
+ * 存两份是有意的，各管一件事：
+ *   · plog:<at 毫秒>-<随机>  流水，永久；?all=1 走它
+ *   · plog:recent            最近 RECENT_POST_LOGS 条的缓存，界面默认只显示这些
+ * 只存流水的话，界面一打开就要把全部历史拉出来读（越用越慢）。
+ */
+const POST_LOG_PREFIX = 'plog:';
+const RECENT_POST_LOGS = 200;
+
+/**
  * 允许的来源：线上域名 + 本地预览（方便在本机调私人角落）。
  * 回显请求里的 Origin，不放开通配符 —— 免得别人的站点也能调这个 Worker。
  */
@@ -117,6 +131,18 @@ const localTime = (d: Date): string => {
   const t = new Date(d.getTime() + 8 * 3600 * 1000);
   return t.toISOString().replace('T', ' ').slice(0, 19) + ' (+08:00)';
 };
+
+/**
+ * 访客 IP。
+ * 用 CF-Connecting-IP（真实客户端 IP）；本地 / 预览环境没有这个头，再退到
+ * X-Forwarded-For 的第一段，最后才是「未知」—— 日志里有个值总比空着强。
+ */
+function clientIp(request: Request): string {
+  const cf = request.headers.get('CF-Connecting-IP');
+  if (cf) return cf;
+  const xff = (request.headers.get('X-Forwarded-For') || '').split(',')[0].trim();
+  return xff || '未知';
+}
 
 function html(body: string): Response {
   return new Response(
@@ -263,6 +289,63 @@ async function appendToDay(kv: KVNamespace, day: string, record: Record<string, 
   } catch { /* 归档失败不影响主流程 */ }
 }
 
+/* ------------------------------------------------- 文章增删改日志（永久） */
+
+/**
+ * 写一条文章改动日志。
+ *
+ * ⚠️ 两个容易写错的地方：
+ *   1. **不要给它加 TTL** —— 站主要求永久保留。KV 的 put 默认就是永久，
+ *      这里刻意不传 expirationTtl（访问日志那套的 90 天 TTL 是给浏览记录的）。
+ *   2. 这一步**失败绝不能影响文章本身** —— 文章已经写进 GitHub 了，
+ *      为了记一条日志去回滚（或者把成功报成失败）才是真的糟。
+ *      所以调用方一律用 logPostChange（它把失败吞掉），不要直接调这个。
+ */
+async function logPost(
+  env: Env,
+  v: { action: '新增' | '修改' | '删除'; title: string; was?: string; url?: string; ip: string },
+): Promise<Record<string, unknown>> {
+  const now = new Date();
+  const entry = {
+    id: now.toISOString().slice(0, 10) + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
+    at: now.toISOString(),
+    atLocal: localTime(now),
+    action: v.action,
+    title: v.title,
+    /* 改标题时把**改之前**的标题也记上（没变就不写这个字段，省得每条都带一个空值） */
+    ...(v.was && v.was !== v.title ? { was: v.was } : {}),
+    /* 删除的文章已经没了，这里就是空串 —— 界面据此决定标题能不能点 */
+    url: v.url || '',
+    ip: v.ip || '未知',
+  };
+  const kv = env.LOGS;
+  if (!kv) return entry;
+
+  /* 流水：键以毫秒时间戳开头，list() 出来的顺序天然就是时间顺序 */
+  await kv.put(POST_LOG_PREFIX + String(now.getTime()).padStart(15, '0') + '-' + Math.random().toString(36).slice(2, 6), JSON.stringify(entry));
+
+  /* 界面用的「最近 N 条」缓存 */
+  try {
+    const raw = await kv.get(POST_LOG_PREFIX + 'recent');
+    const list = raw ? (JSON.parse(raw) as unknown[]) : [];
+    list.push(entry);
+    await kv.put(POST_LOG_PREFIX + 'recent', JSON.stringify(list.slice(-RECENT_POST_LOGS)));
+  } catch { /* 缓存坏了就重建，不影响流水 */ }
+
+  return entry;
+}
+
+/**
+ * logPost 的「绝不炸」包装：日志是**附带**的事，不能因为它把保存/删除报成失败。
+ * 真出问题了往 console 打一行（wrangler tail 能看到），用户那边只看文章存没存上。
+ */
+async function logPostChange(
+  env: Env,
+  v: { action: '新增' | '修改' | '删除'; title: string; was?: string; url?: string; ip: string },
+): Promise<void> {
+  try { await logPost(env, v); } catch (e) { console.log('文章日志写入失败：' + (e as Error).message); }
+}
+
 /** 离开时补写停留时长：热数据和当天归档都要更新 */
 async function handleLeave(request: Request, env: Env): Promise<Response> {
   let body: { ticket?: string; seconds?: number } = {};
@@ -303,6 +386,22 @@ async function handleLeave(request: Request, env: Env): Promise<Response> {
 }
 
 /**
+ * 把永久归档（day:YYYY-MM-DD，一天一个 JSON 数组）按天读出来、按时间排序。
+ * 访问日志和文章日志共用 —— 两边的归档结构是一样的（单条记录的字段不同而已）。
+ */
+async function readDayArchive(kv: KVNamespace): Promise<Record<string, unknown>[]> {
+  const days = await kv.list({ prefix: 'day:', limit: 400 });
+  const out: Record<string, unknown>[] = [];
+  for (const k of days.keys) {
+    const raw = await kv.get(k.name);
+    if (!raw) continue;
+    try { out.push(...(JSON.parse(raw) as Record<string, unknown>[])); } catch { /* 跳过坏数据 */ }
+  }
+  out.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  return out;
+}
+
+/**
  * 读日志。
  *   默认：最近 90 天的热数据（快）
  *   ?all=1：把永久归档按天读出来（慢一点，但不会过期）
@@ -318,14 +417,7 @@ async function handleLogs(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
 
   if (url.searchParams.get('all') === '1') {
-    const days = await kv.list({ prefix: 'day:', limit: 400 });
-    const logs: unknown[] = [];
-    for (const k of days.keys) {
-      const raw = await kv.get(k.name);
-      if (!raw) continue;
-      try { logs.push(...(JSON.parse(raw) as unknown[])); } catch { /* 跳过坏数据 */ }
-    }
-    logs.sort((a, b) => String((a as { at: string }).at).localeCompare(String((b as { at: string }).at)));
+    const logs = await readDayArchive(kv);
     /* 按天归档可能很大，这里最多回最近 3000 条 */
     const trimmed = logs.slice(-3000);
     return json({ count: trimmed.length, total: logs.length, scope: 'all', logs: trimmed }, 200, request, env);
@@ -340,6 +432,65 @@ async function handleLogs(request: Request, env: Env): Promise<Response> {
   );
   const logs = items.filter(Boolean).reverse();
   return json({ count: logs.length, scope: 'recent', logs }, 200, request, env);
+}
+
+/**
+ * 读**文章增删改日志**（/admin/post-logs）。
+ *
+ * 和访问日志分开的理由：那份有 90 天 TTL、这份永久；界面上也是两张表。
+ * 口令沿用 LOGS_TOKEN（同一个运维口令，不再多记一个）。
+ *
+ *   默认：最近 30 天（或最近 200 条，谁先到算谁）—— 界面打开要快、不要一次渲染几千行
+ *   ?all=1：全部历史（从永久流水里读）
+ */
+async function handlePostLogs(request: Request, env: Env): Promise<Response> {
+  const auth = request.headers.get('Authorization') || '';
+  const token = auth.replace(/^Bearer\s+/i, '').trim();
+  if (!env.LOGS_TOKEN) return json({ message: '服务端还没设置日志口令（LOGS_TOKEN）' }, 500, request, env);
+  if (token !== env.LOGS_TOKEN) return json({ message: '口令不对' }, 401, request, env);
+  const kv = env.LOGS;
+  if (!kv) return json({ message: '没有绑定 KV（LOGS）' }, 500, request, env);
+
+  const url = new URL(request.url);
+
+  if (url.searchParams.get('all') === '1') {
+    /* 只要 plog:<毫秒> 的流水，把 plog:recent 那份缓存排除掉 */
+    const list = await kv.list({ prefix: POST_LOG_PREFIX, limit: 1000 });
+    const items: Record<string, unknown>[] = [];
+    for (const k of list.keys) {
+      if (k.name === POST_LOG_PREFIX + 'recent') continue;
+      const raw = await kv.get(k.name);
+      if (!raw) continue;
+      try { items.push(JSON.parse(raw) as Record<string, unknown>); } catch { /* 跳过坏数据 */ }
+    }
+    items.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+    const trimmed = items.slice(-2000);
+    return json({ count: trimmed.length, total: items.length, scope: 'all', logs: trimmed }, 200, request, env);
+  }
+
+  const days = Math.min(365, Math.max(1, Number(url.searchParams.get('days')) || 30));
+  const limit = Math.min(1000, Math.max(1, Number(url.searchParams.get('limit')) || RECENT_POST_LOGS));
+  const since = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
+
+  /* 优先用缓存那份（一次 get 就够）；没有（第一次部署）再从流水扫 */
+  let logs: Record<string, unknown>[] = [];
+  const raw = await kv.get(POST_LOG_PREFIX + 'recent');
+  if (raw) {
+    try { logs = JSON.parse(raw) as Record<string, unknown>[]; } catch { logs = []; }
+  } else {
+    const list = await kv.list({ prefix: POST_LOG_PREFIX, limit: 1000 });
+    for (const k of list.keys) {
+      if (k.name === POST_LOG_PREFIX + 'recent') continue;
+      const r = await kv.get(k.name);
+      if (!r) continue;
+      try { logs.push(JSON.parse(r) as Record<string, unknown>); } catch { /* 跳过 */ }
+    }
+    logs.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  }
+
+  const inWindow = logs.filter((x) => String(x.at) >= since);
+  const kept = inWindow.slice(-limit);
+  return json({ count: kept.length, total: logs.length, scope: 'recent', days, limit, logs: kept }, 200, request, env);
 }
 
 /* ------------------------------------------------------- 手机写作页（/admin/m/）
@@ -419,6 +570,24 @@ const MEDIA_META = UPLOAD_DIR + '/categories.json';
 const IMAGE_EXT = /\.(jpe?g|png|gif|webp|avif|svg|bmp)$/i;
 
 /**
+ * 缩略图固定放在 public/uploads/thumbs/ 下、**永远 .jpg**。
+ *
+ * ⚠️ 这条路径规则必须和 tools/apply-thumbs.mjs 对齐（那边就是这么算的）：
+ *   主图 /uploads/芙芙.png → 缩略图 /uploads/thumbs/芙芙.jpg
+ * 所以上传时服务端也按同一条规则算出缩略图路径 —— 一次性交给提交，
+ * 主图和缩略图**同一次提交**（不会出现「有图没缩略图」的中间态）。
+ */
+function thumbPathFor(imagePath: string): string {
+  return UPLOAD_DIR + '/thumbs/' + (imagePath.split('/').pop() || 'image').replace(/\.[^.]+$/, '') + '.jpg';
+}
+
+/** 从 git tree 的 path 里取文件名（tree 返回的是 URL 编码的，中文要解回来比对） */
+function treeBaseName(p: string): string {
+  const raw = p.split('/').pop() || p;
+  try { return decodeURIComponent(raw); } catch { return raw; }
+}
+
+/**
  * 图片文件名净化：**保留中文**（站点的文章名本来就支持中文），
  * 只去掉路径分隔符和 Windows 上非法的字符，空格变下划线。
  */
@@ -486,8 +655,47 @@ async function ghGetBlob(env: Env, path: string): Promise<{ base64: string; sha:
   const res = await fetch(url, { headers: ghHeaders(env) });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error('读文件失败（HTTP ' + res.status + '）');
-  const data = (await res.json()) as { content?: string; sha?: string };
-  return { base64: (data.content || '').replace(/\n/g, ''), sha: data.sha || '' };
+  const data = (await res.json()) as { content?: string; sha?: string; size?: number; encoding?: string };
+  const inline = (data.content || '').replace(/\n/g, '');
+
+  /*
+   * ★★★ 这里踩过一次**真丢图**的坑，改代码前务必读完 ★★★
+   *
+   * GitHub 的 Contents API 对**超过 1MB** 的文件**不返回 content** ——
+   * 它给 encoding: "none"、size: 真大小、content: ""。
+   * 老代码直接 (data.content || '') 当内容用，于是「读一张大图」拿到空串，
+   * 再原样写回去就变成 **0 字节的 blob**：图片在仓库里被抹成空文件。
+   * 站主的「若娜瓦-低眉.jpg」就这么没的（14.8MB → 0 字节，
+   * 线上 404、图库里显示「还没构建好」）—— 而所有小图都正常，
+   * 所以只看代码完全不觉得有问题。
+   *
+   * 修法：content 是空的、但文件其实有内容时，拿 sha 走 **Git Blobs 接口**
+   * 取真正的 base64（那个接口没有 1MB 这个限制）。
+   * 再配一条硬防线：**读到大文件却拿到空内容就抛错**，
+   * 宁可这次改名失败，也不能把一个 0 字节写进仓库。
+   */
+  if (!inline && (data.size || 0) > 0) {
+    if (!data.sha) throw new Error('读文件失败：内容为空且没有 sha，无法安全读取 ' + path);
+    const blobRes = await fetch(`${GH_API}/repos/${repoOf(env)}/git/blobs/${data.sha}`, { headers: ghHeaders(env) });
+    if (!blobRes.ok) throw new Error('读大文件失败（HTTP ' + blobRes.status + '）：' + path);
+    const blob = (await blobRes.json()) as { content?: string; encoding?: string };
+    const full = (blob.content || '').replace(/\n/g, '');
+    if (!full) throw new Error('读大文件拿到的内容为空（拒绝把空文件写回仓库）：' + path);
+    return { base64: full, sha: data.sha };
+  }
+
+  return { base64: inline, sha: data.sha || '' };
+}
+
+/**
+ * 内容是不是真的「空」。
+ *
+ * 用 base64 的长度反推字节数来判断 —— 不要额外发请求，也不信调用方。
+ * 「0 字节」和「读失败」在这里是一个意思：都绝不允许写进仓库。
+ */
+function isEmptyBlob(base64: string): boolean {
+  const b64 = String(base64 || '').replace(/\s/g, '').replace(/=+$/, '');
+  return Math.floor((b64.length * 3) / 4) === 0;
 }
 
 /** 直接写入一个 base64 内容（二进制安全，图片用这个） */
@@ -542,6 +750,19 @@ async function ghCommitMany(
   const bad = [...files.map((f) => f.path), ...removes].filter((p) => !okPath(p));
   if (bad.length) throw new Error('内部错误：提交里出现了非法路径 ' + JSON.stringify(bad.slice(0, 3)));
   if (files.length + removes.length > 200) throw new Error('一次提交的文件太多（' + (files.length + removes.length) + '）');
+
+  /*
+   * ★ 第二道防线：**任何文件都不许提交成空文件**。
+   *
+   * 上面 ghGetBlob 的注释里写了那次事故（大图被读成空串 → 0 字节覆盖原图）。
+   * 这里再兜一层：真要有人再从别的路径把空内容喂进来，
+   * 就**响亮地失败**（这次改名/归类不生效），而不是把用户的图抹掉。
+   * 分类索引 categories.json 这类文本文件也会顺便被检查到 —— 空索引本身也是错的。
+   */
+  const empty = files.filter((f) => isEmptyBlob(f.base64));
+  if (empty.length) {
+    throw new Error('拒绝提交空文件（0 字节会覆盖掉仓库里的原文件）：' + empty.map((f) => f.path).join('、'));
+  }
 
   /* 新增/改写的文件先建 blob（二进制安全：内容就是 base64） */
   const tree: Record<string, unknown>[] = [];
@@ -829,6 +1050,23 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
       return cut < 0 ? '' : inside.slice(0, cut);
     };
 
+    /*
+     * 已经存在的缩略图（文件名集合）。
+     * 和上面的 tree 一样要逐段编码 —— 缩略图名往往就是中文图片名。
+     * 目录不存在（还没生成过任何缩略图）时 GitHub 给 404，当成空集合即可。
+     */
+    const thumbNames = async (): Promise<Set<string>> => {
+      const url = `${GH_API}/repos/${repo}/git/trees/${branchOf(env)}:${(UPLOAD_DIR + '/thumbs').split('/').map(encodeURIComponent).join('/')}?recursive=1`;
+      try {
+        const r = await fetch(url, { headers: ghHeaders(env) });
+        if (!r.ok) return new Set<string>();
+        const d = (await r.json()) as { tree?: { path: string; type: string }[] };
+        return new Set((d.tree || []).filter((e) => e.type === 'blob').map((e) => treeBaseName(e.path)));
+      } catch {
+        return new Set<string>();
+      }
+    };
+
     try {
       /* 列全部图片 */
       if (pathname === '/admin/images') {
@@ -839,9 +1077,13 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
         if (!res.ok) return json({ message: '读图片列表失败（HTTP ' + res.status + '）' }, 502, request, env);
         const data = (await res.json()) as { tree?: { path: string; type: string; size?: number }[] };
         const meta = await readMediaMeta(env);
+        /* 哪些图已经有缩略图 —— 界面据此标一下「还没有缩略图（老图，跑 npm run thumbs）」 */
+        const thumbs = await thumbNames();
         const images = (data.tree || [])
-          /* 分类索引本身不是图片，别列进去 */
-          .filter((e) => e.type === 'blob' && IMAGE_EXT.test(e.path) && !/categories\.json$/i.test(e.path))
+          /* 分类索引本身不是图片，别列进去；thumbs/ 下的是缩略图，更不该当成一张「图」 */
+          .filter((e) => e.type === 'blob' && IMAGE_EXT.test(e.path)
+            && !/categories\.json$/i.test(e.path)
+            && !/^thumbs\//i.test(e.path))
           .map((e) => {
             const name = e.path.split('/').pop() || e.path;
             const rel = UPLOAD_DIR + '/' + e.path;
@@ -855,6 +1097,8 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
                */
               dir: meta[name] !== undefined ? meta[name] : legacyDirOf(rel),
               size: e.size || 0,
+              /* 缩略图是 .jpg，而站点那边找的也正是 <同名>.jpg（见 thumbPathFor 的说明） */
+              hasThumb: thumbs.has(name.replace(/\.[^.]+$/, '.jpg')),
             };
           })
           .sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir.localeCompare(b.dir)));
@@ -862,9 +1106,9 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
         return json({ images, dirs, count: images.length }, 200, request, env);
       }
 
-      /* 上传（手机上是相册选图 → base64 传过来） */
+      /* 上传（手机上是相册选图 → base64 传过来；浏览器里顺手生成的缩略图一起传） */
       if (pathname === '/admin/image/upload') {
-        const b = body as { name?: string; dataUrl?: string; dir?: string };
+        const b = body as { name?: string; dataUrl?: string; dir?: string; thumbDataUrl?: string };
         const raw = String(b.dataUrl || '');
         const m = /^data:image\/([a-z0-9.+-]+);base64,(.+)$/i.exec(raw);
         if (!m) return json({ message: '图片数据格式不对（需要 data:image/...;base64,...）' }, 400, request, env);
@@ -888,16 +1132,38 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
         const meta = await readMediaMeta(env);
         if (dir) meta[finalName] = dir; else delete meta[finalName];
 
-        /* 图片本体 + 分类索引，**一次提交**（不会出现「图传上了但没归类」的中间态） */
-        await ghCommitMany(env, [
-          { path: finalPath, base64: m[2].replace(/\s/g, '') },
-          { path: MEDIA_META, base64: mediaMetaBase64(meta) },
-        ], [], 'media: 上传 ' + finalName + (dir ? '（' + dir + '）' : ''));
+        /*
+         * 缩略图（#1 的遗留缺口）：离线那套 tools/make-thumbs.mjs 只覆盖
+         * **已存在**的图，新上传的图要等谁手动跑一次才有缩略图。
+         * 现在客户端在上传前用**同一套 canvas 逻辑**（720px / q68）生成一张，
+         * 跟着主图一起传上来，服务端写进 public/uploads/thumbs/。
+         *
+         * 缩略图是**可选**的：老客户端不传、或图本身不需要缩略图（小图、gif）时就只有主图 ——
+         * 这和以前的行为一样，不会因为缺缩略图让上传失败。
+         */
+        const files: { path: string; base64: string }[] = [{ path: finalPath, base64: m[2].replace(/\s/g, '') }];
+        let thumbPath = '';
+        const thumbRaw = String(b.thumbDataUrl || '');
+        if (thumbRaw) {
+          const tm = /^data:image\/jpe?g;base64,(.+)$/i.exec(thumbRaw);
+          if (tm) {
+            thumbPath = thumbPathFor(finalPath);
+            files.push({ path: thumbPath, base64: tm[1].replace(/\s/g, '') });
+          } else {
+            /* 传了但格式不对：当成没传（主图照样能传上去），但要说一声 */
+            console.log('上传时带的缩略图不是 JPEG dataURL，已忽略');
+          }
+        }
+        files.push({ path: MEDIA_META, base64: mediaMetaBase64(meta) });
+
+        /* 图片本体 + 缩略图 + 分类索引，**一次提交**（不会出现「图传上了但没归类/没缩略图」的中间态） */
+        await ghCommitMany(env, files, [], 'media: 上传 ' + finalName + (dir ? '（' + dir + '）' : ''));
 
         return json({
           ok: true,
           path: finalPath,
           url: '/uploads/' + encodeURIComponent(finalName),
+          thumb: thumbPath,
           dir,
         }, 200, request, env);
       }
@@ -1363,6 +1629,8 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
         const f = await ghGetFile(env, rel);
         if (!f) return json({ message: '这篇文章在仓库里找不到（可能刚被改名或删除）' }, 404, request, env);
         const { yaml: y, body: oldBody } = splitYaml(f.text);
+        /* 改之前的标题：日志里「从什么改成什么」比只记新标题有用得多 */
+        const oldTitle = yamlOne(y, 'title') || rel;
         let next = y;
         next = setYamlKey(next, 'title', yamlStr(title));
         next = setYamlKey(next, 'updated', now);
@@ -1381,7 +1649,9 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
         /* frontmatter 的尾随空行清掉（那是我自己拼的），正文一个字符都不动 */
         const out = '---\n' + next.replace(/\r?\n/g, '\n').replace(/\n+$/, '') + '\n---\n\n' + keptBody;
         await ghPutFile(env, rel, out, 'post: 更新《' + title + '》', f.sha);
-        return json({ ok: true, path: rel, url: '/posts/' + rel.split('/').pop()!.replace(/\.md$/, '') + '/', updated: now }, 200, request, env);
+        const url = '/posts/' + rel.split('/').pop()!.replace(/\.md$/, '') + '/';
+        await logPostChange(env, { action: '修改', title, was: oldTitle, url, ip: clientIp(request) });
+        return json({ ok: true, path: rel, url, updated: now }, 200, request, env);
       }
 
       /* 新建 */
@@ -1407,6 +1677,7 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
         text.replace(/\r\n/g, '\n'),
       ].join('\n');
       await ghPutFile(env, newPath, fm, 'post: 新建《' + title + '》', '');
+      await logPostChange(env, { action: '新增', title, url: '/posts/' + slug + '/', ip: clientIp(request) });
       return json({ ok: true, path: newPath, url: '/posts/' + slug + '/', updated: now }, 200, request, env);
     } catch (e) {
       return json({ message: (e as Error).message }, 502, request, env);
@@ -1419,7 +1690,15 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
     try {
       const f = await ghGetFile(env, rel);
       if (!f) return json({ message: '已经不存在了' }, 404, request, env);
-      await ghDeleteFile(env, rel, 'post: 删除《' + rel.split('/').pop()!.replace(/\.md$/, '') + '》', f.sha);
+      /*
+       * 标题要**在删掉之前**从 frontmatter 里读出来 —— 删完就只剩文件名了。
+       * （文件名兜底也留着：万一 frontmatter 里没有 title。）
+       */
+      const fileBase = rel.split('/').pop()!.replace(/\.md$/, '');
+      const delTitle = yamlOne(splitYaml(f.text).yaml, 'title') || fileBase;
+      await ghDeleteFile(env, rel, 'post: 删除《' + delTitle + '》', f.sha);
+      /* 文章已经没了，所以链接留空 —— 界面上标题就不做成可点的 */
+      await logPostChange(env, { action: '删除', title: delTitle, url: '', ip: clientIp(request) });
       return json({ ok: true }, 200, request, env);
     } catch (e) {
       return json({ message: (e as Error).message }, 502, request, env);
@@ -1447,6 +1726,9 @@ export default {
     if (url.pathname === '/hidden' && request.method === 'POST') return handleHidden(request, env);
     if (url.pathname === '/hidden/leave' && request.method === 'POST') return handleLeave(request, env);
     if (url.pathname === '/hidden/logs' && request.method === 'GET') return handleLogs(request, env);
+
+    /* ---- 文章增删改日志（永久保留，和上面那份访问日志不是一回事）---- */
+    if (url.pathname === '/admin/post-logs' && request.method === 'GET') return handlePostLogs(request, env);
 
     /* ---- CMS 登录 ---- */
     if (url.pathname === '/auth') {
@@ -1493,8 +1775,9 @@ export default {
         ok: true,
         service: 'yuuu-blog-v2 oauth + private',
         routes: ['/', '/auth', '/callback', '/hidden', '/hidden/leave', '/hidden/logs',
+                 '/admin/post-logs',
                  '/admin/posts', '/admin/file', '/admin/save', '/admin/delete'],
-        build: 'r2',
+        build: 'r3',
       }), {
         headers: { ...headers, 'Content-Type': 'application/json' },
       });
