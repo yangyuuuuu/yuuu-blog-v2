@@ -212,7 +212,19 @@
               CMS.registerEventListener({
                 name: name,
                 handler: function (e) {
-                  try { e.entry.get('data').set('updated', today()); } catch (err) { /* 忽略 */ }
+                  /*
+                   * 「最后修改」只在**它还是空的时候**填一次今天，之后再也不动。
+                   * 以前是每次保存都覆盖 —— 站主说那样不对：发布之后不该自动改，
+                   * 要的是「新建时把时间填好，之后我自己说了算」。
+                   * Decap 没有「打开/新建」钩子（可注册事件只有 preSave/postSave/…），
+                   * 所以最早能填的时机就是第一次保存；字段本来就在编辑器里可见，
+                   * 打开旧文章显示的就是存着的值。
+                   */
+                  try {
+                    var data = e.entry.get('data');
+                    var cur = data.get('updated');
+                    if (cur === '' || cur === null || cur === undefined) data.set('updated', today());
+                  } catch (err) { /* 忽略：拿不到就算了，不能因此挡住保存 */ }
                 },
               });
             } catch (err) { /* 忽略：注册失败也不影响发文 */ }
