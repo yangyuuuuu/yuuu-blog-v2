@@ -69,7 +69,21 @@ try {
     }
     throw new Error('Edge 没起来');
   }
-  const ws = new WebSocket(await wsUrl());
+  /*
+   * ⚠️ 没有 Edge 的环境（CI / Cloudflare 构建机）要**优雅跳过**，不能算失败。
+   * 这个测试需要真浏览器；构建机上跑不起来是正常的，不是代码有问题。
+   * 之前没做这个区分 —— 如果构建命令里带了 check:all，就会把构建整个搞挂。
+   */
+  let wsUrlStr;
+  try {
+    wsUrlStr = await wsUrl();
+  } catch (err) {
+    console.log('  ⚠️ 跳过：这台机器上没有 Edge（或起不来），浏览器类检查需要它');
+    try { server.close(); } catch (e) {}
+    try { rmSync(PROF, { recursive: true, force: true }); } catch (e) {}
+    process.exit(0);
+  }
+  const ws = new WebSocket(wsUrlStr);
   await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
   let id = 0; const pending = new Map(); const errs = [];
   ws.addEventListener('message', (e) => {

@@ -759,6 +759,25 @@ mark.find-hit::after {
 /* 搜索面板要浮在暗幕之上（暗幕在 header 里是 -1，面板在 body 下必须 > 50） */
 .search-panel { z-index: 90; }
 
+/*
+ * 手机上搜索结果要**居中**。
+ * 桌面版是 relative 定位 + right:0（贴着搜索框右边），
+ * 但手机搜索框很窄，面板（宽 min(420px, ...)）会歪到一边、还被挤出屏幕。
+ * 这里改成固定定位、左右各留 12px —— 不需要 transform 就是视口居中，
+ * 也不会因为祖先有没有 transform 而跑偏。
+ */
+@media (max-width: 560px) {
+  .search-panel {
+    position: fixed;
+    top: 76px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    max-height: calc(100dvh - 100px);
+  }
+}
+
 /* 搜索框本身发亮：相对定位 + z-index，确保它在这个层叠层级里浮在暗幕之上 */
 #searchRoot { position: relative; z-index: 1; }
 .search-box {

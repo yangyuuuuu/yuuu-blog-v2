@@ -29,7 +29,16 @@ rmSync(PROF, { recursive: true, force: true });
 const edge = spawn(EDGE, ['--headless=new', '--disable-gpu', '--no-first-run', '--remote-debugging-port=' + PORT, '--user-data-dir=' + PROF, '--window-size=420,900', 'about:blank'], { stdio: 'ignore' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function wsUrl() { for (let i = 0; i < 60; i++) { try { const l = await (await fetch('http://127.0.0.1:' + PORT + '/json/list')).json(); const p = l.find((t) => t.type === 'page'); if (p?.webSocketDebuggerUrl) return p.webSocketDebuggerUrl; } catch {} await sleep(300); } throw new Error('no edge'); }
-const ws = new WebSocket(await wsUrl());
+/* 没有 Edge 的环境（CI / 构建机）要**优雅跳过**，不能算失败 —— 见 check-decap-extras.mjs 里的说明 */
+  let _wsUrl;
+  try {
+    _wsUrl = await wsUrl();
+  } catch (err) {
+    console.log('  ⚠️ 跳过：这台机器上没有 Edge（或起不来），浏览器类检查需要它');
+    try { server.close(); } catch (e) {}
+    process.exit(0);
+  }
+  const ws = new WebSocket(_wsUrl);
 await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
 let id = 0; const pending = new Map(); const errs = [];
 ws.addEventListener('message', (e) => {

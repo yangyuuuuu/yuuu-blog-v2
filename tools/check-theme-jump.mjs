@@ -32,7 +32,16 @@ rmSync(PROF, { recursive: true, force: true });
 const edge = spawn(EDGE, ['--headless=new', '--disable-gpu', '--no-first-run', '--remote-debugging-port=' + PORT, '--user-data-dir=' + PROF, '--window-size=1200,900', 'about:blank'], { stdio: 'ignore' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function wsUrl() { for (let i = 0; i < 60; i++) { try { const l = await (await fetch('http://127.0.0.1:' + PORT + '/json/list')).json(); const p = l.find((t) => t.type === 'page'); if (p?.webSocketDebuggerUrl) return p.webSocketDebuggerUrl; } catch {} await sleep(300); } throw new Error('no edge'); }
-const ws = new WebSocket(await wsUrl());
+/* 没有 Edge 的环境（CI / 构建机）要**优雅跳过**，不能算失败 —— 见 check-decap-extras.mjs 里的说明 */
+  let _wsUrl;
+  try {
+    _wsUrl = await wsUrl();
+  } catch (err) {
+    console.log('  ⚠️ 跳过：这台机器上没有 Edge（或起不来），浏览器类检查需要它');
+    try { server.close(); } catch (e) {}
+    process.exit(0);
+  }
+  const ws = new WebSocket(_wsUrl);
 await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
 let id = 0; const pending = new Map(); const errs = [];
 ws.addEventListener('message', (e) => {
@@ -110,16 +119,27 @@ ok(await ev("getComputedStyle(document.getElementById('postJump')).position") ==
 ok(await ev("document.getElementById('jumpTop').disabled") === true, '在开头时「开头」按钮置灰');
 const h = await ev('document.documentElement.scrollHeight');
 console.log('  页面总高 ' + h + ' / 视口 ' + (await ev('window.innerHeight')));
+/* 等平滑滚动停下来再断言 —— 死等固定毫秒会抖（曾经因此误报过一次） */
+const settle = async () => {
+  let last = -1;
+  for (let i = 0; i < 40; i++) {
+    const y = await ev('Math.round(window.scrollY)');
+    if (y === last) return y;
+    last = y;
+    await sleep(120);
+  }
+  return last;
+};
 /* 跳到末尾 */
 await ev("document.getElementById('jumpEnd').click()");
-await sleep(1400);
+await settle();
 const y1 = await ev('Math.round(window.scrollY)');
 const maxY = await ev('document.documentElement.scrollHeight - window.innerHeight');
 ok(y1 > 100, '★ 点「末尾」滚下去了', 'scrollY=' + y1 + ' / 最大 ' + maxY);
 ok(await ev("document.getElementById('jumpEnd').disabled") === true, '★ 到文章末尾后「末尾」按钮置灰', 'disabled=' + await ev("document.getElementById('jumpEnd').disabled") + ' scrollY=' + y1);
 /* 回到开头 */
 await ev("document.getElementById('jumpTop').click()");
-await sleep(1400);
+await settle();
 const y2 = await ev('Math.round(window.scrollY)');
 ok(y2 < 100, '★ 点「开头」滚回文章最上面', 'scrollY=' + y2);
 ok(await ev("document.getElementById('jumpTop').disabled") === true, '回到开头后「开头」按钮置灰');
