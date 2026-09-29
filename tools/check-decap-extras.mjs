@@ -113,7 +113,8 @@ try {
   const ev = async (x) => { const r = await send('Runtime.evaluate', { expression: x, returnByValue: true, awaitPromise: true }); return r.result ? r.result.value : null; };
 
   await send('Page.enable'); await send('Runtime.enable');
-  await send('Page.navigate', { url: 'http://127.0.0.1:8099/' + PAGE });
+  /* 用 #/media 进去 —— 媒体页就是用这个路由（decap-extras 靠它判断「是不是媒体页面」） */
+  await send('Page.navigate', { url: 'http://127.0.0.1:8099/' + PAGE + '#/media' });
   await sleep(2500);
 
   console.log('=== 注入 ===');
@@ -189,16 +190,36 @@ try {
     ok(await ev("!document.querySelector('.dcx-mask')"), '点空白处不会误开');
 
     /*
-     * ★ 反向验一次「只在独立媒体页面接管」：
-     * 把工具栏里的「选择」拿掉（＝编辑器里的「选择图片」弹窗），
-     * 再点同一张图 —— 必须**不接管**，否则用户单击就选不中图、插不进图片。
+     * ★ 反向验一次「只在媒体页面接管单击」：
+     * 把 hash 换成文章编辑路由（＝编辑器里的「选择图片」弹窗），
+     * 再点同一张图 —— 单击必须**不接管**，否则用户单击就选不中图、插不进图片。
      * 这条要是红了，说明 gate 失效，插图流程会被破坏。
      */
-    await ev("document.getElementById('toolbar').remove()");
+    await ev("location.hash = '#/collections/posts/entries/2026-01-01-x'");
     await sleep(400);
     await ev("document.querySelectorAll('.media-card img')[0].click()");
     await sleep(400);
-    ok(await ev("!document.querySelector('.dcx-mask')"), '★ 没有「选择」控件时（＝编辑器插图弹窗）不接管单击');
+    ok(await ev("!document.querySelector('.dcx-mask')"), '★ 编辑器路由下单击不接管（插图流程不受影响）');
+
+    /* 同一个位置：**双击**必须能全屏（这是给编辑器插图弹窗留的路） */
+    await ev("document.querySelectorAll('.media-card img')[0].dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))");
+    await sleep(500);
+    ok(await ev("!!document.querySelector('.dcx-mask')"), '★ 编辑器路由下双击图片 → 全屏');
+    await ev("Array.from(document.querySelectorAll('.dcx-bar button')).find(b=>b.textContent==='关闭').click()");
+    await sleep(300);
+
+    /* 路由变体：/medium/ 是 Decap「介质库」集合，也当作媒体页（它是管理图片的地方） */
+    await ev("location.hash = '#/medium/2026'");
+    await sleep(400);
+    await ev("document.querySelectorAll('.media-card img')[0].click()");
+    await sleep(450);
+    ok(await ev("!!document.querySelector('.dcx-mask')"), '★ #/medium/... 也认（介质库集合）');
+    await ev("Array.from(document.querySelectorAll('.dcx-bar button')).find(b=>b.textContent==='关闭').click()");
+    await sleep(300);
+
+    /* 回到媒体页，双击不重复开 */
+    await ev("location.hash = '#/media'");
+    await sleep(400);
   }
 
   console.log('=== 异常 ===');

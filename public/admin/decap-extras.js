@@ -22,8 +22,6 @@
   var WORKER = 'https://oauth.yuuu.love';
   var SESSION_KEY = 'yuuu-mobile-editor';   /* 与 /admin/m/、/admin/g/ 共用，登一次就能用 */
   var API_PREFIX = '/uploads/';
-  /* 用来找「选择」控件的选择器（判断当前是不是独立媒体页，见 isStandaloneMediaPage） */
-  var texts = ['button', '[role="button"]', 'label', 'span'];
 
   /* ---------------------------------------------------------------- 基础工具 */
 
@@ -267,7 +265,7 @@
       tools.className = 'dcx-tools';
       var bView = document.createElement('button');
       bView.className = 'dcx-btn';
-      bView.title = '看原图';
+      bView.title = '看原图（媒体页面直接点图片也行；编辑器里双击图片）';
       bView.textContent = '\u{1F50D}';
       bView.onclick = function (ev) { ev.stopPropagation(); ev.preventDefault(); showLarge(img.src, img.alt || ''); };
       var bRename = document.createElement('button');
@@ -302,47 +300,82 @@
   /**
    * 当前是不是**独立的媒体库页面**（/admin/#/media），而不是编辑器里的图片选择弹窗？
    *
-   * 为什么要分：两处的卡片是同一个 Decap 组件，DOM 结构一模一样，
-   * 但语义完全不同 ——
+   * 为什么要分：两处的卡片是同一个 Decap 组件，但语义不同 ——
    *   · 媒体页面：点击 = 看/管理，点开全屏正合适；
    *   · 编辑器「选择图片」弹窗：**单击 = 选中该图**，右侧才会出现「插入」。
-   *     这里要是把单击吞掉换成全屏，用户就插不进图片了 —— 那才是真添乱。
+   *     把单击吞掉换全屏，用户就插不进图片了。
    *
-   * 判据：真正没有内建媒体库（没有 registerMediaLibrary）时，媒体页面的工具栏里
-   * 有「选择」这个控件，而**选择弹窗没有**（它只有一个「取消/关闭」，插图走卡片点击）。
-   * 拿不准（没渲染出来）就**不接管**，宁可少一个功能，也不破坏插图流程。
+   * 判据用**路由**，别去猜 DOM：
+   *   媒体页的地址就是 /admin/#/media（实测），
+   *   编辑器里的插图弹窗挂在文章编辑路由（#/collections/...）下，hash 不是 #/media。
+   * ⚠️ 之前用「工具栏里有没有『选择』文案」来判 —— **线上判不中，功能等于没上**（踩过）。
+   *   判据要拿真实页面量过再用。
    */
-  function isStandaloneMediaPage() {
+  function isMediaPage() {
     try {
-      for (var i = 0; i < texts.length; i++) {
-        var nodes = document.querySelectorAll(texts[i]);
-        for (var j = 0; j < nodes.length; j++) {
-          var t = (nodes[j].textContent || '').trim();
-          /* 精确匹配，别用 indexOf ——「取消选择」之类会误命中 */
-          if (t === '选择' || t === 'Select') return true;
-        }
-      }
-    } catch (e) { /* 忽略 */ }
-    return false;
+      var h = String(location.hash || '');
+      /*
+       * 媒体页的路由在 Decap 里是拼出来的（打包文件里查不到字面量），
+       * 所以这里按「路由段就叫 media」来认，#/media、#/media/xxx 都算；
+       * 编辑器路由是 #/collections/...，含 /entries/ 或 /new，不会被误判。
+       * 另外 Decap 的「介质库」集合路由是 #/medium/...，一并认（它是管理图片的地方，不是插图弹窗）。
+       */
+      if (/^#\/(collections|workflow)\b/.test(h)) return false;   /* 编辑器：明确排除 */
+      if (/^#\/medium([/?]|$)/.test(h)) return true;              /* 介质库集合 */
+      return /^#\/media([/?]|$)/.test(h);                          /* 独立媒体页 */
+    } catch (e) { return false; }
   }
 
-  function onClickCapture(e) {
+  /** 从一次点击事件里找出「媒体卡片里的那张图」，不是就返回 null */
+  function cardImageFrom(e) {
     var t = e.target;
-    if (!t || !t.closest) return;
-    if (t.closest('button, a, input, textarea, select, label')) return;
+    if (!t || !t.closest) return null;
+    if (t.closest('button, a, input, textarea, select, label')) return null;
     var img = t.closest('img[src*="' + API_PREFIX + '"]');
-    if (!img || !isMediaCardImage(img)) return;
-    /* 编辑器里的「选择图片」弹窗不接管：那边单击是选中，不是查看 */
-    if (!isStandaloneMediaPage()) return;
+    if (!img || !isMediaCardImage(img)) return null;
+    return img;
+  }
+
+  function openFull(img) {
+    showLarge(img.src, decodeURIComponent(img.getAttribute('src') || img.src), true);
+  }
+
+  /**
+   * 单击：
+   *   · 媒体页面 → 直接全屏（站主要的就是这个）
+   *   · 别处（编辑器「选择图片」弹窗）→ **放过**，让 Decap 自己处理
+   *     （那边单击＝选中，右侧才会出现「插入」；吞掉就插不进图了）
+   *     那种场景下交给下面的双击。
+   */
+  function onClickCapture(e) {
+    var img = cardImageFrom(e);
+    if (!img) return;
+    if (!isMediaPage()) return;
     e.preventDefault();
     e.stopPropagation();
     if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-    showLarge(img.src, decodeURIComponent(img.getAttribute('src') || img.src), true);
+    openFull(img);
+  }
+
+  /**
+   * 双击：**任何地方**都能全屏。
+   * 这是给编辑器插图弹窗准备的 —— 双击不会破坏「单击＝选中」，
+   * 所以两个需求（能看大图 / 能插图）同时成立。
+   */
+  function onDblClickCapture(e) {
+    var img = cardImageFrom(e);
+    if (!img) return;
+    if (isMediaPage()) return;   /* 媒体页单击已经开了，双击交给 Decap */
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+    openFull(img);
   }
 
   function start() {
     enhance();
     document.addEventListener('click', onClickCapture, true);
+    document.addEventListener('dblclick', onDblClickCapture, true);
     /* Decap 是 React 应用，媒体库是打开时才渲染的 —— 只能盯着 DOM 变化 */
     try {
       var mo = new MutationObserver(function () { enhance(); });
