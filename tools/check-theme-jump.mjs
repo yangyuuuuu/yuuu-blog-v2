@@ -119,30 +119,28 @@ ok(await ev("getComputedStyle(document.getElementById('postJump')).position") ==
 ok(await ev("document.getElementById('jumpTop').disabled") === true, '在开头时「开头」按钮置灰');
 const h = await ev('document.documentElement.scrollHeight');
 console.log('  页面总高 ' + h + ' / 视口 ' + (await ev('window.innerHeight')));
-/* 等平滑滚动停下来再断言 —— 死等固定毫秒会抖（曾经因此误报过一次） */
-const settle = async () => {
-  let last = -1;
-  for (let i = 0; i < 40; i++) {
-    const y = await ev('Math.round(window.scrollY)');
-    if (y === last) return y;
-    last = y;
-    await sleep(120);
+/* 等按钮状态稳定（平滑滚动 + rAF 回调都走完）—— 死等固定毫秒会抖 */
+const waitDisabled = async (id, want, ms = 4000) => {
+  const until = Date.now() + ms;
+  while (Date.now() < until) {
+    if ((await ev("document.getElementById('" + id + "').disabled")) === want) return true;
+    await sleep(150);
   }
-  return last;
+  return false;
 };
 /* 跳到末尾 */
 await ev("document.getElementById('jumpEnd').click()");
-await settle();
+await sleep(1600);
 const y1 = await ev('Math.round(window.scrollY)');
 const maxY = await ev('document.documentElement.scrollHeight - window.innerHeight');
 ok(y1 > 100, '★ 点「末尾」滚下去了', 'scrollY=' + y1 + ' / 最大 ' + maxY);
-ok(await ev("document.getElementById('jumpEnd').disabled") === true, '★ 到文章末尾后「末尾」按钮置灰', 'disabled=' + await ev("document.getElementById('jumpEnd').disabled") + ' scrollY=' + y1);
+ok(await waitDisabled('jumpEnd', true), '★ 到文章末尾后「末尾」按钮置灰', 'disabled=' + await ev("document.getElementById('jumpEnd').disabled") + ' scrollY=' + y1);
 /* 回到开头 */
 await ev("document.getElementById('jumpTop').click()");
-await settle();
+await sleep(1600);
 const y2 = await ev('Math.round(window.scrollY)');
 ok(y2 < 100, '★ 点「开头」滚回文章最上面', 'scrollY=' + y2);
-ok(await ev("document.getElementById('jumpTop').disabled") === true, '回到开头后「开头」按钮置灰');
+ok(await waitDisabled('jumpTop', true), '回到开头后「开头」按钮置灰');
 
 console.log('');
 console.log('=== 控制台异常 ===');
