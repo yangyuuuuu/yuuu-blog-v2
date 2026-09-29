@@ -581,6 +581,37 @@ function thumbPathFor(imagePath: string): string {
   return UPLOAD_DIR + '/thumbs/' + (imagePath.split('/').pop() || 'image').replace(/\.[^.]+$/, '') + '.jpg';
 }
 
+/**
+ * 主图改名时，把它的缩略图**一起搬**；没有缩略图就什么都不做。
+ *
+ * 不搬会怎样：站点按「主图同名 .jpg」去找缩略图（见 thumbPathFor），
+ * 改名后找不到 → 退回显示原图（变慢，但不破图），
+ * 图库里还会给这张标上「原图」角标。以前改名/删除都漏了这一步。
+ *
+ * 两个约束：
+ *   · 复用同一个 blob（base64 原样传），绝不重新编码图片；
+ *   · **没有缩略图就跳过** —— 别为了「补齐」发一个空文件上去
+ *     （ghCommitMany 也会拒绝空内容）。
+ */
+async function thumbOpsForRename(
+  env: Env,
+  oldImagePath: string,
+  newImagePath: string,
+): Promise<{ files: { path: string; base64: string }[]; removes: string[] }> {
+  const from = thumbPathFor(oldImagePath);
+  const to = thumbPathFor(newImagePath);
+  if (from === to) return { files: [], removes: [] };
+  const t = await ghGetBlob(env, from);
+  if (!t) return { files: [], removes: [] };
+  return { files: [{ path: to, base64: t.base64 }], removes: [from] };
+}
+
+/** 删主图时顺手清掉它的缩略图（否则 thumbs/ 里会留下孤儿） */
+async function thumbRemoveFor(env: Env, imagePath: string): Promise<string[]> {
+  const t = thumbPathFor(imagePath);
+  return (await ghGetBlob(env, t)) ? [t] : [];
+}
+
 /** 从 git tree 的 path 里取文件名（tree 返回的是 URL 编码的，中文要解回来比对） */
 function treeBaseName(p: string): string {
   const raw = p.split('/').pop() || p;
@@ -1198,6 +1229,10 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
           files.push({ path: newPath, base64: blob.base64 });
           removes.push(from);
           delete meta[fileName];
+          /* 缩略图跟着一起搬（它是以「主图同名」为准的） */
+          const top = await thumbOpsForRename(env, from, newPath);
+          files.push(...top.files);
+          removes.push(...top.removes);
         }
 
         if (dir) meta[newName] = dir; else delete meta[newName];
@@ -1240,6 +1275,11 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
         const files: { path: string; base64: string }[] = [{ path: to, base64: blob.base64 }];
         const removes: string[] = [from];
 
+        /* 缩略图一起搬，并告诉用户一声（没有缩略图时是 0） */
+        const thumbMove = await thumbOpsForRename(env, from, to);
+        files.push(...thumbMove.files);
+        removes.push(...thumbMove.removes);
+
         /* 分类索引跟着改名走（索引是以文件名为键的） */
         const meta = await readMediaMeta(env);
         const keptDir = meta[oldName];
@@ -1263,6 +1303,7 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
           dir: keptDir || '',
           url: '/uploads/' + encodeURIComponent(newName),
           refsUpdated: touched.length,
+          thumbMoved: thumbMove.files.length > 0,
         }, 200, request, env);
       }
 
@@ -1334,6 +1375,10 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
             }
             files.push({ path: op.to, base64: blob.base64 });
             removes.push(op.from);
+            /* 缩略图一起搬 —— 否则站点改名后找不到缩略图，会退回显示原图 */
+            const top = await thumbOpsForRename(env, op.from, op.to);
+            files.push(...top.files);
+            removes.push(...top.removes);
             delete meta[oldName];
             renames.push({ from: op.from, to: op.to });
             moved++;
@@ -1376,8 +1421,15 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
         if (!blob) return json({ message: '这张图已经不在仓库里了' }, 404, request, env);
         const meta = await readMediaMeta(env);
         delete meta[fileName];
-        await ghCommitMany(env, [{ path: MEDIA_META, base64: mediaMetaBase64(meta) }], [target], 'media: 删除 ' + fileName);
-        return json({ ok: true }, 200, request, env);
+        /* 缩略图一起清掉，别在 thumbs/ 里留孤儿 */
+        const thumbGone = await thumbRemoveFor(env, target);
+        await ghCommitMany(
+          env,
+          [{ path: MEDIA_META, base64: mediaMetaBase64(meta) }],
+          [target, ...thumbGone],
+          'media: 删除 ' + fileName + (thumbGone.length ? '（含缩略图）' : ''),
+        );
+        return json({ ok: true, thumbRemoved: thumbGone.length > 0 }, 200, request, env);
       }
     } catch (e) {
       return json({ message: (e as Error).message }, 502, request, env);
@@ -1407,11 +1459,16 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
          * 注意 ghCommitMany 的参数顺序是 (env, files, removes, message)。
          */
         const meta = await readMediaMeta(env);
-        for (const p of paths) delete meta[p.split('/').pop() || ''];
+        const removes = [...paths];
+        /* 缩略图一起清（不然 thumbs/ 里全是孤儿） */
+        for (const p of paths) {
+          delete meta[p.split('/').pop() || ''];
+          removes.push(...(await thumbRemoveFor(env, p)));
+        }
         await ghCommitMany(
           env,
           [{ path: MEDIA_META, base64: mediaMetaBase64(meta) }],
-          paths,
+          removes,
           'media: 批量删除 ' + paths.length + ' 张图',
         );
         return json({ ok: true, count: paths.length, action: 'delete' }, 200, request, env);
@@ -1436,9 +1493,13 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
             const newName = (await ghGetBlob(env, UPLOAD_DIR + '/' + fileName))
               ? fileName.replace(/\.(\w+)$/, '-' + Date.now().toString(36) + '.$1')
               : fileName;
-            files.push({ path: UPLOAD_DIR + '/' + newName, base64: blob.base64 });
+            const movedTo = UPLOAD_DIR + '/' + newName;
+            files.push({ path: movedTo, base64: blob.base64 });
             removes.push(from);
             delete meta[fileName];
+            const top = await thumbOpsForRename(env, from, movedTo);
+            files.push(...top.files);
+            removes.push(...top.removes);
             if (dir) meta[newName] = dir; else delete meta[newName];
             changed++;
           } else {

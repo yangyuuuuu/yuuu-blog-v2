@@ -625,6 +625,39 @@ console.log('=== 6.6 重命名图片（连同文章引用一起改）===');
   ok(outside.status === 400, '只能改 uploads 下的图');
   const same = await call('/admin/image/rename', { ticket: 'good-ticket', path: 'public/uploads/bbb.jpg', name: 'bbb.jpg' });
   ok(same.status === 200 && same.data?.note === '名字没变', '名字没变时直接返回（不产生空提交）');
+
+  /*
+   * ★ 缩略图必须跟着主图走。
+   *
+   * 站点是按「主图同名 .jpg」去 thumbs/ 里找缩略图的（见 worker 的 thumbPathFor）。
+   * 改名/删除时如果不管缩略图：
+   *   · 改名后站点找不到缩略图 → 退回显示原图（变慢），图库还会标「原图」角标；
+   *   · 删除后 thumbs/ 里留下**孤儿**。
+   * 这不是破图级别的错，所以肉眼很难发现 —— 必须由测试盯住。
+   */
+  const thumbBytes = Buffer.from('THUMB-FOR-RENAME');
+  gh.files.set('public/uploads/有缩略图.jpg', { base64: png.toString('base64'), sha: 's-th' });
+  gh.files.set('public/uploads/thumbs/有缩略图.jpg', { base64: thumbBytes.toString('base64'), sha: 's-thumb' });
+
+  const rnTh = await call('/admin/image/rename', { ticket: 'good-ticket', path: 'public/uploads/有缩略图.jpg', name: '改过名' });
+  ok(rnTh.status === 200, '带缩略图的图能改名', JSON.stringify(rnTh.data));
+  ok(gh.files.has('public/uploads/thumbs/改过名.jpg'), '★ 缩略图跟着搬到了新名字下');
+  ok(!gh.files.has('public/uploads/thumbs/有缩略图.jpg'), '★ 旧名字下的缩略图已删除（不留孤儿）');
+  ok(Buffer.from(gh.files.get('public/uploads/thumbs/改过名.jpg').base64, 'base64').equals(thumbBytes),
+    '★ 缩略图内容逐字节没变（只是换了个名字）');
+  ok(rnTh.data?.thumbMoved === true, '响应里说明缩略图也搬了', String(rnTh.data?.thumbMoved));
+
+  /* 没有缩略图的图改名：不该凭空造一个 */
+  gh.files.set('public/uploads/没缩略图.jpg', { base64: png.toString('base64'), sha: 's-noth' });
+  const rnNo = await call('/admin/image/rename', { ticket: 'good-ticket', path: 'public/uploads/没缩略图.jpg', name: '没缩略图-改名' });
+  ok(rnNo.status === 200 && rnNo.data?.thumbMoved === false, '没有缩略图时改名照样成功，且不凭空造一个', JSON.stringify(rnNo.data));
+  ok(!gh.files.has('public/uploads/thumbs/没缩略图-改名.jpg'), '没有多出文件');
+
+  /* 删除：主图 + 缩略图一起清 */
+  const delTh = await call('/admin/image/delete', { ticket: 'good-ticket', path: 'public/uploads/改过名.jpg' });
+  ok(delTh.status === 200 && delTh.data?.thumbRemoved === true, '删除时报告缩略图也清了', JSON.stringify(delTh.data));
+  ok(!gh.files.has('public/uploads/改过名.jpg'), '主图没了');
+  ok(!gh.files.has('public/uploads/thumbs/改过名.jpg'), '★ 缩略图也一起删了（不留孤儿）');
 }
 
 console.log('=== 6.7 批处理：一次提交改多张图 ===');

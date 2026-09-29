@@ -406,6 +406,30 @@ if (/@astrojs\/rss/.test(read('package.json'))) ok('RSS 依赖已安装');
 if (/@astrojs\/sitemap/.test(read('package.json'))) ok('Sitemap 依赖已安装');
 if (/pagefind/.test(read('package.json'))) ok('Pagefind 依赖已安装');
 
+/* ------------------------------------------------- assets-src/（留档的原件） */
+{
+  /*
+   * assets-src/ 放的是**素材原件**（做图标用的立绘、以及那张事故里救回来的若娜瓦原图）。
+   * 它和 public/ 的区别很重要：public/ 里的东西都会进 dist 上线，
+   * assets-src/ 只留在仓库里。
+   *
+   * 这里只做一件最要紧的检查：**别把原件误删了**。
+   * 那张 14.8MB 的原图是「大图被抹成 0 字节」事故里唯一的底片，
+   * 丢了就真没了（那次差点就是永久丢失）。
+   */
+  const keep = [
+    'assets-src/ruonawa-lowbrow-original.png',   /* 站主上传的原版，逐字节 */
+    'assets-src/ruonawa-lowbrow-full.jpg',       /* 同图的全分辨率 JPEG */
+  ];
+  const gone = keep.filter((f) => !exists(f));
+  if (gone.length) gone.forEach((f) => bad('assets-src 里少了留档原件：' + f));
+  else ok('留档原图都在（' + keep.length + ' 个）');
+
+  /* 原件不能被塞进 public/ —— 那会直接上线，14.8MB 拖垮页面 */
+  const leaked = keep.filter((f) => exists('public/' + f.replace(/^assets-src\//, '')));
+  if (leaked.length) bad('留档原件被放到了 public/ 下（会上线）：' + leaked.join('、'));
+}
+
 /* ------------------------------------------------- slug 规则三处必须一致 */
 {
   /*
