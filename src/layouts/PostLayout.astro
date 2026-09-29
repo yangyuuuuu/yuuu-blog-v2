@@ -126,6 +126,20 @@ const description = hidden ? 'yuuu 的一篇私人记录' : d.summary ?? d.title
     </article>
 
     <!--
+      正文图片的全屏灯箱。正文里的图默认只加载缩略图（见 tools/apply-thumbs.mjs），
+      点一下才在这里加载原图（data-full 指向原图）。
+      关掉时**不跳转、不动滚动位置**，所以退出后还在原来的阅读位置。
+    -->
+    <div class="img-view" id="imgView" hidden>
+      <img id="imgViewPic" alt="" />
+      <div class="img-view-bar">
+        <span id="imgViewInfo"></span>
+        <button type="button" id="imgViewRaw">看原图（新标签）</button>
+        <button type="button" id="imgViewClose">关闭</button>
+      </div>
+    </div>
+
+    <!--
       一对跳转按钮：回到文章开头 / 跳到文章末尾。
       位置取自 article 元素本身，所以是「文章的开头/末尾」，不是整页的首尾。
       平滑滚动交给 CSS 的 scroll-behavior（global.css 里已有，
@@ -182,6 +196,24 @@ const description = hidden ? 'yuuu 的一篇私人记录' : d.summary ?? d.title
     }
   </nav>
 
+  <style>
+    .article-wrap img[data-full] { cursor: zoom-in; }
+    .img-view {
+      position: fixed; inset: 0; z-index: 70;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 12px; padding: 16px; background: rgba(0, 0, 0, 0.92);
+    }
+    .img-view[hidden] { display: none; }
+    .img-view img { max-width: 100%; max-height: calc(100dvh - 120px); object-fit: contain; border-radius: 8px; }
+    .img-view-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; }
+    .img-view-bar span { color: #cfd6e4; font-size: 12.5px; }
+    .img-view-bar button {
+      padding: 8px 14px; border-radius: 10px; border: 1px solid #3a4252;
+      background: #1b2029; color: #e6ebf5; font-size: 13px; cursor: pointer;
+    }
+    .img-view-bar button:last-child { background: #2f7fed; border-color: #2f7fed; }
+  </style>
+
   <script>
     /* 阅读进度：只改 transform: scaleX()，不碰 width，避免触发布局 */
     (function () {
@@ -199,6 +231,41 @@ const description = hidden ? 'yuuu 的一篇私人记录' : d.summary ?? d.title
       }, { passive: true });
       window.addEventListener('resize', update);
       update();
+    })();
+
+    /* 正文图片灯箱：点缩略图 → 全屏原图；关掉后仍在原来的阅读位置 */
+    (function () {
+      var box = document.getElementById('imgView');
+      var pic = document.getElementById('imgViewPic');
+      var info = document.getElementById('imgViewInfo');
+      var raw = document.getElementById('imgViewRaw');
+      var closeBtn = document.getElementById('imgViewClose');
+      var article = document.querySelector('article');
+      if (!box || !pic || !article) return;
+
+      function close() {
+        box.hidden = true;
+        pic.removeAttribute('src');
+        document.documentElement.style.overflow = '';
+      }
+      article.addEventListener('click', function (e) {
+        var img = e.target && e.target.closest ? e.target.closest('img[data-full]') : null;
+        if (!img) return;
+        e.preventDefault();
+        var full = img.getAttribute('data-full');
+        pic.src = full;
+        pic.alt = img.getAttribute('alt') || '';
+        info.textContent = img.getAttribute('alt') || decodeURIComponent(full.split('/').pop() || '');
+        box.hidden = false;
+        /* 锁住背景滚动；关掉时还原 —— 全程没跳转，阅读位置不变 */
+        document.documentElement.style.overflow = 'hidden';
+      });
+      closeBtn.addEventListener('click', close);
+      box.addEventListener('click', function (e) { if (e.target === box) close(); });
+      raw.addEventListener('click', function () {
+        if (pic.getAttribute('src')) window.open(pic.getAttribute('src'), '_blank', 'noopener');
+      });
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !box.hidden) close(); });
     })();
 
     /* 回到文章开头 / 跳到文章末尾 */
