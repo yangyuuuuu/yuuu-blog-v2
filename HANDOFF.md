@@ -532,3 +532,64 @@ Decap 的后台在手机上被我用 CSS「修」成了一片白板，PC 端却�
 > 读一下 `D:\DS\yuuu-blog-v2\HANDOFF.md`，然后继续做「阅读位置记录 + 恢复提示」。
 
 （备选：把首页「加载更多」也拆成按需，给首屏 10 KB 红线留点余量。）
+
+
+---
+
+## 待办三件（2026-09-29 站主确认，含根因与改法）
+
+### ① /admin/m 的列表不是实时的（站主报"新文章看不见"）
+
+**根因**（已追到底，不用再查）：
+```
+public/admin/m/app.js 的 api.list()  →  POST /admin/posts
+workers/oauth/src/index.ts:1295      →  去抓 **线上那个静态文件** /private/posts-all.json
+                                     →  它只有"站点构建成功"之后才会更新
+```
+所以保存后界面**确实**重新拉了列表，只是拉到的还是上上次构建的产物。
+CF 构建一失败（比如 coverStyle 那次），新文章就永远不出现 ——
+而 Decap 是直连 GitHub 的，所以"只有 /admin 能看到"。
+
+**改法（两选一，我倾向 B）**：
+- A. Worker 里维护一份 KV 列表，保存/删除时增量更新。快，但**又造了一个可能与仓库不同步的副本**（这项目已经栽过好几次"两个真相来源"）。
+- **B. /admin/posts 直接读 GitHub**：拿 `src/content/posts` 的 tree → 逐个读文件 → 抽 frontmatter（复用 /admin/reindex 里那段解析）。约 17 次请求、1~3 秒，但**只有一个真相来源**，永远不会不同步。
+  - 注意把 reindex 里的"读文件 → 抽 frontmatter → 组装条目"抽成一个**公用函数**，别复制一份（复制就是下次踩坑的地方）。
+  - Worker 有 GITHUB_TOKEN，5000 次/小时，够用。
+
+### ② 文章增删改的日志（站主已确认范围）
+
+- 只记 **新增 / 修改 / 删除** 三类，不记浏览
+- 每条要记：**文章标题**、**可点击跳转**（文章还在的话，即 `/posts/<slug>/`）、**IP**、时间
+- **永久保留**（KV 有 90 天 TTL 的那套是访问日志，别混；见 handleLogs 的说明）
+- 落点：`/admin/save`、`/admin/delete` 成功之后各写一条
+- `/admin/logs` 界面优化：**只展示最新的一部分**（比如最近 200 条 / 最近 30 天），别一次全渲染出来
+
+### ③ 新上传的图没有缩略图（#1 遗留的缺口）
+
+- 现状：缩略图靠 `npm run thumbs`（tools/make-thumbs.mjs）离线生成，
+  新上传的图要手动跑一次才有；没有缩略图的图会按**原图**显示（不会破图）
+- 改法：图库上传时用**同一套 canvas 逻辑**再生成一张缩略图一起传
+  （gallery/ui.js 里 prepare() 已经有压缩代码，改造成"顺便出一个 720px/q68 的"）
+  → Worker 侧要能收第二张（可以给 /admin/image/upload 加个 thumb 字段，
+    或存到 `public/uploads/thumbs/<同名>.jpg` —— 注意**和主图放在同一次提交里**）
+
+---
+
+## 一条必须记住的操作经验：走代理推送
+
+GitHub 直连不稳定时，站主会开本地代理 `127.0.0.1:7890`。但**光加 proxy 会死在 TLS 上**：
+
+```
+fatal: unable to access ...: schannel: failed to receive handshake, SSL/TLS connection failed
+fatal: unable to access ...: schannel: server closed abruptly (missing close_notify)
+```
+
+**Windows 的 schannel 后端和代理不能一起用**，加上 `http.sslBackend=openssl` 立刻就好：
+
+```cmd
+git -c http.proxy=http://127.0.0.1:7890 -c https.proxy=http://127.0.0.1:7890 ^
+    -c http.sslBackend=openssl push origin main
+```
+
+（推之前如果被拒 `fetch first`，说明后台又提交了 —— 先 `git rebase origin/main` 再推。
+这条链路已经踩过三次，别再猜。）
