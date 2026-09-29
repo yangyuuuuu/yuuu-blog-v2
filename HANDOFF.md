@@ -600,9 +600,39 @@ CF 构建一失败（比如 coverStyle 那次），新文章就永远不出现 �
 
 ---
 
-## 一条必须记住的操作经验：走代理推送
+## 一条必须记住的操作经验：推送走哪条网（2026-09-29 更新）
 
-GitHub 直连不稳定时，站主会开本地代理 `127.0.0.1:7890`。但**光加 proxy 会死在 TLS 上**：
+**先看直连通不通**（现在的结论是：直连就够用）：
+
+```cmd
+git ls-remote origin refs/heads/main
+```
+
+### ★ 别在用户级配置里钉死代理（踩过）
+
+`~/.gitconfig` 里曾经有这么一段：
+
+```ini
+[http "https://github.com"]
+	proxy = http://127.0.0.1:7890
+```
+
+代理一关（端口没人听），**所有** GitHub 操作都会变成
+`Failed to connect to github.com port 443 via 127.0.0.1` ——
+看起来像「GitHub 挂了」，其实是本地代理死了。`npm run publish` 就是在这里失败的。
+（那次是我在用户级配置里删掉那两段的；直连 `schannel` 一切正常。）
+
+要临时绕过它（不想改配置时）：**把 proxy 覆盖成空**，
+并且**保留 schannel** —— 直连时 `openssl` 会因为找不到本机 CA 报
+`unable to get local issuer certificate`：
+
+```cmd
+git -c http.https://github.com.proxy= -c https.https://github.com.proxy= push origin main
+```
+
+### 真要开代理的时候
+
+GitHub 直连不稳时才开本地代理。但**光加 proxy 会死在 TLS 上**：
 
 ```
 fatal: unable to access ...: schannel: failed to receive handshake, SSL/TLS connection failed
