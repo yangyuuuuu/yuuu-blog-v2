@@ -608,6 +608,14 @@ CF 构建一失败（比如 coverStyle 那次），新文章就永远不出现 �
 git ls-remote origin refs/heads/main
 ```
 
+### 站主这台机器的网络实况（2026-09-29 量过，别再猜）
+
+- **Watt Toolkit（进程名 `Steam++` / `Steam++.Accelerator`）直接占住 80 和 443**，
+  它是透明加速、**不提供 HTTP 代理端口** —— 所以「找 Watt Toolkit 的代理端口」是白找。
+- Windows 系统代理 `ProxyEnable = 0`（关着），`ProxyServer` 里那个 `127.0.0.1:7890` 是**残留值**，
+  本机也没有任何进程在听 7890/7897。
+- 结论：**直连就行**。`git ls-remote` / `git push` 直连都通（schannel）。
+
 ### ★ 别在用户级配置里钉死代理（踩过）
 
 `~/.gitconfig` 里曾经有这么一段：
