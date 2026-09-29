@@ -38,6 +38,26 @@ const optionalDate = z.preprocess(
  * 后台把「封面色相」清空时会写成 `coverHue: ""`，而 z.number() 只收数字，
  * 于是整篇文章构建失败。这条和上面的日期是同一类坑（Decap 的空字段总是写成空串）。
  */
+/**
+ * 可选枚举：**同样允许空值**。
+ *
+ * ⚠️ 这条是被线上构建失败逼出来的：站主在后台写了一篇新文章，
+ * 其中「封面样式」被清空 → Decap 写成 `coverStyle: ""` →
+ * z.enum() 不认空串 → **整个站点构建失败**，
+ * 表现成「新文章一直不上线、CF 后台显示构建失败」，而页面上看不出任何异常。
+ *
+ * 教训：`updated` / `coverHue` / `coverStyle` 是**同一个坑**，
+ * 我当时修了前两个、漏了第三个。所以：
+ *   1) 所有「可选的枚举 / 数字 / 日期」都必须容忍空串；
+ *   2) tools/verify.mjs 里加了一条检查 —— 构造一篇**所有可选字段都是空串**
+ *      的文章，必须能通过校验。以后再漏，构建前的自检就会拦住。
+ */
+const optionalEnum = (values: readonly string[]) =>
+  z.preprocess(
+    (v) => (v === '' || v === null ? undefined : v),
+    z.enum(values as unknown as [string, ...string[]]).optional(),
+  );
+
 const optionalNumber = (min: number, max: number) =>
   z.preprocess(
     (v) => (v === '' || v === null ? undefined : v),
@@ -55,7 +75,7 @@ const posts = defineCollection({
     summary: z.string().optional(),
     /** 封面：封面池 id（如 'stand'）、public 下的绝对路径、或外链。不写则按 slug 从池子稳定挑一张 */
     cover: z.string().optional(),
-    coverStyle: z.enum(COVER_STYLES).optional(),
+    coverStyle: optionalEnum(COVER_STYLES),
     coverHue: optionalNumber(0, 359),
     pinned: z.boolean().default(false),
     draft: z.boolean().default(false),

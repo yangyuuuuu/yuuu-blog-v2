@@ -557,7 +557,12 @@ head('8.7 日记页 / 私人角落的公开 HTML 里不能有文章标题');
   } else {
     const titles = (JSON.parse(readFileSync(allPath, 'utf8')).posts || [])
       .map((p) => String(p.title || '').trim())
-      .filter((t) => t.length >= 3);   /* 太短的容易误伤（比如「嗯」） */
+      /*
+       * 太短或太「通用」的标题会误伤 —— 比如有篇文章叫「7.1」，
+       * 它必然出现在任何含版本号的 CSS 里。所以只拿**够有辨识度**的标题当样本：
+       * 中文标题 ≥6 字，纯 ASCII 标题 ≥12 字符。
+       */
+      .filter((t) => (/[\u4e00-\u9fa5]/.test(t) ? t.length >= 6 : t.length >= 12));
     for (const page of ['diary/index.html', 'private/index.html']) {
       const abs = join(DIST, page);
       if (!existsSync(abs)) { bad('缺少 ' + page); continue; }

@@ -114,7 +114,8 @@ const schema = z.object({
   tags: z.array(z.string()).default([]),
   summary: z.string().optional(),
   cover: z.string().optional(),
-  coverStyle: z.enum(COVER_STYLES).optional(),
+  /* 和 content.config.ts 一样：空串当「没填」。漏了它线上构建就挂（coverStyle 那次） */
+  coverStyle: z.preprocess((v) => (v === '' || v === null ? undefined : v), z.enum(COVER_STYLES).optional()),
   coverHue: optionalHue,
   pinned: z.boolean().default(false),
   draft: z.boolean().default(false),
@@ -166,6 +167,38 @@ for (const file of postFiles) {
 if (published.length === postFiles.length && postFiles.length) {
   ok(postFiles.length + ' 篇文章 frontmatter 全部合法');
 }
+/*
+ * ★ 「后台清空字段会写成空串」这一类坑，用一个合成样本一次性兜住。
+ *
+ * 这个坑已经犯过三次（updated / coverHue / coverStyle），每次的表现都是
+ * **线上构建失败、新文章一直不上线**，而页面上看不出任何异常。
+ * 与其每次等 CF 报错，不如在这里构造一篇「所有可选字段都是空串」的文章，
+ * 它必须能通过校验 —— 以后再加可选字段，漏了容忍空串就会被这条拦住。
+ */
+{
+  const emptyOptional = {
+    title: '可选字段全为空串的样本',
+    date: '2026-01-01',
+    updated: '',
+    category: '随笔',
+    tags: [],
+    summary: '',
+    cover: '',
+    coverStyle: '',
+    coverHue: '',
+    pinned: false,
+    draft: false,
+    private: false,
+  };
+  const r = schema.safeParse(emptyOptional);
+  if (r.success) {
+    ok('★ 所有可选字段都是空串时也能通过（后台清空字段不会搞挂构建）');
+  } else {
+    bad('可选字段为空串时校验失败：' + r.error.issues.map((i) => i.path.join('.') + ' ' + i.message).join('; ') +
+        ' —— 后台清空字段就是写空串，这会让线上构建失败');
+  }
+}
+
 const dates = published.map((p) => p.date.getTime());
 if (new Set(dates).size !== dates.length) warn('存在发布日期完全相同的文章（排序会不稳定）');
 ok('已发布 ' + published.length + ' 篇，草稿 ' + (postFiles.length - published.length) + ' 篇');
