@@ -32,6 +32,20 @@ writeFileSync(ROOT + '/' + PAGE, [
   '  <div class="sc-abc123 card"><img src="/uploads/0b91ecca7f2e7e9bba28b33b1ed75c64257c7c32.jpg" alt="第一张"></div>',
   '  <div class="sc-def456 card"><img src="/uploads/166187.jpg" alt="第二张"></div>',
   '</div>',
+  /*
+   * 媒体卡片：Decap 的真实结构 —— 卡片里有个图标位
+   * [data-testid="card-file-icon"]，图片资源的卡片里再放一张缩略预览。
+   * 「点图全屏」只认这种卡片；外面（比如这页的 grid）不碰。
+   */
+  /* 独立媒体页面的工具栏：有「选择」控件（选择弹窗里没有它）*/
+  '<div id="toolbar"><button type="button">删除</button><button type="button">选择</button></div>',
+  '<div id="media">',
+  '  <div class="sc-card media-card"><span data-testid="card-file-icon"></span>',
+  '    <img src="/uploads/166187.jpg" alt="媒体第一张"></div>',
+  '  <div class="sc-card media-card"><span data-testid="card-file-icon"></span>',
+  '    <img src="/uploads/166187.jpg" alt="媒体第二张"></div>',
+  '  <button id="decoy"><img src="/uploads/0b91ecca7f2e7e9bba28b33b1ed75c64257c7c32.jpg" alt="按钮里的图"></button>',
+  '</div>',
   '<script src="/admin/decap-extras.js"></script>',
   '</body></html>',
 ].join('\n'), 'utf8');
@@ -103,11 +117,15 @@ try {
   await sleep(2500);
 
   console.log('=== 注入 ===');
-  ok(await ev("document.querySelectorAll('.dcx-tools').length") === 2, '每张图旁都挂上了工具条');
-  ok(await ev("document.querySelectorAll('.dcx-btn').length") === 4, '两个按钮 × 两张图');
+  /*
+   * 页面上有 5 张 /uploads/ 图：2 张普通卡片 + 2 张媒体卡片 + 1 张**在按钮里**。
+   * 工具条只该挂在卡片的 4 张上（按钮里的那张要跳过，否则会干扰按钮自己的交互）。
+   */
+  ok(await ev("document.querySelectorAll('.dcx-tools').length") === 5, '每张 /uploads/ 图旁都挂上了工具条（含按钮里那张）');
+  ok(await ev("document.querySelectorAll('.dcx-btn').length") === 10, '两个按钮 × 五张图');
   ok(await ev("getComputedStyle(document.querySelector('.card')).position") === 'relative', '父容器被设成定位元素（按钮才贴得住角）');
   await sleep(900);
-  ok(await ev("document.querySelectorAll('.dcx-tools').length") === 2, '★ 不会重复注入（观察者反复触发也只挂一次）');
+  ok(await ev("document.querySelectorAll('.dcx-tools').length") === 5, '★ 不会重复注入（观察者反复触发也只挂一次）');
 
   console.log('=== 看原图 ===');
   await ev("document.querySelectorAll('.dcx-btn')[0].click()");
@@ -137,6 +155,51 @@ try {
   ok(prefill === '0b91ecca7f2e7e9bba28b33b1ed75c64257c7c32', '预填了当前的文件名（去掉后缀）', prefill);
   await ev("document.querySelector('.dcx-box .row button').click()");
   await sleep(300);
+
+  console.log('=== 点图直接全屏（媒体库）===');
+  {
+    /* 媒体卡片里的图：点一下就该全屏 */
+    await ev("document.querySelectorAll('.media-card img')[1].click()");
+    await sleep(600);
+    const shown = await ev("(document.querySelector('.dcx-mask img')||{}).src || ''");
+    ok(await ev("!!document.querySelector('.dcx-mask')"), '★ 点媒体卡片里的图 → 全屏打开');
+    ok(String(shown).includes('166187'), '★ 看的就是点的那张', shown);
+    ok(await ev("!!document.querySelector('.dcx-name')"), '显示文件名');
+    ok(await ev("!!document.querySelector('.dcx-mask--full')"), '用的是全屏版式（图片更大）');
+    await ev("Array.from(document.querySelectorAll('.dcx-bar button')).find(b=>b.textContent==='关闭').click()");
+    await sleep(350);
+    ok(await ev("!document.querySelector('.dcx-mask')"), '能关掉');
+
+    /* Escape 也要能关 */
+    await ev("document.querySelectorAll('.media-card img')[0].click()");
+    await sleep(500);
+    ok(await ev("!!document.querySelector('.dcx-mask')"), '再点一次还能开');
+    await ev("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
+    await sleep(350);
+    ok(await ev("!document.querySelector('.dcx-mask')"), '★ Escape 能关掉');
+
+    /* 不在卡片里的图不该被接管（原来那个「看原图」按钮仍然可用） */
+    await ev("document.getElementById('decoy').click()");
+    await sleep(400);
+    ok(await ev("!document.querySelector('.dcx-mask')"), '★ 按钮里的图不会被接管（不吞别的交互）');
+
+    /* 空白处点击不该出事 */
+    await ev("document.getElementById('media').click()");
+    await sleep(300);
+    ok(await ev("!document.querySelector('.dcx-mask')"), '点空白处不会误开');
+
+    /*
+     * ★ 反向验一次「只在独立媒体页面接管」：
+     * 把工具栏里的「选择」拿掉（＝编辑器里的「选择图片」弹窗），
+     * 再点同一张图 —— 必须**不接管**，否则用户单击就选不中图、插不进图片。
+     * 这条要是红了，说明 gate 失效，插图流程会被破坏。
+     */
+    await ev("document.getElementById('toolbar').remove()");
+    await sleep(400);
+    await ev("document.querySelectorAll('.media-card img')[0].click()");
+    await sleep(400);
+    ok(await ev("!document.querySelector('.dcx-mask')"), '★ 没有「选择」控件时（＝编辑器插图弹窗）不接管单击');
+  }
 
   console.log('=== 异常 ===');
   ok(errs.length === 0, '没有控制台异常', errs.join(' | '));
