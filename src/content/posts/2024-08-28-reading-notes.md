@@ -1,7 +1,7 @@
 ---
 title: 读《献给阿尔吉农的花束》
 date: 2024-08-28
-updated: ''
+updated: 2026-09-29
 category: 随笔
 tags:
   - 读书
@@ -13,6 +13,7 @@ coverStyle: opera
 coverHue: 285
 pinned: false
 draft: false
+private: false
 ---
 
 ## 形式即内容
