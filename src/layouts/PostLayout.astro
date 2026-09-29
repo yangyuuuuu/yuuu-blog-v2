@@ -131,7 +131,15 @@ const description = hidden ? 'yuuu 的一篇私人记录' : d.summary ?? d.title
       关掉时**不跳转、不动滚动位置**，所以退出后还在原来的阅读位置。
     -->
     <div class="img-view" id="imgView" hidden>
-      <img id="imgViewPic" alt="" />
+      <!--
+        两层：先用缩略图立刻铺满（几十 KB，秒出），原图在后面加载，
+        加载完再显示 —— 否则手机上点开是**黑屏等好几秒**（用户报过「一片空白」）。
+      -->
+      <div class="img-view-stage">
+        <img class="img-view-ph" id="imgViewPh" alt="" aria-hidden="true" />
+        <span class="img-view-loading" id="imgViewLoading" hidden>正在加载原图…</span>
+        <img class="img-view-main" id="imgViewPic" alt="" />
+      </div>
       <div class="img-view-bar">
         <span id="imgViewInfo"></span>
         <button type="button" id="imgViewRaw">看原图（新标签）</button>
@@ -205,6 +213,19 @@ const description = hidden ? 'yuuu 的一篇私人记录' : d.summary ?? d.title
     }
     .img-view[hidden] { display: none; }
     .img-view img { max-width: 100%; max-height: calc(100dvh - 120px); object-fit: contain; border-radius: 8px; }
+    /* 舞台：两层图叠在一起，缩略图先占好位置，原图盖上去 */
+    .img-view-stage { position: relative; display: grid; place-items: center; max-width: 100%; }
+    .img-view-stage > img { grid-area: 1 / 1; }
+    .img-view-ph { filter: blur(1px); }
+    /* 原图还没到：先把缩略图糊一点，等它加载完再显示（不闪、不跳） */
+    .img-view-main { opacity: 0; transition: opacity 0.22s ease; }
+    .img-view-main.is-ready { opacity: 1; }
+    .img-view-loading {
+      position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+      padding: 5px 12px; border-radius: 999px; font-size: 12.5px; white-space: nowrap;
+      background: rgba(15, 19, 25, 0.82); color: #cfd6e4; border: 1px solid #2b3342;
+    }
+    .img-view-loading[hidden] { display: none; }
     .img-view-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; }
     .img-view-bar span { color: #cfd6e4; font-size: 12.5px; }
     .img-view-bar button {
@@ -243,9 +264,31 @@ const description = hidden ? 'yuuu 的一篇私人记录' : d.summary ?? d.title
       var article = document.querySelector('article');
       if (!box || !pic || !article) return;
 
+      var ph = document.getElementById('imgViewPh');
+      var loading = document.getElementById('imgViewLoading');
+
+      /**
+       * 由原图地址推出缩略图地址：/uploads/x.png → /uploads/thumbs/x.jpg
+       * （和 tools/apply-thumbs.mjs、worker 的 thumbPathFor 是同一条规则）
+       * 推不出来就返回空串 —— 那就只显示原图，和以前一样。
+       */
+      function thumbOf(full) {
+        try {
+          var p = decodeURIComponent(String(full || ''));
+          if (p.indexOf('/uploads/') !== 0) return '';
+          var name = p.slice('/uploads/'.length);
+          if (!name || name.indexOf('/') >= 0) return '';
+          var t = '/uploads/thumbs/' + name.replace(/\.[^.]+$/, '') + '.jpg';
+          return t === String(full) ? '' : t;
+        } catch (e) { return ''; }
+      }
+
       function close() {
         box.hidden = true;
         pic.removeAttribute('src');
+        pic.classList.remove('is-ready');
+        ph.removeAttribute('src');
+        loading.hidden = true;
         document.documentElement.style.overflow = '';
       }
       article.addEventListener('click', function (e) {
@@ -253,9 +296,33 @@ const description = hidden ? 'yuuu 的一篇私人记录' : d.summary ?? d.title
         if (!img) return;
         e.preventDefault();
         var full = img.getAttribute('data-full');
-        pic.src = full;
         pic.alt = img.getAttribute('alt') || '';
         info.textContent = img.getAttribute('alt') || decodeURIComponent(full.split('/').pop() || '');
+        /*
+         * 顺序很重要：先把缩略图铺上去（本地缓存里就有，立刻可见），
+         * 再让原图在后面加载 —— 手机上原图可能有好几 MB，
+         * 直接换 src 的话用户看到的就是一片黑。
+         */
+        var th = thumbOf(full);
+        if (th) ph.src = th; else ph.removeAttribute('src');
+        pic.classList.remove('is-ready');
+        loading.hidden = !th;
+
+        /*
+         * ⚠️ 这里必须**先挂 onload 再设 src**，而且设完还要同步查一次 complete。
+         * 只写 pic.onload 是不够的：原图在缓存里时，赋值那一刻就已经加载完了，
+         * load 事件根本不会再触发 —— 表现成「缩略图糊着不换、一直提示正在加载」。
+         * （真踩过：慢网测试里原图 12 秒后显示不出来，就是这个原因。）
+         */
+        var reveal = function () {
+          if (!pic.naturalWidth) return;      /* 出错时 naturalWidth 是 0，别把破图当加载成功 */
+          pic.classList.add('is-ready');
+          loading.hidden = true;
+        };
+        pic.onload = reveal;
+        pic.onerror = function () { loading.hidden = true; };   /* 原图挂了就把缩略图留在屏幕上 */
+        pic.src = full;
+        if (pic.complete) reveal();              /* 命中缓存：同步收尾 */
         box.hidden = false;
         /* 锁住背景滚动；关掉时还原 —— 全程没跳转，阅读位置不变 */
         document.documentElement.style.overflow = 'hidden';
