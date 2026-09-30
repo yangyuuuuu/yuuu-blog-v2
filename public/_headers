@@ -16,7 +16,16 @@
 /*.html
   Cache-Control: public, max-age=0, must-revalidate
 
+#
+# 后台的脚本本身是**无哈希文件名**（/admin/g/ui.js），默认策略是 max-age=14400，
+# 于是「改了代码但手机上还跑旧 JS」—— 踩过两次：
+#   1. 图库旧版把 PNG 压成 JPEG，线上修好后手机还在压；
+#   2. 旧版媒体页判断失效，功能等于没上。
+# 这里强制每次都回源校验（有 ETag，没变就 304，代价很小）。
+# 同时各页面引用脚本时带 ?v=N 版本号，见 public/admin/*/index.html。
+#
 /admin/*
+  Cache-Control: public, max-age=0, must-revalidate
   X-Robots-Tag: noindex, nofollow
 
 # 隐藏文章清单位于 /private/posts.json：不让搜索引擎收录。

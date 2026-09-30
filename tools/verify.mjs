@@ -474,8 +474,24 @@ if (/pagefind/.test(read('package.json'))) ok('Pagefind 依赖已安装');
   const mHtml = read('public/admin/m/index.html');
   const mJs = read('public/admin/m/ui.js');
   const mApp = read('public/admin/m/app.js');
-  if (/<script type="module" src="\/admin\/m\/ui\.js"><\/script>/.test(mHtml)) ok('手机写作页：用 module 方式加载 ui.js');
+  /* 允许带 ?v= 版本号（后台脚本是无哈希文件名，靠它绕开浏览器缓存，见 public/_headers） */
+  if (/<script type="module" src="\/admin\/m\/ui\.js(\?v=[\w.]+)?"><\/script>/.test(mHtml)) ok('手机写作页：用 module 方式加载 ui.js');
   else bad('手机写作页：index.html 没有以 module 方式加载 ui.js（app.js 的 import 会失效）');
+  /*
+   * 后台脚本是**无哈希文件名**，默认缓存 max-age=14400 —— 「改了代码但手机上还跑旧 JS」
+   * 已经咬过两次（图库把 PNG 压成 JPEG、媒体页判据失效）。规矩：
+   *   · 各后台页引用脚本必须带 ?v= 版本号
+   *   · public/_headers 里 /admin/* 必须强制回源校验
+   * 这两条现在由下面这段守着。
+   */
+  {
+    const pages = ['public/admin/g/index.html', 'public/admin/m/index.html', 'public/admin/p/index.html'];
+    const noVer = pages.filter((f) => !/<script[^>]+src="\/admin\/[^"?]+\.js\?v=[\w.]+"/.test(read(f)));
+    if (noVer.length) bad('后台脚本没带版本号（会被浏览器缓存咬）：' + noVer.join('、'));
+    else ok('后台脚本都带 ?v= 版本号（避免缓存旧 JS）');
+    if (/\/admin\/\*[\s\S]{0,160}?max-age=0/.test(read('public/_headers'))) ok('public/_headers：/admin/* 强制回源校验');
+    else bad('public/_headers 里 /admin/* 不是 max-age=0 —— 后台脚本会被缓存 4 小时');
+  }
   /* 接口地址写在 ui.js 的 API 常量里（app.js 只负责拼请求） */
   if (/https:\/\/oauth\.yuuu\.love/.test(mJs)) ok('手机写作页：接口指向 Worker（oauth.yuuu.love）');
   else bad('手机写作页：ui.js 里的接口地址不是 Worker');
