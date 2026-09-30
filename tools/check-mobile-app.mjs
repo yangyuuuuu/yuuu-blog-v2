@@ -176,7 +176,7 @@ console.log('=== 4.8 图库逻辑（/admin/g/）===');
 {
   const {
     groupByDir, categories, filterImages, humanSize, dirLabel, dirValue,
-    toJpegName, dataUrlBytes, shouldCompress,
+    dataUrlBytes, shouldMakeThumb, THUMB_MIN_BYTES,
   } = await import('../public/admin/g/gallery.js');
 
   const imgs = [
@@ -210,15 +210,19 @@ console.log('=== 4.8 图库逻辑（/admin/g/）===');
   ok(humanSize(3 * 1024 * 1024) === '3.0 MB', '体积显示 MB', humanSize(3 * 1024 * 1024));
   ok(humanSize(0) === '0 B', '0 不炸');
 
-  ok(toJpegName('IMG_1234.HEIC') === 'IMG_1234.jpg', '压缩后统一叫 .jpg', toJpegName('IMG_1234.HEIC'));
-  ok(toJpegName('没有后缀') === '没有后缀.jpg', '没后缀也能处理');
-
-  /* 压缩策略：小图不压、gif/svg 不压（压了就没动画/变糊） */
-  ok(!shouldCompress({ type: 'image/jpeg', size: 100 * 1024 }), '小于 400KB 不压');
-  ok(shouldCompress({ type: 'image/jpeg', size: 900 * 1024 }), '大图要压');
-  ok(!shouldCompress({ type: 'image/gif', size: 5 * 1024 * 1024 }), '★ gif 不压（压了没动画）');
-  ok(!shouldCompress({ type: 'image/svg+xml', size: 5 * 1024 * 1024 }), 'svg 不压');
-  ok(!shouldCompress({ type: '', size: 5 * 1024 * 1024 }), '类型不明不压');
+  /*
+   * 缩略图策略（站主 2026-09-30 明确）：
+   *   · **只有大于 1MB 才生成缩略图** —— 小图本来就不慢
+   *   · 原图**一个字节都不动**（不再有「大图压成 jpg」那条规则）
+   *   · gif / svg 不生成缩略图（gif 转 jpg 会丢动画，svg 是矢量）
+   */
+  ok(THUMB_MIN_BYTES === 1024 * 1024, '门槛就是 1MB', String(THUMB_MIN_BYTES));
+  ok(!shouldMakeThumb({ type: 'image/png', size: 900 * 1024, width: 4000 }), '★ 小于 1MB 不生成缩略图（原图直出）');
+  ok(!shouldMakeThumb({ type: 'image/png', size: 1024 * 1024, width: 4000 }), '★ 正好 1MB 也不生成（要「超过」）');
+  ok(shouldMakeThumb({ type: 'image/png', size: 1024 * 1024 + 1, width: 4000 }), '★ 超过 1MB 才生成缩略图');
+  ok(!shouldMakeThumb({ type: 'image/gif', size: 5 * 1024 * 1024, width: 4000 }), '★ gif 不生成（会丢动画）');
+  ok(!shouldMakeThumb({ type: 'image/svg+xml', size: 5 * 1024 * 1024, width: 4000 }), 'svg 不生成');
+  ok(!shouldMakeThumb({ type: 'image/png', size: 3 * 1024 * 1024, width: 500 }), '比 720 还小的图不生成（会更大更糊）');
 
   const tiny = 'data:image/png;base64,' + Buffer.from('12345678').toString('base64');
   ok(dataUrlBytes(tiny) === 8, '能算出 dataURL 的字节数', String(dataUrlBytes(tiny)));

@@ -217,8 +217,17 @@ const description = hidden ? 'yuuu 的一篇私人记录' : d.summary ?? d.title
     .img-view-stage { position: relative; display: grid; place-items: center; max-width: 100%; }
     .img-view-stage > img { grid-area: 1 / 1; }
     .img-view-ph { filter: blur(1px); }
-    /* 原图还没到：先把缩略图糊一点，等它加载完再显示（不闪、不跳） */
+    /*
+     * 两层叠放：
+     *   ph   = 缩略图（先占位，原图没到时唯一可见的东西）
+     *   main = 原图（加载完淡入）
+     * ⚠️ 原图就绪后必须**把缩略图撤掉**（透明度归零并禁掉交互），
+     *    否则它会一直压在原图上面 —— 站主报过「全屏图上盖着原位置的缩略图」。
+     *    光靠 main 的 opacity 是不够的：main 是用 grid 居中缩放显示的，
+     *    尺寸和 ph 不一样，露在外面的那圈 ph 就会糊在原图上。
+     */
     .img-view-main { opacity: 0; transition: opacity 0.22s ease; }
+    .img-view-stage.is-ready .img-view-ph { opacity: 0; transition: opacity 0.22s ease; pointer-events: none; }
     .img-view-main.is-ready { opacity: 1; }
     .img-view-loading {
       position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
@@ -266,6 +275,7 @@ const description = hidden ? 'yuuu 的一篇私人记录' : d.summary ?? d.title
 
       var ph = document.getElementById('imgViewPh');
       var loading = document.getElementById('imgViewLoading');
+      var stage = box.querySelector('.img-view-stage');
 
       /**
        * 由原图地址推出缩略图地址：/uploads/x.png → /uploads/thumbs/x.jpg
@@ -287,6 +297,7 @@ const description = hidden ? 'yuuu 的一篇私人记录' : d.summary ?? d.title
         box.hidden = true;
         pic.removeAttribute('src');
         pic.classList.remove('is-ready');
+        if (stage) stage.classList.remove('is-ready');
         ph.removeAttribute('src');
         loading.hidden = true;
         document.documentElement.style.overflow = '';
@@ -306,6 +317,7 @@ const description = hidden ? 'yuuu 的一篇私人记录' : d.summary ?? d.title
         var th = thumbOf(full);
         if (th) ph.src = th; else ph.removeAttribute('src');
         pic.classList.remove('is-ready');
+        if (stage) stage.classList.remove('is-ready');
         loading.hidden = !th;
 
         /*
@@ -317,6 +329,7 @@ const description = hidden ? 'yuuu 的一篇私人记录' : d.summary ?? d.title
         var reveal = function () {
           if (!pic.naturalWidth) return;      /* 出错时 naturalWidth 是 0，别把破图当加载成功 */
           pic.classList.add('is-ready');
+          if (stage) stage.classList.add('is-ready');   /* 让缩略图层退场（见上面的 CSS 说明） */
           loading.hidden = true;
         };
         pic.onload = reveal;

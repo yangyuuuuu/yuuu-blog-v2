@@ -58,17 +58,16 @@ export function humanSize(bytes) {
   return (n / 1024 / 1024).toFixed(1) + ' MB';
 }
 
-/**
- * 上传前把图压一下：手机上随手拍的照片动辄 5MB，
- * 直接塞进 git 仓库既慢又把仓库撑大。压到最长边 MAX_EDGE、质量 0.85 的 JPEG。
- * 返回 { dataUrl, name, bytes }；canvas 不可用（老浏览器）时原样返回。
+/*
+ * ⚠️ 图库**不再压缩原图**（站主要求：原始图片必须原样留在画廊里）。
+ *
+ * 以前这里有一条「超过 400KB 就转成 JPEG（最长边 1600）」的规则，
+ * 后果是上传 PNG 会被悄悄改成 .jpg —— 站主发现后明确要求去掉。
+ * 所以现在：
+ *   · 原图的**格式、尺寸、字节**一律原样上传（PNG 就是 PNG）
+ *   · 只有「**文件大于 1MB**」时才**另外**生成一张缩略图（720px/q68）给文章默认显示
  */
 export const MAX_EDGE = 1600;
-
-export function toJpegName(name) {
-  const base = String(name || 'image').replace(/\.[^.]+$/, '') || 'image';
-  return base + '.jpg';
-}
 
 /** 估算 dataURL 的字节数（base64 → 二进制） */
 export function dataUrlBytes(dataUrl) {
@@ -78,11 +77,13 @@ export function dataUrlBytes(dataUrl) {
   return Math.floor((b64.length * 3) / 4);
 }
 
-/** 要不要压：小图、gif、svg 都不动（gif 压了就没了动画） */
-export function shouldCompress({ type, size }) {
-  if (!/^image\/(jpeg|jpg|png|webp)$/i.test(String(type || ''))) return false;
-  return Number(size) > 400 * 1024;
-}
+/**
+ * 生成缩略图的门槛：**1MB**。
+ *
+ * 站主定的规则：**超过 1MB 才生成缩略图**，小于等于 1MB 的图原样展示。
+ * 同一张图点开后仍然加载**原图**（data-full 指向原图）。
+ */
+export const THUMB_MIN_BYTES = 1024 * 1024;
 
 /* ---------------------------------------------------------------- 缩略图 */
 
@@ -98,13 +99,14 @@ export const THUMB_QUALITY = 0.68;
  * 一张图**要不要再单独出一个缩略图**。
  *
  *   · gif / svg / avif 不做：gif 压成 jpg 就没了动画，svg 是矢量（本来就小）
- *   · 比 720 还小的图不做：缩略图反而更大、还更糊（站点那边找不到缩略图会退回原图）
- *   · 小文件（< 400KB）不做：这就是 shouldCompress 那条线，和上传时压不压保持一致
- *     —— 主图既然原样上传，再配一张更糊的缩略图没有意义
+ *   · 比 720 还小的图不做：缩略图反而更大、还更糊
+ *   · **只有大于 1MB 才做**（站主 2026-09-30 明确）：小图本来就不慢
+ *
+ * 注意：缩略图只是**额外产物**，主图永远是原图 —— 不会动原图一个字节。
  */
 export function shouldMakeThumb({ type, size, width }) {
   if (!/^image\/(jpeg|jpg|png|webp)$/i.test(String(type || ''))) return false;
-  if (Number(size) <= 400 * 1024) return false;
+  if (Number(size) <= THUMB_MIN_BYTES) return false;
   return Number(width) > THUMB_WIDTH;
 }
 

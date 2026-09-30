@@ -81,6 +81,9 @@ const LOG_TTL_SEC = 90 * 24 * 60 * 60;
 const POST_LOG_PREFIX = 'plog:';
 const RECENT_POST_LOGS = 200;
 
+/** 索引新鲜度检查的最小间隔（秒）：同一份索引最多这么久查一次 GitHub 目录 */
+const INDEX_CHECK_SEC = 60;
+
 /**
  * 允许的来源：线上域名 + 本地预览（方便在本机调私人角落）。
  * 回显请求里的 Origin，不放开通配符 —— 免得别人的站点也能调这个 Worker。
@@ -1522,6 +1525,111 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
     return json({ message: '不支持的批量操作：' + action }, 400, request, env);
   }
 
+/**
+ * 从 GitHub 现场构建文章索引（含全文，所以只能放 KV）。
+ *
+ * ⚠️ 必须抽成公用函数：/admin/reindex 和 /admin/posts-index 的自动刷新都要用它，
+ *    抄两份就是下次踩坑的地方。
+ */
+async function buildPostIndex(env: Env): Promise<{ generatedAt: string; posts: Record<string, unknown>[] }> {
+  const repo = repoOf(env);
+  const treeRes = await fetch(
+    `${GH_API}/repos/${repo}/git/trees/${branchOf(env)}:${CONTENT_DIR.split('/').map(encodeURIComponent).join('/')}?recursive=1`,
+    { headers: ghHeaders(env) },
+  );
+  if (!treeRes.ok) throw new Error('读文章目录失败（HTTP ' + treeRes.status + '）');
+  const tree = ((await treeRes.json()) as { tree?: { path: string; type: string }[] }).tree || [];
+  const files = tree.filter((e) => e.type === 'blob' && e.path.endsWith('.md')).map((e) => e.path);
+
+  const posts: Record<string, unknown>[] = [];
+  for (const rel of files) {
+    const full = CONTENT_DIR + '/' + rel;
+    const f = await ghGetFile(env, full).catch(() => null);
+    if (!f) continue;
+    const { yaml, body } = splitYaml(f.text);
+    const pick = (k: string) => yamlOne(yaml, k);
+    const tags = (() => {
+      const inline = /^tags:\s*\[([^\]]*)\]\s*$/m.exec(yaml);
+      if (inline) return inline[1].split(',').map((s) => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+      const block = /^tags:\s*\n((?:\s+-\s*.+\n?)+)/m.exec(yaml);
+      if (block) return block[1].split('\n').map((l) => l.replace(/^\s+-\s*/, '').trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+      return [];
+    })();
+    const category = pick('category') || '';
+    const isPrivate = pick('private') === 'true';
+    const text = body
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/`[^`]*`/g, ' ')
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+      .replace(/^\s{0,3}>\s?/gm, '')
+      .replace(/^\s{0,3}[-*+]\s+/gm, '')
+      .replace(/[*_`~|]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const slug = slugify(rel);
+    posts.push({
+      slug,
+      url: '/posts/' + slug + '/',
+      path: full,
+      title: pick('title') || rel,
+      date: (pick('date') || '').slice(0, 10),
+      updated: (pick('updated') || '').slice(0, 10),
+      category,
+      tags,
+      summary: pick('summary') || '',
+      draft: pick('draft') === 'true',
+      hidden: isPrivate || category === '日记',
+      words: text.length,
+      text: text.slice(0, 4000),
+    });
+  }
+  posts.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const generatedAt = new Date().toISOString();
+  await env.LOGS?.put('posts:index', JSON.stringify({ generatedAt, posts }));
+  await rememberIndexCount(env, posts.length);
+  return { generatedAt, posts };
+}
+
+/** 索引里记一下文章数量，下次好比对 */
+async function rememberIndexCount(env: Env, count: number): Promise<void> {
+  try { await env.LOGS?.put('posts:indexCount', String(count)); } catch { /* 记不上不影响读 */ }
+}
+
+/** 目录里现在有多少篇 .md（只读目录，不读文件 —— 便宜） */
+async function countPostsInRepo(env: Env): Promise<number | null> {
+  try {
+    const treeRes = await fetch(
+      `${GH_API}/repos/${repoOf(env)}/git/trees/${branchOf(env)}:${CONTENT_DIR.split('/').map(encodeURIComponent).join('/')}?recursive=1`,
+      { headers: ghHeaders(env) },
+    );
+    if (!treeRes.ok) return null;
+    const tree = ((await treeRes.json()) as { tree?: { path: string; type: string }[] }).tree || [];
+    return tree.filter((e) => e.type === 'blob' && e.path.endsWith('.md')).length;
+  } catch { return null; }
+}
+
+/**
+ * 索引是不是过期了。
+ *
+ * ⚠️ 这里修的是一个**真 bug**：以前索引只在「KV 里没有」时建一次，之后再也不更新 ——
+ *    于是通过 Decap 后台或 GitHub 直接发的文章**永远不出现在 /admin/p/ 里**，
+ *    站主报过「前几天的文章记录都没有」。
+ *
+ * 现在每次读索引都顺手比一下文章**数量**（读目录一次，不读文件内容，便宜）：
+ *    对不上就自动重建。同一份索引最多每 INDEX_CHECK_SEC 查一次，避免频繁打 GitHub。
+ */
+async function isIndexStale(env: Env, posts: unknown[]): Promise<boolean> {
+  const last = Number((await env.LOGS?.get('posts:indexCheck')) || 0);
+  if (Date.now() - last < INDEX_CHECK_SEC * 1000) return false;
+  const now = await countPostsInRepo(env);
+  if (now === null) return false;
+  await env.LOGS?.put('posts:indexCheck', String(Date.now()));
+  const prev = await env.LOGS?.get('posts:indexCount');
+  return prev !== null && prev !== undefined && prev !== String(now);
+}
+
   /*
    * 搜索索引（含**全文**，所以绝不能是公开文件）。
    *
@@ -1531,12 +1639,32 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
    * 而全文索引连那层门槛都没过。现在改成：**索引只存在 KV 里**，
    * 由 Worker 从 GitHub 现场构建（见下面的 /admin/reindex），读取必须持有 ticket。
    */
-  if (pathname === '/admin/posts-index') {
+if (pathname === '/admin/posts-index') {
     const raw = await env.LOGS?.get('posts:index');
-    if (!raw) return json({ posts: [], generatedAt: '', needReindex: true }, 200, request, env);
+    if (!raw) {
+      /* 第一次用：现场建一次（会稍慢几秒） */
+      try {
+        const built = await buildPostIndex(env);
+        await env.LOGS?.put('posts:indexCheck', String(Date.now()));
+        return json({ posts: built.posts, generatedAt: built.generatedAt, rebuilt: true }, 200, request, env);
+      } catch (e) {
+        return json({ posts: [], generatedAt: '', needReindex: true, message: (e as Error).message }, 200, request, env);
+      }
+    }
     try {
       const data = JSON.parse(raw) as { posts?: unknown[]; generatedAt?: string };
-      return json({ posts: data.posts || [], generatedAt: data.generatedAt || '' }, 200, request, env);
+      const posts = data.posts || [];
+      /*
+       * ★ 关键：索引不一定新鲜。数量对不上就重建 ——
+       * 否则通过 Decap / GitHub 发的文章永远不会出现在这个列表里（站主报过）。
+       */
+      if (await isIndexStale(env, posts)) {
+        try {
+          const built = await buildPostIndex(env);
+          return json({ posts: built.posts, generatedAt: built.generatedAt, rebuilt: true }, 200, request, env);
+        } catch { /* 重建失败就先把旧的给他，别把页面搞空 */ }
+      }
+      return json({ posts, generatedAt: data.generatedAt || '' }, 200, request, env);
     } catch {
       return json({ posts: [], generatedAt: '', needReindex: true }, 200, request, env);
     }
@@ -1550,69 +1678,14 @@ async function handleAdmin(request: Request, env: Env, pathname: string, url: UR
    */
 
   /* 重建索引：从 GitHub 读全部文章 → 抽 frontmatter → 存进 KV（需要 ticket） */
+/* 重建索引（从 GitHub 现场读全部文章 → 抽 frontmatter → 存 KV，需要 ticket） */
   if (pathname === '/admin/reindex') {
     if (!env.LOGS) return json({ message: '没有绑定 KV（LOGS）' }, 500, request, env);
-    const repo = repoOf(env);
     try {
-      const treeRes = await fetch(
-        `${GH_API}/repos/${repo}/git/trees/${branchOf(env)}:${CONTENT_DIR.split('/').map(encodeURIComponent).join('/')}?recursive=1`,
-        { headers: ghHeaders(env) },
-      );
-      if (!treeRes.ok) return json({ message: '读文章目录失败（HTTP ' + treeRes.status + '）' }, 502, request, env);
-      const tree = ((await treeRes.json()) as { tree?: { path: string; type: string }[] }).tree || [];
-      const files = tree.filter((e) => e.type === 'blob' && e.path.endsWith('.md')).map((e) => e.path);
-
-      const posts: Record<string, unknown>[] = [];
-      for (const rel of files) {
-        const full = CONTENT_DIR + '/' + rel;
-        const f = await ghGetFile(env, full).catch(() => null);
-        if (!f) continue;
-        const { yaml, body } = splitYaml(f.text);
-        const pick = (k: string) => yamlOne(yaml, k);
-        const tags = (() => {
-          const inline = /^tags:\s*\[([^\]]*)\]\s*$/m.exec(yaml);
-          if (inline) return inline[1].split(',').map((s) => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
-          const block = /^tags:\s*\n((?:\s+-\s*.+\n?)+)/m.exec(yaml);
-          if (block) return block[1].split('\n').map((l) => l.replace(/^\s+-\s*/, '').trim().replace(/^["']|["']$/g, '')).filter(Boolean);
-          return [];
-        })();
-        const category = pick('category') || '';
-        const isPrivate = pick('private') === 'true';
-        const text = body
-          .replace(/```[\s\S]*?```/g, ' ')
-          .replace(/`[^`]*`/g, ' ')
-          .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
-          .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-          .replace(/^\s{0,3}#{1,6}\s+/gm, '')
-          .replace(/^\s{0,3}>\s?/gm, '')
-          .replace(/^\s{0,3}[-*+]\s+/gm, '')
-          .replace(/[*_~`|]/g, '')
-          .replace(/\s+/g, ' ')
-          .trim();
-        const slug = slugify(rel);
-        posts.push({
-          slug,
-          /* 站内路径：后台「点开文章」要用它。拼错就是 404，所以这里统一算好 */
-          url: '/posts/' + slug + '/',
-          path: full,
-          title: pick('title') || rel,
-          date: (pick('date') || '').slice(0, 10),
-          updated: (pick('updated') || '').slice(0, 10),
-          category,
-          tags,
-          summary: pick('summary') || '',
-          draft: pick('draft') === 'true',
-          /* 和 src/lib/hidden.ts 同一条规则：分类是「日记」或手写 private: true */
-          hidden: isPrivate || category === '日记',
-          words: text.length,
-          /* 全文只留前面一段，够搜就行；索引在 KV 里，不落公开文件 */
-          text: text.slice(0, 4000),
-        });
-      }
-      posts.sort((a, b) => String(b.date).localeCompare(String(a.date)));
-      const payload = { generatedAt: new Date().toISOString(), posts };
-      await env.LOGS.put('posts:index', JSON.stringify(payload));
-      return json({ ok: true, count: posts.length, generatedAt: payload.generatedAt }, 200, request, env);
+      const built = await buildPostIndex(env);
+      /* 顺手记下「刚查过」，免得下一次读列表又去 GitHub 比一遍 */
+      await env.LOGS.put('posts:indexCheck', String(Date.now()));
+      return json({ ok: true, count: built.posts.length, generatedAt: built.generatedAt }, 200, request, env);
     } catch (e) {
       return json({ message: '重建索引失败：' + (e as Error).message }, 502, request, env);
     }

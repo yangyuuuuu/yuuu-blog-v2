@@ -864,6 +864,61 @@ console.log('=== 6.9 后台搜索索引的构建与读取 ===');
   ok(kvStore.has('posts:index'), '★ 索引存进了 KV（不是公开文件）');
 }
 
+console.log('=== 6.93 /admin/p 的列表必须跟着仓库走（自动重建索引）===');
+{
+  /*
+   * 站主报过「前几天的文章记录都没有」。
+   *
+   * 根因：索引只在 KV 里**没有**时建一次，之后再也不更新 ——
+   * 于是通过 Decap 后台或 GitHub 直接发的文章永远不出现在 /admin/p/ 里。
+   *
+   * 现在每次读列表都顺手比一下文章**数量**（只读目录，不读文件内容），对不上就自动重建。
+   * 下面把「手动建一次 → 仓库里多一篇 → 再读」这条链路真的跑一遍。
+   */
+  const putPost = (file, title) => gh.files.set(file, {
+    base64: Buffer.from(['---', 'title: ' + title, 'date: 2024-06-06', 'category: 技术', 'tags: []', '---', '', '正文。', ''].join('\n'), 'utf8').toString('base64'),
+    sha: 's-' + file,
+  });
+
+  /* 先按当前仓库内容建一次索引（记下数量） */
+  const first = await call('/admin/reindex', { ticket: 'good-ticket' });
+  ok(first.status === 200, '先手动建一次索引', JSON.stringify(first.data).slice(0, 80));
+  const countBefore = first.data?.count;
+  ok(typeof countBefore === 'number' && countBefore > 0, '索引里有文章', String(countBefore));
+
+  const before = await call('/admin/posts-index', { ticket: 'good-ticket' });
+  ok((before.data?.posts || []).length === countBefore, '刚建完读到的就是这份索引', String((before.data?.posts || []).length));
+
+  /* 模拟「后台/GitHub 直接多了一篇」—— 不走我们的保存接口 */
+  putPost('src/content/posts/2024-06-06-brand-new.md', '后台外面加的文章');
+  /* 把「刚查过」的时间戳清掉，否则会被 INDEX_CHECK_SEC 的节流挡住 */
+  kvStore.delete('posts:indexCheck');
+
+  const after = await call('/admin/posts-index', { ticket: 'good-ticket' });
+  const titles = (after.data?.posts || []).map((p) => p.title);
+  ok(titles.includes('后台外面加的文章'),
+    '★ 仓库里新增的文章会自动出现在列表里（这就是站主报的那个 bug）',
+    '实际标题: ' + JSON.stringify(titles.slice(0, 8)));
+  ok(after.data?.rebuilt === true, '这一次确实触发了自动重建', JSON.stringify(after.data?.rebuilt));
+  ok((after.data?.posts || []).length === countBefore + 1, '数量也对上了', String((after.data?.posts || []).length));
+
+  /* 反过来：没有变化时不该每次都重建（否则每开一次页面就打一遍 GitHub） */
+  kvStore.delete('posts:indexCheck');
+  const again = await call('/admin/posts-index', { ticket: 'good-ticket' });
+  ok(again.data?.rebuilt !== true, '★ 仓库没变化时不重建（省 GitHub 配额）', JSON.stringify(again.data?.rebuilt));
+
+  /* 节流：刚查过就不要再查 */
+  kvStore.set('posts:indexCheck', String(Date.now()));
+  const throttled = await call('/admin/posts-index', { ticket: 'good-ticket' });
+  ok(throttled.data?.rebuilt !== true, '★ INDEX_CHECK_SEC 节流生效（同一份索引不重复查目录）');
+
+  /* 第一次用（KV 里没有索引）要能现场建出来 */
+  kvStore.delete('posts:index');
+  const cold = await call('/admin/posts-index', { ticket: 'good-ticket' });
+  ok((cold.data?.posts || []).length > 0 && cold.data?.rebuilt === true, '★ 冷启动（KV 里没有索引）会现场建一次', String((cold.data?.posts || []).length));
+}
+
+
 console.log('=== 7. 服务端没配 GITHUB_TOKEN 时要给清楚提示 ===');
 {
   const saved = env.GITHUB_TOKEN;

@@ -6,8 +6,8 @@
  */
 import {
   groupByDir, categories, filterImages, humanSize, dirLabel, dirValue,
-  toJpegName, dataUrlBytes, shouldCompress, MAX_EDGE, UNCATEGORIZED,
-  shouldMakeThumb, makeThumbDataUrl, THUMB_WIDTH,
+  dataUrlBytes, UNCATEGORIZED,
+  shouldMakeThumb, makeThumbDataUrl, THUMB_WIDTH, THUMB_MIN_BYTES,
 } from './gallery.js';
 
 const API = 'https://oauth.yuuu.love';
@@ -737,6 +737,7 @@ async function uploadAll(files, dir) {
  * 返回 { name, dataUrl, thumbDataUrl? }；不需要缩略图时就没有这个字段。
  */
 async function prepare(file) {
+  /* 原图**原样读取**：不转码、不压缩（PNG 就保持 PNG，字节不变） */
   const raw = await new Promise((resolve, reject) => {
     const fr = new FileReader();
     fr.onload = () => resolve(String(fr.result));
@@ -744,37 +745,23 @@ async function prepare(file) {
     fr.readAsDataURL(file);
   });
 
-  /* 不需要压、也不可能需要缩略图（小图/gif/svg）：原样传，别白解码一次 */
-  if (!shouldCompress({ type: file.type, size: file.size })) {
-    return { name: file.name, dataUrl: raw };
-  }
-  /* 压到最长边 MAX_EDGE，明显能省一半以上体积 */
+  /*
+   * 只有**大于 1MB** 才额外做一张缩略图（文章 / 列表默认显示它）。
+   * 判断只看文件大小，不用先把图解出来 —— 小图直接原样上传，省一次解码。
+   * 站主定的门槛就是 1MB（旧的 400KB 那条线已去掉）。
+   */
+  if (file.size <= THUMB_MIN_BYTES) return { name: file.name, dataUrl: raw };
+
   const img = await new Promise((resolve, reject) => {
     const i = new Image();
     i.onload = () => resolve(i);
     i.onerror = () => reject(new Error('这张图打不开'));
     i.src = raw;
   });
-
-  /*
-   * 缩略图的尺寸判断要用**原图**的宽高 —— 它比 720 大才值得出一张。
-   * 放在压缩之前算，因为压完之后 width 已经变了、判断就不准了。
-   */
+  /* 比 720 还小的图不值得出缩略图（会更大更糊） */
   const needThumb = shouldMakeThumb({ type: file.type, size: file.size, width: img.naturalWidth || img.width });
   const thumbDataUrl = needThumb ? makeThumbDataUrl(img) : null;
-
-  const scale = Math.min(1, MAX_EDGE / Math.max(img.width, img.height));
-  if (scale >= 1) {
-    return thumbDataUrl ? { name: file.name, dataUrl: raw, thumbDataUrl } : { name: file.name, dataUrl: raw };
-  }
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.round(img.width * scale);
-  canvas.height = Math.round(img.height * scale);
-  canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-  const out = { name: toJpegName(file.name), dataUrl };
-  if (thumbDataUrl) out.thumbDataUrl = thumbDataUrl;
-  return out;
+  return thumbDataUrl ? { name: file.name, dataUrl: raw, thumbDataUrl } : { name: file.name, dataUrl: raw };
 }
 
 /* ------------------------------------------------------------------ 启动 */

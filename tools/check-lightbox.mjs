@@ -113,6 +113,15 @@ try {
     ok(await ev("document.getElementById('imgViewLoading').hidden"), '提示收起来了');
     ok(await ev("document.getElementById('imgViewPic').naturalWidth > 0"), '原图确实有内容（不是破图）');
     ok(await waitFor("getComputedStyle(document.getElementById('imgViewPic')).opacity === '1'", 3000), '原图完全不透明（淡入结束）');
+    /*
+     * ★ 站主报过「全屏图上盖着原位置的缩略图」：
+     * 缩略图层（ph）不撤掉的话会一直压在原图上面 —— 尤其两张图尺寸不同，
+     * 露在外面的那一圈糊图特别明显。原图就绪后 ph 必须退场（透明度归零）。
+     */
+    ok(await waitFor("getComputedStyle(document.getElementById('imgViewPh')).opacity === '0'", 3000),
+      '★★ 原图就绪后缩略图层被撤掉（不再遮挡全屏图）');
+    ok(await ev("getComputedStyle(document.getElementById('imgViewPh')).pointerEvents === 'none'"),
+      '缩略图层不再接收点击');
   }
 
   await ev("document.getElementById('imgViewClose').click()");
